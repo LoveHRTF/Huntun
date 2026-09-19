@@ -172,6 +172,11 @@ function md(src) {
 }
 const when = (iso) => { if (!iso) return ""; const d = new Date(iso); const m = (Date.now() - d) / 60000; if (m < 1) return "just now"; if (m < 60) return Math.floor(m) + "m ago"; if (m < 1440) return Math.floor(m/60) + "h ago"; return d.toLocaleString(); };
 const clock = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+const draftKey = (id, f) => "huntun.draft." + id + "." + f;
+const loadDraft = (id, f, fallback) => { try { const v = localStorage.getItem(draftKey(id, f)); return v === null ? fallback : v; } catch (e) { return fallback; } };
+const saveDraft = (id, f, v) => { try { localStorage.setItem(draftKey(id, f), v); } catch (e) {} };
+const clearDrafts = (id, fields) => { try { fields.forEach(f => localStorage.removeItem(draftKey(id, f))); } catch (e) {} };
+const bindDraft = (el, id, f) => { if (el) el.addEventListener("input", () => saveDraft(id, f, el.value)); };
 const fmtNum = (n) => { n = Number(n || 0); return n >= 1e6 ? (n/1e6).toFixed(2) + "M" : n >= 1e3 ? (n/1e3).toFixed(1) + "k" : String(Math.round(n)); };
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const statePill = (w) => {
@@ -296,14 +301,14 @@ async function setupView(id) {
   const draw = async () => {
     const w = await api("/api/workspaces/" + id);
     $("#hgoal").textContent = w.path;
-    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { location.hash = "#/w/" + id; return; }
+    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend"]); location.hash = "#/w/" + id; return; }
     if (w.state === "clarifying") {
       $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
         '<p><span class="blink">▮</span> ' + esc(w.progress || "Checking the goal") + ' … ' + w.elapsed + 's</p>' +
         '<p class="hint">The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.</p></div>';
       return;
     }
-    const goal = $("#goal") ? $("#goal").value : "", ctx = $("#context") ? $("#context").value : "", be = $("#backend") ? $("#backend").value : "";
+    const goal = $("#goal") ? $("#goal").value : loadDraft(id, "goal", ""), ctx = $("#context") ? $("#context").value : loadDraft(id, "context", ""), be = $("#backend") ? $("#backend").value : loadDraft(id, "backend", "");
     $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Set up ' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
       (w.error ? '<p class="error">Last attempt failed: ' + esc(w.error) + '</p>' : '') +
       '<form id="setupform" style="margin-top:12px">' +
@@ -312,6 +317,8 @@ async function setupView(id) {
       '<label>Backend</label><select id="backend"><option value="">auto (Claude Code if installed, else API key)</option><option value="claude-code">Claude Code (your Claude login)</option><option value="codex">OpenAI Codex (your ChatGPT login)</option><option value="api">Anthropic API (ANTHROPIC_API_KEY)</option></select>' +
       '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
     if (be) $("#backend").value = be;
+    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value));
+    if (w.error) $("#view").insertAdjacentHTML("beforeend", '<p class="hint">Your goal and context are kept as typed; fix the cause and send again.</p>');
     $("#setupform").addEventListener("submit", (e) => startPlanning(e, id));
     $("#forgetbtn").addEventListener("click", () => forget(id));
   };
@@ -445,7 +452,7 @@ function drawGoal(id) {
   goalKey = key;
   if (w.state === "clarifying" || w.state === "planning") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(w.progress || "Master is working") + ' … ' + w.elapsed + 's</p></div>'; return; }
   if (!d) { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card">' + (w.error ? '<p class="error">' + esc(w.error) + '</p>' : '<p class="hint">Waiting for the master\'s goal check…</p>') + '<p><a href="#/w/' + id + '/setup">back to setup</a></p></div>'; return; }
-  const draftGoal = $("#cgoal") ? $("#cgoal").value : d.goal, draftDod = $("#cdod") ? $("#cdod").value : d.definition_of_done.join("\n");
+  const draftGoal = $("#cgoal") ? $("#cgoal").value : loadDraft(id, "cgoal:" + d.goal, d.goal), draftDod = $("#cdod") ? $("#cdod").value : loadDraft(id, "cdod:" + d.goal, d.definition_of_done.join("\n")), draftReply = $("#goalreply") ? $("#goalreply").value : loadDraft(id, "goalreply", "");
   box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Goal check</h3><div class="who" style="margin:8px 0">' + avatar("master") + '<b>@master</b></div><div class="md">' + md(d.message) + '</div>' +
     (d.assumptions.length ? '<p><b>Assumptions</b></p><ul>' + d.assumptions.map(a => '<li>' + esc(a) + '</li>').join("") + '</ul>' : '') +
     (d.questions.length ? '<p><b>Questions for you</b></p><ul>' + d.questions.map(q => '<li>' + esc(q) + '</li>').join("") + '</ul>' : '') +
@@ -453,10 +460,11 @@ function drawGoal(id) {
     '<form id="confirmform" style="margin-top:12px"><label>Goal (edit if needed)</label><textarea id="cgoal" style="min-height:64px">' + esc(draftGoal) + '</textarea>' +
     '<label>Definition of done (one condition per line; edit freely)</label><textarea id="cdod" style="min-height:140px">' + esc(draftDod) + '</textarea>' +
     '<div class="row"><button class="ok">Confirm goal &amp; plan the team</button><span class="hint">The master then proposes a team for you to approve.</span></div></form></div>' +
-    '<form class="card" id="goalreplyform"><label>Answer the questions or ask for changes</label><textarea id="goalreply" style="min-height:56px" placeholder="e.g. Yes to a web UI, but no auth for now. Done also means it runs with one command."></textarea><div class="row"><button class="secondary">Reply to master</button></div></form>' +
+    '<form class="card" id="goalreplyform"><label>Answer the questions or ask for changes</label><textarea id="goalreply" style="min-height:56px" placeholder="e.g. Yes to a web UI, but no auth for now. Done also means it runs with one command.">' + esc(draftReply) + '</textarea><div class="row"><button class="secondary">Reply to master</button></div></form>' +
     '<h2>Discussion</h2>';
+  bindDraft($("#cgoal"), id, "cgoal:" + d.goal); bindDraft($("#cdod"), id, "cdod:" + d.goal); bindDraft($("#goalreply"), id, "goalreply");
   $("#confirmform").onsubmit = async (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; try { await api("/api/workspaces/" + id + "/confirm-goal", { goal: $("#cgoal").value, definition_of_done: $("#cdod").value }); goalKey = ""; } catch (err) { alert(err.message); btn.disabled = false; } };
-  $("#goalreplyform").onsubmit = async (e) => { e.preventDefault(); const message = $("#goalreply").value.trim(); if (!message) return; try { await api("/api/workspaces/" + id + "/goal-reply", { message }); goalKey = ""; } catch (err) { alert(err.message); } };
+  $("#goalreplyform").onsubmit = async (e) => { e.preventDefault(); const message = $("#goalreply").value.trim(); if (!message) return; try { await api("/api/workspaces/" + id + "/goal-reply", { message }); clearDrafts(id, ["goalreply"]); goalKey = ""; } catch (err) { alert(err.message); } };
 }
 
 // approval page: the master's proposal, editable, must be approved before anything runs
@@ -484,7 +492,7 @@ function drawApproval(id) {
   box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
     estBox + '<h2>Team</h2>' + cards +
     '<div class="plan-actions"><button class="ok" id="approvebtn">Approve plan</button><span class="hint">Agents load paused; press Start all afterwards.</span></div>' +
-    '<form class="card" id="replanform"><label>Ask the master to revise</label><textarea id="feedback" style="min-height:56px" placeholder="e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA"></textarea><div class="row"><button class="secondary">Request changes</button></div></form>' +
+    '<form class="card" id="replanform"><label>Ask the master to revise</label><textarea id="feedback" style="min-height:56px" placeholder="e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA">' + esc(loadDraft(id, "feedback", "")) + '</textarea><div class="row"><button class="secondary">Request changes</button></div></form>' +
     '<h2>Discussion</h2>';
   box.querySelectorAll(".plan-agent").forEach(card => {
     const sel = $(".pers", card), ta = $(".perstext", card);
@@ -497,7 +505,8 @@ function drawApproval(id) {
     $("#approvebtn").disabled = true;
     try { await api("/api/workspaces/" + id + "/approve", { agents }); approvalKey = ""; state = null; route(); } catch (err) { alert(err.message); $("#approvebtn").disabled = false; }
   };
-  $("#replanform").onsubmit = async (e) => { e.preventDefault(); const feedback = $("#feedback").value.trim(); if (!feedback) return; try { await api("/api/workspaces/" + id + "/replan", { feedback }); approvalKey = ""; } catch (err) { alert(err.message); } };
+  bindDraft($("#feedback"), id, "feedback");
+  $("#replanform").onsubmit = async (e) => { e.preventDefault(); const feedback = $("#feedback").value.trim(); if (!feedback) return; try { await api("/api/workspaces/" + id + "/replan", { feedback }); clearDrafts(id, ["feedback"]); approvalKey = ""; } catch (err) { alert(err.message); } };
 }
 
 // threads: sortable list, each expands in place into a chat
