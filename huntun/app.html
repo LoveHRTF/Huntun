@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Huntun</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0b0e17; --panel:#131828; --panel2:#1a2036; --line:#2a3352; --ink:#05070d; --text:#e9ecf5; --muted:#8f98b8; --accent:#ffd23f; --cyan:#4fe3f0; --ok:#5cff8a; --warn:#ffb03f; --err:#ff5c7a; --me:#1e3a63; --pink:#ff7ad9;
+         --px:"Press Start 2P", monospace; --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; }
+  body { margin:0; font: 14px/1.5 var(--sans); background:var(--bg); color:var(--text); }
+  h1 { font: 13px/1 var(--px); } h2 { font: 9px/1.4 var(--px); letter-spacing:.08em; color:var(--muted); margin:10px 0 8px; text-transform:uppercase; }
+  h3 { font: 600 15px/1.35 var(--sans); margin:0 0 6px; }
+  code, pre, .mono { font-family: var(--mono); font-size:12.5px; }
+  header { display:flex; gap:12px; align-items:center; padding:0 18px; border-bottom:3px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; height:54px; box-shadow: 0 3px 0 var(--ink); }
+  header h1 { margin:0; color:var(--accent); text-shadow: 2px 2px 0 var(--ink); } header h1 a { color:inherit; text-decoration:none; }
+  header .goal { color:var(--muted); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+  .counters { display:flex; gap:6px; align-items:center; font-family:var(--mono); font-size:12px; }
+  .counters .c { border:2px solid var(--line); padding:3px 8px; color:var(--muted); background:var(--panel2); white-space:nowrap; } .counters .c b { color:var(--text); font-weight:600; }
+  .counters .c.lim { border-color:var(--warn); color:var(--warn); } .counters .c.lim b { color:var(--warn); }
+  button { background:var(--accent); color:var(--ink); border:2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); padding:7px 12px; font: 600 12px/1 var(--sans); cursor:pointer; letter-spacing:.02em; }
+  button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+  button.secondary { background:var(--panel2); color:var(--text); } button.danger { background:var(--err); color:var(--ink); } button.ok { background:var(--ok); }
+  button.small { padding:4px 8px; font-size:11px; box-shadow: 2px 2px 0 var(--ink); }
+  button:disabled { opacity:.5; cursor:default; }
+  .pill { padding:3px 8px; font: 600 10px/1.3 var(--sans); border:2px solid var(--line); color:var(--muted); white-space:nowrap; text-transform:uppercase; letter-spacing:.04em; }
+  .pill.on { color:var(--ok); border-color:var(--ok); } .pill.off { color:var(--warn); border-color:var(--warn); } .pill.err { color:var(--err); border-color:var(--err); } .pill.busy { color:var(--cyan); border-color:var(--cyan); }
+  main { display:grid; grid-template-columns: 1fr; min-height: calc(100vh - 54px); }
+  main.board { grid-template-columns: 250px minmax(0, 1fr) 290px; height: calc(100vh - 54px); }
+  aside { border-right:3px solid var(--line); padding:12px; background:var(--panel); overflow:auto; }
+  aside.right { border-right:0; border-left:3px solid var(--line); }
+  section { padding:16px 22px; max-width: 1100px; width:100%; margin:0 auto; }
+  main.board section { max-width:none; margin:0; overflow:auto; }
+  .meta { color:var(--muted); font-size:12px; }
+  .card { border:2px solid var(--line); background:var(--panel); padding:14px 16px; margin-bottom:12px; box-shadow: 4px 4px 0 var(--ink); }
+  .md { line-height:1.55; } .md pre { background:#070a12; border:2px solid var(--line); padding:10px; overflow:auto; } .md code { background:#070a12; padding:0 4px; color:var(--cyan); }
+  .md .mention { color:var(--accent); font-weight:600; } .md ul { margin:4px 0; padding-left:20px; } .md h3, .md h4 { margin:8px 0 4px; font-size:14px; } .md b { color:#fff; } .md i { color:var(--muted); }
+  textarea, input, select { width:100%; background:#070a12; color:var(--text); border:2px solid var(--line); padding:8px 10px; font: 14px/1.4 var(--sans); }
+  textarea:focus, input:focus, select:focus { outline:none; border-color:var(--accent); }
+  textarea { min-height:80px; resize:vertical; }
+  form { display:flex; flex-direction:column; gap:8px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .hrow { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  a { color:var(--cyan); } .hint { color:var(--muted); font-size:12px; }
+  .error { color:var(--err); white-space:pre-wrap; }
+  label { font: 600 10px/1.4 var(--sans); color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:20px; } @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .blink { animation: blink 1s steps(2, start) infinite; } @keyframes blink { to { visibility: hidden; } }
+  /* projects + picker */
+  .ws { display:block; padding:12px 14px; border:2px solid var(--line); margin-bottom:10px; background:var(--panel); text-decoration:none; color:inherit; box-shadow: 4px 4px 0 var(--ink); }
+  .ws:hover, .thread:hover { border-color:var(--accent); }
+  .ws .path { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .browser { border:2px solid var(--line); background:#070a12; max-height:260px; overflow:auto; }
+  .browser div { padding:5px 10px; border-bottom:1px solid var(--line); cursor:pointer; font-family:var(--mono); font-size:12.5px; }
+  .browser div:hover { background:var(--panel2); color:var(--accent); } .browser .up { color:var(--muted); }
+  /* pixel avatars */
+  .av { display:inline-block; width:32px; height:32px; flex:none; position:relative; image-rendering: pixelated; border:2px solid var(--ink); background:#070a12; }
+  .av svg { width:100%; height:100%; display:block; shape-rendering: crispEdges; }
+  .av.sm { width:22px; height:22px; } .av.lg { width:64px; height:64px; border-width:3px; }
+  .av .badge { position:absolute; right:-6px; bottom:-6px; font-size:11px; line-height:1; background:var(--panel); border:2px solid var(--ink); padding:1px; }
+  .av.lg .badge { font-size:16px; }
+  .av.working { animation: bob .6s steps(2, end) infinite; box-shadow: 0 0 0 2px var(--ok); }
+  @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+  .who { display:flex; align-items:center; gap:8px; min-width:0; } .who b { white-space:nowrap; color:#fff; font-weight:600; }
+  /* team */
+  .agent { display:flex; gap:10px; padding:8px; border:2px solid var(--line); margin-bottom:10px; cursor:pointer; align-items:flex-start; background:var(--panel2); box-shadow: 3px 3px 0 var(--ink); }
+  .agent:hover { border-color:var(--accent); }
+  .agent .body { min-width:0; flex:1; } .agent .name { display:flex; align-items:center; gap:6px; } .agent b { color:var(--accent); font-weight:600; }
+  .agent .st { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .agent .nums { display:flex; gap:8px; font-family:var(--mono); font-size:11.5px; margin-top:3px; color:var(--muted); flex-wrap:wrap; } .agent .nums b { color:var(--cyan); font-weight:600; }
+  .bar { height:9px; border:2px solid var(--line); background:#070a12; margin-top:5px; position:relative; }
+  .bar i { display:block; height:100%; background: repeating-linear-gradient(90deg, var(--ok) 0 4px, #2fa85a 4px 6px); }
+  .bar.warn i { background: repeating-linear-gradient(90deg, var(--warn) 0 4px, #b87a20 4px 6px); } .bar.hot i { background: repeating-linear-gradient(90deg, var(--err) 0 4px, #a8304a 4px 6px); }
+  .bar em { position:absolute; right:3px; top:-3px; font-style:normal; font-family:var(--mono); font-size:10px; color:#fff; line-height:1; }
+  .dots::after { content:"▖"; animation: dots .8s steps(4, end) infinite; color:var(--ok); display:inline-block; width:1.2em; text-align:left; }
+  @keyframes dots { 0% { content:"▖"; } 25% { content:"▘"; } 50% { content:"▝"; } 75% { content:"▗"; } }
+  .dot { display:inline-block; width:8px; height:8px; background:var(--muted); flex:none; }
+  .dot.working, .dot.resuming { background:var(--ok); animation: blink .8s steps(2, start) infinite; } .dot.paused { background:var(--warn); } .dot.error, .dot.crashed { background:var(--err); } .dot.waiting { background:var(--cyan); }
+  /* threads */
+  .toolbar { display:flex; align-items:center; gap:10px; margin:4px 0 12px; flex-wrap:wrap; } .toolbar .sort { margin-left:auto; display:flex; gap:6px; align-items:center; }
+  .sort select { width:auto; font-size:12px; padding:4px 6px; }
+  .thread { display:block; border:2px solid var(--line); margin-bottom:12px; background:var(--panel); box-shadow: 4px 4px 0 var(--ink); }
+  .thread .head { display:flex; gap:12px; padding:12px 14px; cursor:pointer; align-items:flex-start; }
+  .thread .head .txt { flex:1; min-width:0; }
+  .thread .title { font-weight:600; font-size:15px; color:#fff; margin:2px 0 4px; }
+  .thread .snip { color:var(--muted); font-size:13px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; white-space:pre-line; line-height:1.45; }
+  .thread .count { color:var(--cyan); font-size:12px; white-space:nowrap; font-family:var(--mono); }
+  .thread .replies { margin:0 14px 12px 58px; padding-left:12px; border-left:3px solid var(--line); display:flex; flex-direction:column; gap:8px; }
+  .thread .reply { display:flex; gap:8px; align-items:flex-start; font-size:13px; }
+  .thread.open { border-color:var(--accent); }
+  .thread .tag { font: 600 10px/1.4 var(--sans); color:var(--muted); border:1px solid var(--line); padding:1px 6px; margin-left:6px; text-transform:uppercase; }
+  .thread .chat { border-top:2px solid var(--line); background:#0d1120; padding:12px 14px; }
+  .chat .messages { max-height:540px; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px; }
+  .msg { display:flex; gap:10px; align-items:flex-start; max-width:88%; }
+  .msg.me { align-self:flex-end; flex-direction:row-reverse; }
+  .msg .bubble { background:var(--panel2); border:2px solid var(--line); padding:8px 12px; min-width:0; box-shadow: 3px 3px 0 var(--ink); }
+  .msg.me .bubble { background:var(--me); } .msg.first .bubble { border-color:var(--cyan); }
+  .msg .bhead { display:flex; gap:8px; align-items:baseline; margin-bottom:2px; } .msg .bhead b { color:#fff; font-weight:600; }
+  .chat .compose { border-top:2px solid var(--line); padding-top:10px; margin-top:10px; }
+  .compose-wrap { position:relative; } .chat .compose textarea { min-height:60px; }
+  .composer.top { margin-bottom:12px; }
+  /* mention autocomplete */
+  .mention-box { position:absolute; z-index:20; background:var(--panel2); border:2px solid var(--accent); min-width:240px; max-height:220px; overflow:auto; box-shadow: 4px 4px 0 var(--ink); }
+  .mention-box div { padding:6px 10px; display:flex; gap:8px; align-items:center; cursor:pointer; } .mention-box div.sel, .mention-box div:hover { background:var(--line); }
+  .mention-box .role { color:var(--muted); font-size:12px; margin-left:auto; }
+  /* approval page */
+  .approve-page { max-width: 980px; margin:0 auto; }
+  .plan-agent { display:grid; grid-template-columns: 56px minmax(0, 1fr) 210px; gap:14px; padding:14px 16px; border:2px solid var(--line); background:var(--panel); box-shadow: 4px 4px 0 var(--ink); margin-bottom:12px; align-items:start; }
+  .plan-agent.removed { opacity:.4; } .plan-agent .brief { line-height:1.5; } .plan-agent .why { color:var(--muted); font-size:12.5px; margin-top:6px; }
+  .plan-agent .ctl { display:flex; flex-direction:column; gap:6px; } .plan-agent .ctl select { padding:5px 8px; font-size:13px; }
+  .plan-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0 16px; }
+  /* activity */
+  .events { font-size:12.5px; color:var(--muted); } .events .ev { padding:7px 0; border-bottom:1px dashed var(--line); display:flex; gap:8px; align-items:flex-start; }
+  .events .ev .t { min-width:0; line-height:1.4; } .events .ev b { color:var(--text); font-weight:600; }
+  /* dialog */
+  dialog { background:var(--panel); color:var(--text); border:3px solid var(--line); box-shadow: 8px 8px 0 var(--ink); width:min(1040px, 94vw); height:min(84vh, 820px); padding:0; }
+  dialog::backdrop { background:rgba(0,0,0,.7); }
+  .dlg { display:flex; flex-direction:column; height:100%; }
+  .dlg .top { display:flex; gap:16px; padding:16px 18px; border-bottom:3px solid var(--line); align-items:flex-start; }
+  .dlg .top .body { flex:1; min-width:0; }
+  .dlg .title { display:flex; align-items:center; gap:10px; flex-wrap:wrap; } .dlg .title h3 { margin:0; font-size:18px; color:var(--accent); }
+  .tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:8px; padding:12px 18px; border-bottom:3px solid var(--line); background:var(--panel2); }
+  .tile { border:2px solid var(--line); background:var(--panel); padding:8px 10px; box-shadow: 3px 3px 0 var(--ink); min-width:0; }
+  .tile span { display:block; font: 600 9px/1.4 var(--sans); color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .tile b { font-family:var(--mono); font-size:15px; color:#fff; font-weight:600; word-break:break-word; }
+  .dlg .cols { display:grid; grid-template-columns: 1fr 1fr; border-bottom:3px solid var(--line); }
+  .dlg .cols > div { padding:12px 18px; min-width:0; } .dlg .cols > div + div { border-left:3px solid var(--line); }
+  .dlg .cols p { margin:4px 0; line-height:1.5; } .dlg .cols ul { margin:4px 0; padding-left:18px; }
+  .dlg .tabs { display:flex; gap:6px; padding:10px 18px; border-bottom:3px solid var(--line); align-items:center; }
+  .tabs button { background:var(--panel2); color:var(--muted); } .tabs button.on { background:var(--accent); color:var(--ink); }
+  .dlg .log { flex:1; overflow:auto; padding:10px 18px; font-family:var(--mono); font-size:12px; }
+  .dlg .log .e { padding:6px 8px; border-left:4px solid var(--line); margin-bottom:6px; white-space:pre-wrap; word-break:break-word; background:#070a12; line-height:1.45; }
+  .dlg .log .e.tool { border-color:var(--cyan); } .dlg .log .e.result { color:var(--muted); } .dlg .log .e.text { border-color:var(--ok); }
+  .dlg .log .e.cycle { border-color:var(--warn); } .dlg .log .e.error { border-color:var(--err); } .dlg .log .e.prompt { border-color:var(--pink); color:var(--muted); }
+  .dlg .log .e .k { color:var(--muted); font-size:10.5px; margin-right:8px; }
+  .notes { flex:1; overflow:auto; padding:10px 18px; }
+  details summary { cursor:pointer; }
+  @media (max-width: 1000px) { main.board { grid-template-columns: 1fr; height:auto; } aside { border:0; border-bottom:3px solid var(--line); } aside.right { border-left:0; } .msg { max-width:100%; } .dlg .cols { grid-template-columns:1fr; } .dlg .cols > div + div { border-left:0; border-top:3px solid var(--line); } .plan-agent { grid-template-columns: 44px 1fr; } .plan-agent .ctl { grid-column: 1 / -1; flex-direction:row; } }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="#/">HUNTUN</a></h1>
+  <span id="hstatus" class="pill" style="display:none"></span>
+  <div class="goal" id="hgoal"></div>
+  <div class="counters" id="hcounters"></div>
+  <div class="row" id="hactions"></div>
+</header>
+<main id="main"><section id="view"></section></main>
+<dialog id="agentdlg"></dialog>
+<script>
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const api = async (path, body, method) => {
+  const r = await fetch(path, body === undefined ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+};
+function md(src) {
+  let s = esc(src);
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, l, c) => "<pre><code>" + c + "</code></pre>");
+  s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  s = s.replace(/^### (.*)$/gm, "<h4>$1</h4>").replace(/^## (.*)$/gm, "<h3>$1</h3>").replace(/^# (.*)$/gm, "<h3>$1</h3>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|\s)_([^_\n]+)_/g, "$1<i>$2</i>");
+  s = s.replace(/^(?:- |\* )(.*)$/gm, "<li>$1</li>").replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, "<ul>$1</ul>");
+  s = s.replace(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi, '$1<span class="mention">@$2</span>');
+  s = s.replace(/\n{2,}/g, "<br><br>").replace(/\n/g, "<br>");
+  return s;
+}
+const when = (iso) => { if (!iso) return ""; const d = new Date(iso); const m = (Date.now() - d) / 60000; if (m < 1) return "just now"; if (m < 60) return Math.floor(m) + "m ago"; if (m < 1440) return Math.floor(m/60) + "h ago"; return d.toLocaleString(); };
+const clock = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+const fmtNum = (n) => { n = Number(n || 0); return n >= 1e6 ? (n/1e6).toFixed(2) + "M" : n >= 1e3 ? (n/1e3).toFixed(1) + "k" : String(Math.round(n)); };
+const money = (n) => "$" + Number(n || 0).toFixed(2);
+const statePill = (w) => {
+  if (w.state === "planning" || w.state === "loading" || w.state === "clarifying") return '<span class="pill busy">' + esc(w.state) + '…</span>';
+  if (w.state === "error") return '<span class="pill err">error</span>';
+  if (w.state === "goal_proposed") return '<span class="pill busy">confirm goal</span>';
+  if (!w.initialized) return '<span class="pill">not set up</span>';
+  if (!w.approved) return '<span class="pill busy">awaiting approval</span>';
+  return w.running ? '<span class="pill on">running</span>' : '<span class="pill off">paused</span>';
+};
+let MODELS = [{ id: "claude-opus-5", backend: "claude-code", vendor: "anthropic" }, { id: "claude-sonnet-5", backend: "claude-code", vendor: "anthropic" }, { id: "claude-haiku-4-5", backend: "claude-code", vendor: "anthropic" }], PERSONAS = [];
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"], BLABEL = { api: "Anthropic API", "claude-code": "Claude Code", codex: "OpenAI Codex" };
+const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) (groups[m.backend] = groups[m.backend] || []).push(m); const known = MODELS.some(m => m.id === selected);
+  return Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
+
+// ---------------------------------------------------------------- pixel avatars: a 5x5 mirrored sprite from the name
+const ROLE_ICON = { master: "👑", "team-lead": "🧭", "scrum-master": "📋", backend: "⚙️", frontend: "🖼️", fullstack: "🧩", "ux-researcher": "🔍", "ui-designer": "🎨", qa: "🧪", "ml-engineer": "🧠", "data-scientist": "📊", devops: "🚀", "tech-writer": "✍️", security: "🛡️", "product-manager": "🎯", human: "🙂" };
+const roleOf = {};
+function hash(name) { let h = 2166136261; for (const c of name) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h; }
+const spriteCache = {};
+function sprite(name) {
+  if (spriteCache[name]) return spriteCache[name];
+  let h = hash(name), bits = [];
+  for (let i = 0; i < 15; i++) { bits.push((h >> (i % 31)) & 1); h = Math.imul(h ^ (h >>> 13), 0x5bd1e995) >>> 0; }
+  const hue = hash(name + "hue") % 360, fg = name === "human" ? "hsl(150,70%,55%)" : "hsl(" + hue + ",80%,62%)", bg = name === "human" ? "hsl(150,40%,18%)" : "hsl(" + hue + ",45%,18%)";
+  let rects = "";
+  for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) { const mx = x < 3 ? x : 4 - x; if (bits[y * 3 + mx]) rects += '<rect x="' + x + '" y="' + y + '" width="1" height="1"/>'; }
+  return spriteCache[name] = '<svg viewBox="0 0 5 5" style="background:' + bg + '"><g fill="' + fg + '">' + rects + '</g></svg>';
+}
+function avatar(name, size, working) {
+  const role = name === "human" ? "human" : (roleOf[name] || "");
+  return '<span class="av ' + (size || "") + (working ? " working" : "") + '" title="@' + esc(name) + (role ? " · " + esc(role) : "") + '">' + sprite(name) + (ROLE_ICON[role] ? '<span class="badge">' + ROLE_ICON[role] + '</span>' : '') + '</span>';
+}
+const isWorking = (st) => /^(working|resuming)/.test(st || "");
+
+let timer = null;
+function route() {
+  clearInterval(timer);
+  const h = location.hash || "#/";
+  let m;
+  if ((m = h.match(/^#\/w\/([0-9a-f]{10})\/setup$/))) return setupView(m[1]);
+  if ((m = h.match(/^#\/w\/([0-9a-f]{10})(?:\/t\/(\d+))?$/))) return boardView(m[1], m[2] ? Number(m[2]) : null);
+  return homeView();
+}
+window.addEventListener("hashchange", () => { const m = location.hash.match(/^#\/w\/([0-9a-f]{10})(?:\/t\/(\d+))?$/); if (m && boardId === m[1]) { openThread = m[2] ? Number(m[2]) : null; drawThreads(true); } else route(); });
+
+// ---------------------------------------------------------------- home
+let browserPath = null;
+async function homeView() {
+  boardId = null;
+  $("#main").className = ""; $("#main").innerHTML = '<section id="view"></section>';
+  $("#hgoal").textContent = ""; $("#hstatus").style.display = "none"; $("#hactions").innerHTML = "";
+  const { workspaces, home } = await api("/api/workspaces");
+  if (browserPath === null) browserPath = home;
+  $("#view").innerHTML = '<div class="grid"><div><h2>Projects</h2><div id="projects"></div></div>' +
+    '<div><h2>Open a project</h2><p class="hint">Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.</p>' +
+    '<form id="openform"><input id="path" placeholder="/path/to/project" autocomplete="off" spellcheck="false">' +
+    '<div class="browser" id="browser"></div><div class="row"><button>Open</button><span class="hint" id="pathinfo"></span></div></form></div></div>';
+  drawProjects(workspaces);
+  $("#path").value = browserPath;
+  $("#path").addEventListener("input", (e) => browseTo(e.target.value, true));
+  $("#path").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); openPath(); } });
+  $("#openform").addEventListener("submit", (e) => { e.preventDefault(); openPath(); });
+  $("#browser").addEventListener("click", (e) => { const row = e.target.closest("[data-path]"); if (row) browseTo(row.dataset.path); });
+  browseTo(browserPath);
+  timer = setInterval(async () => { if ((location.hash || "#/") === "#/" && $("#projects")) drawProjects((await api("/api/workspaces")).workspaces); }, 5000);
+}
+function drawProjects(workspaces) {
+  $("#projects").innerHTML = workspaces.length ? workspaces.map(w =>
+    '<a class="ws" href="' + (w.initialized || w.state === "planning" || w.state === "goal_proposed" ? "#/w/" + w.id : "#/w/" + w.id + "/setup") + '">' +
+      '<div class="hrow"><h3>' + esc(w.name) + '</h3><span class="row">' + statePill(w) + '<button type="button" class="small danger rmws" data-id="' + esc(w.id) + '" title="Remove from this list (files and .huntun/ stay on disk)">Remove</button></span></div>' +
+      '<div class="path">' + esc(w.path) + (w.exists ? "" : " (missing)") + '</div>' +
+      (w.goal ? '<div>' + esc(w.goal) + '</div>' : '<div class="hint">No goal yet. Open it to set one up.</div>') +
+      '<div class="meta">' + (w.agents ? w.agents + " agents · " : "") + (w.backend ? esc(w.backend) + " · " : "") + (w.last_used ? "used " + when(w.last_used) : "added " + when(w.added_at)) +
+      (w.error ? ' · <span class="error">' + esc(w.error) + '</span>' : '') + '</div></a>').join("")
+    : '<p class="hint">No projects yet. Point Huntun at a directory on the right.</p>';
+  $("#projects").querySelectorAll(".rmws").forEach(b => b.onclick = async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const w = workspaces.find(x => x.id === b.dataset.id);
+    if (!confirm("Remove " + (w ? w.name : "this project") + " from the list?" + (w && w.running ? " Its agents will be stopped." : "") + " Files and the .huntun/ data stay on disk; open the directory again to get it back.")) return;
+    try { await api("/api/workspaces/" + b.dataset.id + "/forget", {}); drawProjects((await api("/api/workspaces")).workspaces); } catch (err) { alert(err.message); }
+  });
+}
+let browseTimer = null, browseSeq = 0;
+function browseTo(path, typed) {
+  clearTimeout(browseTimer);
+  const seq = ++browseSeq;
+  browseTimer = setTimeout(async () => {
+    let info;
+    try { info = await api("/api/fs?path=" + encodeURIComponent(path || "/")); } catch (err) { $("#pathinfo").textContent = err.message; return; }
+    if (seq !== browseSeq || !$("#browser")) return;
+    let prefix = "";
+    if (!info.exists && typed) {
+      const cut = path.lastIndexOf("/");
+      prefix = path.slice(cut + 1).toLowerCase();
+      try { info = await api("/api/fs?path=" + encodeURIComponent(path.slice(0, cut) || "/")); } catch (err) { return; }
+      if (seq !== browseSeq) return;
+    }
+    if (!typed) { browserPath = info.path; $("#path").value = info.path; }
+    const base = info.path.replace(/\/$/, "");
+    const rows = [];
+    if (!prefix && info.parent) rows.push('<div class="up" data-path="' + esc(info.parent) + '">↑ ..</div>');
+    for (const d of info.dirs) if (!prefix || d.toLowerCase().startsWith(prefix)) rows.push('<div data-path="' + esc(base + "/" + d) + '">' + esc(d) + '/</div>');
+    $("#browser").innerHTML = rows.join("") || '<div class="up">' + (prefix ? "(no matching directories)" : "(no subdirectories)") + '</div>';
+    $("#pathinfo").textContent = prefix ? "keep typing, or click a directory" : !info.exists ? "directory does not exist" :
+      (info.initialized ? "Huntun project (set up)" : (info.files ? info.files + " files" + (info.git ? ", git repo" : "") + " — will be inspected for planning" : "empty directory"));
+  }, typed ? 200 : 0);
+}
+async function openPath() {
+  const path = $("#path").value.trim();
+  if (!path) return;
+  try { const w = await api("/api/workspaces", { path }); location.hash = w.initialized ? "#/w/" + w.id : "#/w/" + w.id + "/setup"; }
+  catch (err) { $("#pathinfo").textContent = err.message; }
+}
+async function forget(id) { if (!confirm("Remove this project from the list? Files and .huntun/ stay on disk.")) return; await api("/api/workspaces/" + id + "/forget", {}); location.hash = "#/"; }
+
+// ---------------------------------------------------------------- setup
+async function setupView(id) {
+  boardId = null;
+  $("#main").className = ""; $("#main").innerHTML = '<section id="view"></section>';
+  $("#hstatus").style.display = "none"; $("#hactions").innerHTML = "";
+  const draw = async () => {
+    const w = await api("/api/workspaces/" + id);
+    $("#hgoal").textContent = w.path;
+    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { location.hash = "#/w/" + id; return; }
+    if (w.state === "clarifying") {
+      $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
+        '<p><span class="blink">▮</span> ' + esc(w.progress || "Checking the goal") + ' … ' + w.elapsed + 's</p>' +
+        '<p class="hint">The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.</p></div>';
+      return;
+    }
+    const goal = $("#goal") ? $("#goal").value : "", ctx = $("#context") ? $("#context").value : "", be = $("#backend") ? $("#backend").value : "";
+    $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Set up ' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
+      (w.error ? '<p class="error">Last attempt failed: ' + esc(w.error) + '</p>' : '') +
+      '<form id="setupform" style="margin-top:12px">' +
+      '<label>Goal — what should the team build or change?</label><textarea id="goal" placeholder="e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI">' + esc(goal) + '</textarea>' +
+      '<label>Context (optional) — constraints, stack preferences, what to keep</label><textarea id="context" style="min-height:60px" placeholder="e.g. Python 3.12 + FastAPI, keep the existing database schema, small team">' + esc(ctx) + '</textarea>' +
+      '<label>Backend</label><select id="backend"><option value="">auto (Claude Code if installed, else API key)</option><option value="claude-code">Claude Code (your Claude login)</option><option value="codex">OpenAI Codex (your ChatGPT login)</option><option value="api">Anthropic API (ANTHROPIC_API_KEY)</option></select>' +
+      '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
+    if (be) $("#backend").value = be;
+    $("#setupform").addEventListener("submit", (e) => startPlanning(e, id));
+    $("#forgetbtn").addEventListener("click", () => forget(id));
+  };
+  await draw();
+  timer = setInterval(async () => { if (location.hash.endsWith("/setup")) { const w = await api("/api/workspaces/" + id); if (w.state !== "new") draw(); } }, 2000);
+}
+async function startPlanning(e, id) {
+  e.preventDefault();
+  const btn = e.target.querySelector("button"); btn.disabled = true;
+  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null }); setupView(id); }
+  catch (err) { alert(err.message); btn.disabled = false; }
+}
+
+// ---------------------------------------------------------------- mention autocomplete
+function attachMentions(textarea, names) {
+  const wrap = textarea.parentElement;
+  let box = null, items = [], sel = 0, range = null;
+  const close = () => { if (box) { box.remove(); box = null; } };
+  const candidates = () => ["all", "human", ...names.filter(n => n !== "human")];
+  const current = () => {
+    const pos = textarea.selectionStart, text = textarea.value.slice(0, pos);
+    const m = text.match(/(^|[^\w@])@([a-z0-9-]*)$/i);
+    return m ? { start: pos - m[2].length - 1, end: pos, q: m[2].toLowerCase() } : null;
+  };
+  const draw = () => {
+    range = current();
+    if (!range) return close();
+    items = candidates().filter(n => n.startsWith(range.q));
+    if (!items.length) return close();
+    sel = Math.min(sel, items.length - 1);
+    if (!box) { box = document.createElement("div"); box.className = "mention-box"; wrap.appendChild(box); }
+    box.style.left = "8px"; box.style.top = (textarea.offsetTop + textarea.offsetHeight + 4) + "px";
+    box.innerHTML = items.map((n, i) => '<div data-i="' + i + '" class="' + (i === sel ? "sel" : "") + '">' + avatar(n, "sm") + '<b>@' + esc(n) + '</b><span class="role">' + esc(n === "all" ? "everyone" : n === "human" ? "you" : (roleOf[n] || "")) + '</span></div>').join("");
+  };
+  const accept = (i) => { if (!range) return; const n = items[i], v = textarea.value; textarea.value = v.slice(0, range.start) + "@" + n + " " + v.slice(range.end); const p = range.start + n.length + 2; textarea.setSelectionRange(p, p); textarea.focus(); close(); };
+  textarea.addEventListener("input", () => { sel = 0; draw(); });
+  textarea.addEventListener("keydown", (e) => {
+    if (!box) return;
+    if (e.key === "ArrowDown") { sel = (sel + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = (sel - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "Enter" || e.key === "Tab") { accept(sel); e.preventDefault(); }
+    else if (e.key === "Escape") close();
+  });
+  textarea.addEventListener("blur", () => setTimeout(close, 150));
+  wrap.addEventListener("mousedown", (e) => { const row = e.target.closest("[data-i]"); if (row && box && box.contains(row)) { e.preventDefault(); accept(Number(row.dataset.i)); } });
+}
+
+// ---------------------------------------------------------------- board
+let state = null, composing = false, boardId = null, openThread = null, sortBy = localStorage.getItem("huntun.sort") || "activity", filterBy = localStorage.getItem("huntun.filter") || "all";
+let threadKey = "", chatKey = "", chatData = null;
+async function boardView(id, threadId) {
+  boardId = id; openThread = threadId; threadKey = ""; chatKey = ""; approvalKey = "";
+  const base = "/api/w/" + id;
+  let layout = "";
+  const refresh = async () => {
+    try { state = await api(base + "/state"); }
+    catch (err) { $("#main").className = ""; $("#main").innerHTML = '<section id="view"><p><a href="#/">← Projects</a></p><p class="error">' + esc(err.message) + '</p></section>'; $("#hstatus").style.display = "none"; return; }
+    for (const a of state.agents) roleOf[a.name] = a.role;
+    if (state.models && state.models.length) MODELS = state.models;
+    if (state.personalities) PERSONAS = state.personalities;
+    const want = state.approved ? "board" : (state.goal_confirmed ? "approve" : "goal");
+    if (want !== layout) {
+      layout = want;
+      $("#main").className = want === "board" ? "board" : "";
+      $("#main").innerHTML = want === "board"
+        ? '<aside><h2>Team</h2><div id="agents"></div></aside><section id="view"><div id="threadsbox"></div></section><aside class="right"><h2>Activity</h2><div class="events" id="events"></div></aside>'
+        : '<section id="view" class="approve-page"><div id="approval"></div><div id="threadsbox"></div></section>';
+      threadKey = ""; approvalKey = ""; goalKey = "";
+    }
+    $("#hgoal").textContent = state.workspace.name + " — " + state.goal; $("#hgoal").title = state.workspace.path + "\n" + state.goal;
+    const lim = state.limits || {};
+    $("#hstatus").style.display = ""; $("#hstatus").textContent = !state.goal_confirmed ? "confirm goal" : !state.approved ? "awaiting approval" : lim.paused ? "limit: " + Object.keys(lim.backends || {}).join(", ") : state.running ? "running" : "paused";
+    $("#hstatus").className = "pill " + (!state.approved ? "busy" : lim.paused ? "off" : state.running ? "on" : "off");
+    drawCounters(lim, state.totals);
+    $("#hactions").innerHTML = (state.approved ? '<button id="toggle" class="' + (state.running ? "secondary" : "ok") + '">' + (state.running ? "Pause all" : "Start all") + '</button>' : '') + '<a class="hint" href="#/">Projects</a>';
+    if ($("#toggle")) $("#toggle").onclick = async () => { try { await api("/api/workspaces/" + id + "/control", { action: state.running ? "pause" : "start" }); } catch (err) { alert(err.message); } refresh(); };
+    if (want === "board") {
+      drawTeam();
+      $("#events").innerHTML = state.events.map(e => '<div class="ev">' + avatar(e.agent, "sm") + '<div class="t"><b>@' + esc(e.agent) + '</b> ' + esc(e.kind) + ' · ' + when(e.created_at) + '<br>' + esc(e.detail.slice(0, 160)) + '</div></div>').join("") || '<div class="hint">Nothing yet.</div>';
+    } else if (want === "approve") {
+      drawApproval(id);
+    } else {
+      drawGoal(id);
+    }
+    drawThreads(false);
+  };
+  const drawTeam = () => {
+    $("#agents").innerHTML = state.agents.filter(a => a.status !== "retired").map(a => {
+      const live = a.live || {}, st = live.status || a.status, info = a.info || {}, u = info.usage || {};
+      const tokens = (u.input || 0) + (u.output || 0) + (u.cache_read || 0);
+      const pct = info.context_limit ? Math.min(100, Math.round(100 * (info.context_tokens || 0) / info.context_limit)) : 0;
+      const working = isWorking(st);
+      return '<div class="agent" data-agent="' + esc(a.name) + '">' + avatar(a.name, "", working) + '<div class="body"><div class="name"><span class="dot ' + esc(st.split(" ")[0]) + '"></span><b>@' + esc(a.name) + '</b>' + (working ? '<span class="dots"></span>' : '') + '</div>' +
+        '<div class="st">' + esc(a.title) + ' · ' + esc((a.model || info.model || "default").replace("claude-", "")) + (info.backend && info.backend !== state.backend ? ' · ' + esc(info.backend) : '') + '</div>' +
+        '<div class="st">' + esc(st) + (live.last_active ? " · " + when(live.last_active) : "") + '</div>' +
+        '<div class="nums"><span><b>' + fmtNum(tokens) + '</b> tok</span><span><b>' + money(u.cost_usd) + '</b></span><span><b>' + (info.cycles || 0) + '</b> cyc</span><span title="context compactions"><b>' + (info.compactions || 0) + '</b> cmp</span></div>' +
+        '<div class="bar' + (pct > 85 ? " hot" : pct > 60 ? " warn" : "") + '" title="context window ' + pct + '% (' + fmtNum(info.context_tokens) + ' / ' + fmtNum(info.context_limit) + ')"><i style="width:' + pct + '%"></i><em>' + pct + '%</em></div></div></div>';
+    }).join("") + '<div class="hint" style="margin-top:8px">default backend: ' + esc(state.backend) + (state.backends ? ' · available: ' + Object.values(state.backends).map(esc).join(", ") : '') + ' · tok / $ / cycles / compactions · bar = context window in use · click an agent for details</div>';
+    $("#agents").onclick = (e) => { const el = e.target.closest("[data-agent]"); if (el) openAgent(id, el.dataset.agent); };
+  };
+  await refresh();
+  timer = setInterval(refresh, 4000);
+}
+
+// header counters: usage-limit pauses / resumes, and how long we have been waiting for tokens
+function drawCounters(lim, totals) {
+  const el = $("#hcounters");
+  const wid = boardId;
+  const est = state && state.estimate ? ' <span class="hint">/ est ' + fmtNum(state.estimate.tokens) + (state.estimate.cost_usd ? ' · ' + money(state.estimate.cost_usd) : '') + '</span>' : "";
+  const tot = totals ? '<span class="c" title="total tokens (input + output + cached) and list-price cost across all agents, and the master\'s estimate for the whole project">Σ <b>' + fmtNum(totals.tokens) + '</b> tok · <b>' + money(totals.cost_usd) + '</b>' + est + '</span>' : "";
+  if (!lim || (!lim.pause_count && !lim.paused)) { el.innerHTML = tot; return; }
+  let wait = "";
+  for (const [b, l] of Object.entries(lim.backends || {})) {
+    const secs = Math.max(0, Math.round((Date.now() - new Date(l.since)) / 1000));
+    const sched = l.resets_at ? ' · resets ' + clock(new Date(l.resets_at * 1000).toISOString()) + (l.next_probe_at ? ' · auto-check ' + clock(new Date(l.next_probe_at * 1000).toISOString()) : '') : ' · no reset time announced';
+    wait += '<span class="c lim" title="' + esc(l.reason || "") + '">⏳ ' + esc(BLABEL[b] || b) + ' limit <b>' + fmtDur(secs) + '</b>' + sched + (l.last_probe ? ' · last check ' + when(l.last_probe) : '') + '</span><button class="small probebtn" data-backend="' + esc(b) + '">Check ' + esc(b) + '</button>';
+  }
+  el.innerHTML = tot + wait + '<span class="c" title="times the team was paused by a usage limit / resumed by the watchdog">limit pauses <b>' + lim.pause_count + '</b> · resumes <b>' + lim.resume_count + '</b></span>' + (lim.gate ? '<span class="c lim">master resuming first…</span>' : '');
+  el.querySelectorAll(".probebtn").forEach(b => b.onclick = async () => { const label = b.textContent; b.disabled = true; b.textContent = "Checking…"; try { const r = await api("/api/workspaces/" + wid + "/probe-limit", { backend: b.dataset.backend }); if (!r.ok) { b.textContent = "Still limited"; setTimeout(() => { b.disabled = false; b.textContent = label; }, 3000); } } catch (err) { alert(err.message); b.disabled = false; b.textContent = label; } });
+}
+const fmtDur = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? h + "h " : "") + (h || m ? m + "m " : "") + sec + "s"; };
+
+// goal page: the master restates the goal and proposes a definition of done; the human confirms or replies
+let goalKey = "";
+function drawGoal(id) {
+  const box = $("#approval");
+  if (!box) return;
+  const w = state.workspace, d = w.goal_draft;
+  const key = w.state + ":" + JSON.stringify(d);
+  if (key === goalKey) return;
+  goalKey = key;
+  if (w.state === "clarifying" || w.state === "planning") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(w.progress || "Master is working") + ' … ' + w.elapsed + 's</p></div>'; return; }
+  if (!d) { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card">' + (w.error ? '<p class="error">' + esc(w.error) + '</p>' : '<p class="hint">Waiting for the master\'s goal check…</p>') + '<p><a href="#/w/' + id + '/setup">back to setup</a></p></div>'; return; }
+  const draftGoal = $("#cgoal") ? $("#cgoal").value : d.goal, draftDod = $("#cdod") ? $("#cdod").value : d.definition_of_done.join("\n");
+  box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Goal check</h3><div class="who" style="margin:8px 0">' + avatar("master") + '<b>@master</b></div><div class="md">' + md(d.message) + '</div>' +
+    (d.assumptions.length ? '<p><b>Assumptions</b></p><ul>' + d.assumptions.map(a => '<li>' + esc(a) + '</li>').join("") + '</ul>' : '') +
+    (d.questions.length ? '<p><b>Questions for you</b></p><ul>' + d.questions.map(q => '<li>' + esc(q) + '</li>').join("") + '</ul>' : '') +
+    (w.error ? '<p class="error">' + esc(w.error) + '</p>' : '') +
+    '<form id="confirmform" style="margin-top:12px"><label>Goal (edit if needed)</label><textarea id="cgoal" style="min-height:64px">' + esc(draftGoal) + '</textarea>' +
+    '<label>Definition of done (one condition per line; edit freely)</label><textarea id="cdod" style="min-height:140px">' + esc(draftDod) + '</textarea>' +
+    '<div class="row"><button class="ok">Confirm goal &amp; plan the team</button><span class="hint">The master then proposes a team for you to approve.</span></div></form></div>' +
+    '<form class="card" id="goalreplyform"><label>Answer the questions or ask for changes</label><textarea id="goalreply" style="min-height:56px" placeholder="e.g. Yes to a web UI, but no auth for now. Done also means it runs with one command."></textarea><div class="row"><button class="secondary">Reply to master</button></div></form>' +
+    '<h2>Discussion</h2>';
+  $("#confirmform").onsubmit = async (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; try { await api("/api/workspaces/" + id + "/confirm-goal", { goal: $("#cgoal").value, definition_of_done: $("#cdod").value }); goalKey = ""; } catch (err) { alert(err.message); btn.disabled = false; } };
+  $("#goalreplyform").onsubmit = async (e) => { e.preventDefault(); const message = $("#goalreply").value.trim(); if (!message) return; try { await api("/api/workspaces/" + id + "/goal-reply", { message }); goalKey = ""; } catch (err) { alert(err.message); } };
+}
+
+// approval page: the master's proposal, editable, must be approved before anything runs
+let approvalKey = "";
+function drawApproval(id) {
+  const box = $("#approval");
+  if (!box) return;
+  const key = state.workspace.state + ":" + state.agents.map(a => a.name + a.model + a.effort).join(",");
+  if (key === approvalKey) return;
+  approvalKey = key;
+  if (state.workspace.state === "planning" || state.workspace.state === "clarifying") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(state.workspace.progress || "Master is revising the plan") + ' … ' + state.workspace.elapsed + 's</p></div>'; return; }
+  const cards = state.agents.filter(a => a.role !== "master").map(a => {
+    const brief = a.brief.split("\n\nModel choice:")[0], why = (a.brief.split("\n\nModel choice:")[1] || "").trim();
+    return '<div class="plan-agent" data-name="' + esc(a.name) + '">' + avatar(a.name, "lg") +
+      '<div><div class="who"><b>@' + esc(a.name) + '</b><span class="pill">' + esc(a.title) + '</span></div><div class="brief">' + esc(brief) + '</div>' + (why ? '<div class="why">Why this model: ' + esc(why) + '</div>' : '') + (a.estimated_cycles ? '<div class="why">Estimate: ~' + a.estimated_cycles + ' cycles × ~' + fmtNum(a.tokens_per_cycle) + ' tokens' + estFor(a.name) + '</div>' : '') +
+      '<div class="why" style="margin-top:8px"><label>Personality</label><select class="pers">' + ["human", "work"].map(g => '<optgroup label="' + (g === "human" ? "People" : "Working styles") + '">' + PERSONAS.filter(pp => (pp.group || "work") === g).map(pp => '<option value="' + esc(pp.id) + '"' + (pp.id === (a.personality_preset || "") ? " selected" : "") + '>' + esc(pp.name) + '</option>').join("") + '</optgroup>').join("") + '<option value="custom"' + (!PERSONAS.some(pp => pp.id === a.personality_preset) ? " selected" : "") + '>Custom…</option></select>' +
+      '<textarea class="perstext" style="min-height:56px;margin-top:6px" placeholder="Describe temperament, board voice, and working style">' + esc(a.personality) + '</textarea></div></div>' +
+      '<div class="ctl"><label>Model</label><select class="mdl">' + modelOptions(a.model) + '</select>' + (a.backend ? '<span class="hint">runs via ' + esc(BLABEL[a.backend] || a.backend) + '</span>' : '') +
+      '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (a.effort || "high") ? " selected" : "") + '>' + e + '</option>').join("") + '</select>' +
+      '<button type="button" class="small danger rm">Remove</button></div></div>';
+  }).join("");
+  const e = state.estimate;
+  const estFor = (n) => { const p = e && e.per_agent ? e.per_agent.find(x => x.name === n) : null; return p ? ' = ~' + fmtNum(p.tokens) + (p.cost_usd ? ' (' + money(p.cost_usd) + ')' : '') : ''; };
+  const estBox = e ? '<div class="card"><h3>Estimate to finish</h3><p><b>' + fmtNum(e.tokens) + ' tokens</b>' + (e.cost_usd ? ' · about <b>' + money(e.cost_usd) + '</b> at list prices' : ' · cost not tracked on this backend') + ' · ' + e.cycles + ' agent cycles</p>' + (e.notes ? '<p class="hint">' + esc(e.notes) + '</p>' : '') + '<p class="hint">Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.</p></div>' : '';
+  box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
+    estBox + '<h2>Team</h2>' + cards +
+    '<div class="plan-actions"><button class="ok" id="approvebtn">Approve plan</button><span class="hint">Agents load paused; press Start all afterwards.</span></div>' +
+    '<form class="card" id="replanform"><label>Ask the master to revise</label><textarea id="feedback" style="min-height:56px" placeholder="e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA"></textarea><div class="row"><button class="secondary">Request changes</button></div></form>' +
+    '<h2>Discussion</h2>';
+  box.querySelectorAll(".plan-agent").forEach(card => {
+    const sel = $(".pers", card), ta = $(".perstext", card);
+    sel.onchange = () => { const pp = PERSONAS.find(x => x.id === sel.value); if (pp) ta.value = pp.text; };
+    ta.oninput = () => { const pp = PERSONAS.find(x => x.id === sel.value); if (pp && ta.value.trim() !== pp.text) sel.value = "custom"; };
+  });
+  box.querySelectorAll(".rm").forEach(b => b.onclick = () => { const card = b.closest(".plan-agent"); card.dataset.remove = card.dataset.remove ? "" : "1"; card.classList.toggle("removed", !!card.dataset.remove); b.textContent = card.dataset.remove ? "Undo" : "Remove"; });
+  $("#approvebtn").onclick = async () => {
+    const agents = [...box.querySelectorAll(".plan-agent")].map(c => ({ name: c.dataset.name, model: $(".mdl", c).value, effort: $(".eff", c).value, remove: !!c.dataset.remove, personality_preset: $(".pers", c).value, personality: $(".perstext", c).value }));
+    $("#approvebtn").disabled = true;
+    try { await api("/api/workspaces/" + id + "/approve", { agents }); approvalKey = ""; state = null; route(); } catch (err) { alert(err.message); $("#approvebtn").disabled = false; }
+  };
+  $("#replanform").onsubmit = async (e) => { e.preventDefault(); const feedback = $("#feedback").value.trim(); if (!feedback) return; try { await api("/api/workspaces/" + id + "/replan", { feedback }); approvalKey = ""; } catch (err) { alert(err.message); } };
+}
+
+// threads: sortable list, each expands in place into a chat
+function sortedThreads() {
+  const ts = state.threads.filter(t => filterBy === "all" || (filterBy === "commits" ? !!t.commit_sha : !t.commit_sha));
+  ts.sort((a, b) => sortBy === "posted" ? (b.created_at < a.created_at ? -1 : 1) : (b.last_activity < a.last_activity ? -1 : 1));
+  return ts;
+}
+async function drawThreads(force) {
+  if (!state) return;
+  const id = boardId, base = "/api/w/" + id;
+  const names = state.agents.filter(a => a.status !== "retired").map(a => a.name);
+  const key = sortBy + "|" + filterBy + "|" + composing + "|" + openThread + "|" + JSON.stringify(state.threads.map(t => [t.id, t.last_activity, t.comment_count]));
+  if (key !== threadKey || force) {
+    threadKey = key;
+    const draftT = $("#ntitle") ? $("#ntitle").value : "", draftB = $("#nbody") ? $("#nbody").value : "", draftC = $("#cbody") ? $("#cbody").value : "";
+    const list = sortedThreads().map(t => {
+      const open = t.id === openThread;
+      return '<div class="thread' + (open ? " open" : "") + '" id="th' + t.id + '"><div class="head" data-open="' + t.id + '">' + avatar(t.author) + '<div class="txt"><div class="hrow"><span class="who"><b>@' + esc(t.author) + '</b><span class="meta">' + when(t.created_at) + (t.commit_sha ? ' · <code>' + esc(t.commit_sha) + '</code>' : '') + '</span></span><span class="count">' + t.comment_count + ' ' + (t.comment_count === 1 ? "reply" : "replies") + (t.last_activity !== t.created_at ? ' · ' + when(t.last_activity) : '') + ' ' + (open ? "▲" : "▼") + '</span></div>' +
+        '<div class="title">' + esc(t.title) + (t.commit_sha ? '<span class="tag">commit</span>' : '') + '</div>' + (open ? '' : '<div class="snip">' + esc(t.snippet.replace(/[#*`>_-]+/g, " ").replace(/\s+/g, " ").trim()) + '</div>') + '</div></div>' +
+        (!open && t.last_comments.length ? '<div class="replies">' + t.last_comments.map(c => '<div class="reply">' + avatar(c.author, "sm") + '<div class="snip"><b>@' + esc(c.author) + '</b> <span class="meta">' + when(c.created_at) + '</span><br>' + esc(c.snippet.replace(/\s+/g, " ")) + '</div></div>').join("") + '</div>' : '') +
+        (open ? '<div class="chat" id="chat"><div class="messages" id="messages"><span class="hint">loading…</span></div><form class="compose" id="cform"><div class="compose-wrap"><textarea id="cbody" placeholder="Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act."></textarea></div><div class="row"><button>Send</button><span class="hint">Cmd/Ctrl-Enter to send</span></div></form></div>' : '') + '</div>';
+    }).join("") || '<p class="hint">' + (state.threads.length ? "Nothing matches this filter." : "No threads yet. Agents post here when they have something to discuss; you can also start one.") + '</p>';
+    $("#threadsbox").innerHTML = '<div class="toolbar"><h2 style="margin:0">Threads</h2><button class="small" id="newbtn">' + (composing ? "Cancel" : "+ New thread") + '</button><div class="sort"><label>show</label><select id="filtersel"><option value="all"' + (filterBy === "all" ? " selected" : "") + '>everything</option><option value="discussions"' + (filterBy === "discussions" ? " selected" : "") + '>discussions</option><option value="commits"' + (filterBy === "commits" ? " selected" : "") + '>commit updates</option></select><label>sort</label><select id="sortsel"><option value="activity"' + (sortBy === "activity" ? " selected" : "") + '>last response</option><option value="posted"' + (sortBy === "posted" ? " selected" : "") + '>time posted</option></select></div></div>' +
+      (composing ? '<form class="card composer top" id="newform"><input id="ntitle" placeholder="Title" autocomplete="off"><div class="compose-wrap"><textarea id="nbody" placeholder="Ask a question or add a requirement. Type @ to tag an agent."></textarea></div><div class="row"><button>Post thread</button><span class="hint">Tagged agents are woken up and decide whether to act.</span></div></form>' : '') +
+      '<div id="threads">' + list + '</div>';
+    $("#newbtn").onclick = () => { composing = !composing; drawThreads(true); if (composing) setTimeout(() => $("#ntitle") && $("#ntitle").focus(), 0); };
+    $("#sortsel").onchange = (e) => { sortBy = e.target.value; localStorage.setItem("huntun.sort", sortBy); drawThreads(true); };
+    $("#filtersel").onchange = (e) => { filterBy = e.target.value; localStorage.setItem("huntun.filter", filterBy); drawThreads(true); };
+    $("#threads").onclick = (e) => { const h = e.target.closest("[data-open]"); if (!h) return; const tid = Number(h.dataset.open); openThread = openThread === tid ? null : tid; history.replaceState(null, "", "#/w/" + id + (openThread ? "/t/" + openThread : "")); chatKey = ""; drawThreads(true); };
+    if (composing) {
+      $("#ntitle").value = draftT; $("#nbody").value = draftB;
+      attachMentions($("#nbody"), names);
+      $("#newform").onsubmit = async (e) => { e.preventDefault(); const title = $("#ntitle").value.trim(), body = $("#nbody").value.trim(); if (!title || !body) return; const t = await api(base + "/threads", { title, body }); composing = false; openThread = t.id; sortBy = sortBy; chatKey = ""; state.threads.unshift({ id: t.id, title, author: "human", created_at: t.created_at, last_activity: t.created_at, comment_count: 0, snippet: body, last_comments: [], commit_sha: null }); drawThreads(true); };
+    }
+    if (openThread && $("#cbody")) {
+      $("#cbody").value = draftC;
+      attachMentions($("#cbody"), names);
+      $("#cbody").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); $("#cform").requestSubmit(); } });
+      $("#cform").onsubmit = async (e) => { e.preventDefault(); const body = $("#cbody").value.trim(); if (!body) return; await api(base + "/comments", { thread_id: openThread, body }); $("#cbody").value = ""; chatKey = ""; drawChat(); };
+      chatKey = "";
+    }
+  }
+  if (openThread) drawChat();
+}
+async function drawChat() {
+  const box = $("#messages"); if (!box) return;
+  let data; try { data = await api("/api/w/" + boardId + "/threads/" + openThread); } catch (err) { box.innerHTML = '<span class="error">' + esc(err.message) + '</span>'; return; }
+  const key = openThread + ":" + data.comments.length + ":" + (data.comments.at(-1)?.id || 0);
+  if (key === chatKey) return;
+  chatKey = key;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60 || !box.querySelector(".msg");
+  const bubble = (m, first) => '<div class="msg' + (m.author === "human" ? " me" : "") + (first ? " first" : "") + '">' + avatar(m.author) + '<div class="bubble"><div class="bhead"><b>@' + esc(m.author) + '</b><span class="meta">' + when(m.created_at) + '</span></div><div class="md">' + md(m.body) + '</div></div></div>';
+  box.innerHTML = bubble(data.thread, true) + data.comments.map(c => bubble(c, false)).join("");
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+// ---------------------------------------------------------------- agent dialog
+let dlgTimer = null;
+async function openAgent(id, name) {
+  const dlg = $("#agentdlg");
+  const spec = state.agents.find(a => a.name === name) || { name, title: "", brief: "", role: "" };
+  const live = spec.live || {}, st = live.status || spec.status;
+  const brief = spec.brief.split("\n\nModel choice:")[0], why = (spec.brief.split("\n\nModel choice:")[1] || "").trim();
+  dlg.innerHTML = '<div class="dlg"><div class="top">' + avatar(name, "lg", isWorking(st)) + '<div class="body"><div class="title"><h3>@' + esc(name) + '</h3><span class="pill">' + esc(spec.title) + '</span><span class="pill ' + (isWorking(st) ? "on" : /paused|waiting/.test(st) ? "off" : /error|crashed/.test(st) ? "err" : "") + '" id="dlgstatus">' + esc(st) + '</span><button class="small secondary" id="dlgclose" style="margin-left:auto">Close</button></div>' +
+    '<div class="meta" style="margin-top:6px">' + (isWorking(st) ? '<span class="dots"></span> ' : '') + '<span id="dlgtask">' + esc(live.task || "") + '</span></div>' +
+    (spec.personality && spec.role !== "master" ? '<p style="margin:8px 0 0"><i>' + esc(spec.personality) + '</i></p>' : '') + '</div></div>' +
+    '<div class="tiles" id="tiles"></div>' +
+    '<div class="cols"><div><h2>Role</h2><p><b>' + esc(spec.title) + '</b> <span class="meta">(' + esc(spec.role) + ')</span></p><p>' + esc(brief) + '</p>' + (why ? '<p class="meta"><i>Model choice: ' + esc(why) + '</i></p>' : '') + (spec.estimated_cycles ? '<p class="meta">Estimated ~' + spec.estimated_cycles + ' cycles × ~' + fmtNum(spec.tokens_per_cycle) + ' tokens</p>' : '') + '</div>' +
+    '<div><h2>Current task</h2><p id="dlgcur">—</p><h2>Last cycle</h2><p id="dlglast" class="meta">—</p><h2>Uncommitted files</h2><p id="dlgfiles" class="meta">—</p></div></div>' +
+    '<div class="notes" id="dlgcycles"><h2>Recent cycles</h2><p class="hint">Loading…</p></div></div>';
+  $("#dlgclose", dlg).onclick = () => dlg.close();
+  const pull = async () => {
+    let d; try { d = await api("/api/w/" + id + "/agents/" + name + "/activity?after=0"); } catch (err) { $("#dlgcycles", dlg).innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
+    const info = d.agent, lv = d.live || {}, u = info.usage || {};
+    const tokens = (u.input || 0) + (u.output || 0) + (u.cache_read || 0);
+    const pct = info.context_limit ? Math.min(100, Math.round(100 * (info.context_tokens || 0) / info.context_limit)) : 0;
+    $("#tiles", dlg).innerHTML = [["Model", esc(info.model)], ["Effort", esc(info.effort)], ["Backend", esc(info.backend)], ["Cycles", info.cycles + (spec.estimated_cycles ? " / ~" + spec.estimated_cycles : "") + (info.reviews ? " · " + info.reviews + " rev" : "")],
+      ["Tokens", fmtNum(tokens) + (u.cache_read ? ' <span style="display:inline">' + fmtNum(u.cache_read) + ' cached</span>' : "")], ["Cost", money(u.cost_usd)],
+      ["Context", pct + '%<div class="bar' + (pct > 85 ? " hot" : pct > 60 ? " warn" : "") + '"><i style="width:' + pct + '%"></i></div>'], ["Compactions", info.compactions || 0]].map(([k, v]) => '<div class="tile"><span>' + k + '</span><b>' + v + '</b></div>').join("");
+    $("#dlgstatus", dlg).textContent = lv.status || ""; $("#dlgtask", dlg).textContent = lv.task || "";
+    $("#dlgcur", dlg).textContent = info.current_task || "—"; $("#dlglast", dlg).textContent = info.last_summary || "—";
+    $("#dlgfiles", dlg).textContent = info.touched_files && info.touched_files.length ? info.touched_files.join(", ") : "none";
+    const cycles = (d.journal || []).slice().reverse();
+    $("#dlgcycles", dlg).innerHTML = '<h2>Recent cycles</h2>' + (cycles.length ? cycles.map(j => '<div class="card"><div class="meta">cycle ' + j.cycle + ' · ' + esc(j.kind) + ' · ' + when(j.at) + (j.commits && j.commits.length ? ' · commits ' + j.commits.map(esc).join(", ") : '') + '</div><div class="md">' + md(String(j.summary || "")) + '</div>' + (j.next ? '<div class="meta">next: ' + esc(j.next) + '</div>' : '') + '</div>').join("") : '<p class="hint">No cycles yet.</p>');
+  };
+  dlg.showModal();
+  clearInterval(dlgTimer);
+  await pull();
+  dlgTimer = setInterval(() => { if (dlg.open) pull(); else clearInterval(dlgTimer); }, 4000);
+  dlg.onclose = () => clearInterval(dlgTimer);
+}
+route();
+</script>
+</body>
+</html>
