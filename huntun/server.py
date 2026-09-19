@@ -266,6 +266,22 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 tid = int(body.get("thread_id") or 0)
                 if not text or not tid:
                     raise HttpError(400, "thread_id and body are required")
+                e = self._entry(wid)
+                if not e.approved() and e.state not in ("planning", "clarifying"):
+                    # Before kickoff, replying on the goal or plan thread is how the human asks the master to revise.
+                    goal_tid = int(store.get_control("goal_thread_id", "0") or 0)
+                    plan_tid = int(store.get_control("plan_thread_id", "0") or 0)
+                    try:
+                        if tid == goal_tid and not e.summary().get("goal_confirmed"):
+                            hub.call(hub.goal_reply(wid, text), timeout=0.5)
+                            return self._json(202, {"revising": "goal", "thread_id": tid})
+                        if tid == plan_tid and e.summary().get("goal_confirmed"):
+                            hub.call(hub.replan(wid, text), timeout=0.5)
+                            return self._json(202, {"revising": "plan", "thread_id": tid})
+                    except TimeoutError:
+                        return self._json(202, {"revising": "goal" if tid == goal_tid else "plan", "thread_id": tid})
+                    except ValueError as ex:
+                        raise HttpError(409, str(ex)) from None
                 return self._json(201, store.add_comment(tid, "human", text))
             raise HttpError(404, "not found")
 

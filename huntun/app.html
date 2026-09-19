@@ -476,6 +476,9 @@ function drawApproval(id) {
   if (key === approvalKey) return;
   approvalKey = key;
   if (state.workspace.state === "planning" || state.workspace.state === "clarifying") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(state.workspace.progress || "Master is revising the plan") + ' … ' + state.workspace.elapsed + 's</p></div>'; return; }
+  const e = state.estimate;
+  const estFor = (n) => { const p = e && e.per_agent ? e.per_agent.find(x => x.name === n) : null; return p ? ' = ~' + fmtNum(p.tokens) + (p.cost_usd ? ' (' + money(p.cost_usd) + ')' : '') : ''; };
+  const estBox = e ? '<div class="card"><h3>Estimate to finish</h3><p><b>' + fmtNum(e.tokens) + ' tokens</b>' + (e.cost_usd ? ' · about <b>' + money(e.cost_usd) + '</b> at list prices' : ' · cost not tracked on this backend') + ' · ' + e.cycles + ' agent cycles</p>' + (e.notes ? '<p class="hint">' + esc(e.notes) + '</p>' : '') + '<p class="hint">Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.</p></div>' : '';
   const cards = state.agents.filter(a => a.role !== "master").map(a => {
     const brief = a.brief.split("\n\nModel choice:")[0], why = (a.brief.split("\n\nModel choice:")[1] || "").trim();
     return '<div class="plan-agent" data-name="' + esc(a.name) + '">' + avatar(a.name, "lg") +
@@ -486,9 +489,6 @@ function drawApproval(id) {
       '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (a.effort || "high") ? " selected" : "") + '>' + e + '</option>').join("") + '</select>' +
       '<button type="button" class="small danger rm">Remove</button></div></div>';
   }).join("");
-  const e = state.estimate;
-  const estFor = (n) => { const p = e && e.per_agent ? e.per_agent.find(x => x.name === n) : null; return p ? ' = ~' + fmtNum(p.tokens) + (p.cost_usd ? ' (' + money(p.cost_usd) + ')' : '') : ''; };
-  const estBox = e ? '<div class="card"><h3>Estimate to finish</h3><p><b>' + fmtNum(e.tokens) + ' tokens</b>' + (e.cost_usd ? ' · about <b>' + money(e.cost_usd) + '</b> at list prices' : ' · cost not tracked on this backend') + ' · ' + e.cycles + ' agent cycles</p>' + (e.notes ? '<p class="hint">' + esc(e.notes) + '</p>' : '') + '<p class="hint">Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.</p></div>' : '';
   box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
     estBox + '<h2>Team</h2>' + cards +
     '<div class="plan-actions"><button class="ok" id="approvebtn">Approve plan</button><span class="hint">Agents load paused; press Start all afterwards.</span></div>' +

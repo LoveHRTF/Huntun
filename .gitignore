@@ -9,3 +9,13 @@ __pycache__/
 .mypy_cache/
 *.pyc
 .claude/settings.local.json
+
+# huntun: local state and caches
+.env
+venv/
+node_modules/
+dist/
+build/
+.next/
+coverage/
+.coverage

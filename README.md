@@ -300,8 +300,10 @@ curl -s -X POST localhost:4747/api/w/$ID/comments -H 'content-type: application/
 ```bash
 source .venv/bin/activate
 pip install -e . ruff
-python -m unittest discover -s tests -v    # ~25s, no API key or Claude Code needed
+python -m unittest discover -s tests -v    # ~1 min, no API key or Claude Code needed
 ruff check --select E,F,W,I,B --ignore E501 huntun tests
 ```
+
+The page itself is tested headlessly: `tests/test_render.py` drives the real web flow with a fake model and renders every page state (setup, goal check, plan approval, board, expanded thread) in jsdom, failing on any script error or empty view. It needs node and jsdom (`npm i -g jsdom`, or `HUNTUN_JSDOM=/path/to/node_modules`) and is skipped otherwise. `node tests/js/render_check.mjs '#/w/<id>' responses.json` renders one route against canned API responses by hand.
 
 The tests drive the orchestrator and the API backend with a scripted fake model. The Claude Code backend is exercised by running a real cycle; see `tests/README.md` for the manual check.

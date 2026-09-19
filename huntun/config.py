@@ -68,7 +68,9 @@ def resolve_backend(config: HuntunConfig) -> str:
         return "api"
     if shutil.which("claude"):
         return "claude-code"
-    if os.environ.get("HUNTUN_CODEX_BIN") or shutil.which("codex"):
+    from .models import available_backends
+
+    if "codex" in available_backends():
         return "codex"
     raise RuntimeError(
         "No model backend available. Set ANTHROPIC_API_KEY (backend 'api'), or install and log in to Claude Code "

@@ -46,9 +46,27 @@ def available_backends() -> dict[str, str]:
         out["api"] = "Anthropic API key"
     if shutil.which("claude"):
         out["claude-code"] = "Claude Code login"
-    if os.environ.get("HUNTUN_CODEX_BIN") or shutil.which("codex"):
+    codex = os.environ.get("HUNTUN_CODEX_BIN") or shutil.which("codex")
+    if codex and _codex_works(codex):
         out["codex"] = "OpenAI Codex login"
     return out
+
+
+_codex_ok: dict[str, bool] = {}
+
+
+def _codex_works(path: str) -> bool:
+    """`codex --version` must succeed; a broken install (missing platform binary) otherwise looks available."""
+    if path in _codex_ok:
+        return _codex_ok[path]
+    import subprocess
+
+    try:
+        ok = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    _codex_ok[path] = ok
+    return ok
 
 
 def backend_for_model(model_id: str | None, available: dict[str, str] | None = None, default: str = "") -> str:

@@ -148,6 +148,7 @@ def goal_prompt(goal: str, context: str, existing: str, conversation: str = "") 
 {existing or ""}
 {f"# Conversation so far{chr(10)}{conversation}{chr(10)}" if conversation else ""}
 Restate the goal precisely, propose a definition of done (concrete, checkable conditions), list the assumptions you are making, and ask only the questions whose answers would change the team or the plan. Be brief and conversational; the human will confirm, edit, or reply.
+The team can only work inside this project directory. If the human describes a project that lives somewhere else, say plainly in your message that they should open that directory as the project instead, and keep the goal about this directory.
 {"Revise your proposal to take the human's reply into account." if conversation else ""}
 Submit by calling the propose_goal tool."""
 
