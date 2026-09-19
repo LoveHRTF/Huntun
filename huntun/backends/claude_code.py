@@ -151,17 +151,19 @@ class ClaudeCodeBackend:
         t = tool(tool_name, description, schema)(handler)
         options = ClaudeAgentOptions(
             mcp_servers={"huntun": create_sdk_mcp_server("huntun", tools=[t])},
+            tools=[],  # no built-in tools: this is a one-shot decision from the material in the prompt, not an exploration
             allowed_tools=[f"mcp__huntun__{tool_name}"],
-            disallowed_tools=BUILTIN_TOOLS + ["Task", "Agent"],
+            disallowed_tools=BUILTIN_TOOLS + ["Task", "Agent", "ToolSearch", "Skill", "LS"],
             permission_mode="acceptEdits",
             model=model or None,
             effort=effort if effort in ("low", "medium", "high", "xhigh", "max") else None,  # type: ignore[arg-type]
-            max_turns=4,
+            max_turns=10,
             setting_sources=[],
+            system_prompt="You answer by calling the single tool you are given, using only the information in the message. You have no file, shell, or web access here; do not try to explore.",
         )
         last_text = ""
         async with ClaudeSDKClient(options=options) as client:
-            await client.query(prompt + f"\n\nSubmit your answer by calling the {tool_name} tool exactly once.")
+            await client.query(prompt + f"\n\nEverything you need is above; you cannot explore files or run commands in this step. Submit your answer now by calling the {tool_name} tool exactly once.")
             async for msg in client.receive_response():
                 if isinstance(msg, AssistantMessage):
                     for b in msg.content:
