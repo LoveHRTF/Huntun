@@ -476,6 +476,15 @@ function drawApproval(id) {
   if (key === approvalKey) return;
   approvalKey = key;
   if (state.workspace.state === "planning" || state.workspace.state === "clarifying") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(state.workspace.progress || "Master is revising the plan") + ' … ' + state.workspace.elapsed + 's</p></div>'; return; }
+  if (!state.workspace.initialized) {
+    box.innerHTML = '<div class="card"><h3>Team planning did not finish</h3><p class="error">' + esc(state.workspace.error || "No team plan has been saved yet.") + '</p><button id="retryplan">Retry team planning</button></div>';
+    $("#retryplan").onclick = async () => {
+      const btn = $("#retryplan"); btn.disabled = true;
+      try { await api("/api/workspaces/" + id + "/confirm-goal", { goal: state.goal, definition_of_done: state.definition_of_done }); approvalKey = ""; }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    };
+    return;
+  }
   const e = state.estimate;
   const estFor = (n) => { const p = e && e.per_agent ? e.per_agent.find(x => x.name === n) : null; return p ? ' = ~' + fmtNum(p.tokens) + (p.cost_usd ? ' (' + money(p.cost_usd) + ')' : '') : ''; };
   const estBox = e ? '<div class="card"><h3>Estimate to finish</h3><p><b>' + fmtNum(e.tokens) + ' tokens</b>' + (e.cost_usd ? ' · about <b>' + money(e.cost_usd) + '</b> at list prices' : ' · cost not tracked on this backend') + ' · ' + e.cycles + ' agent cycles</p>' + (e.notes ? '<p class="hint">' + esc(e.notes) + '</p>' : '') + '<p class="hint">Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.</p></div>' : '';

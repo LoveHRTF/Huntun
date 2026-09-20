@@ -45,7 +45,7 @@ PLAN_SCHEMA: dict[str, Any] = {
                     "estimated_cycles": {"type": "integer", "description": "How many work cycles this agent will likely need to finish its part of the project"},
                     "tokens_per_cycle": {"type": "integer", "description": "Typical tokens consumed per cycle for this agent (input + output + cached reads). A focused coding cycle is roughly 150000-400000; a review or QA cycle roughly 80000-200000."},
                 },
-                "required": ["name", "role", "title", "brief", "model", "effort", "why", "personality", "estimated_cycles", "tokens_per_cycle"],
+                "required": ["name", "role", "title", "brief", "model", "effort", "why", "personality", "personality_note", "estimated_cycles", "tokens_per_cycle"],
                 "additionalProperties": False,
             },
         },
