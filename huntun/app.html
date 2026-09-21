@@ -842,8 +842,8 @@ const office = (() => {
     const team = st.agents.filter(x => x.status !== "retired").map(x => x.name);
     const tags = tagsIn(text), targets = tags.filter(n => team.includes(n) && n !== a.name);
     const announce = tags.includes("all") || tags.includes("human") || targets.length > 1;
-    c.bang = Date.now() + 2500; c.say = text.slice(0, 140); c.sayStart = performance.now(); c.sayUntil = Date.now() + 14000;
     const until = Date.now() + 26000;
+    c.bang = Date.now() + 2500; c.say = text.slice(0, 140); c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = true;
     if (announce) { let k = 0; while (k < 6 && Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "announce" && o.talk.spot[0] === FRONT[0] + k * 2)) k++; c.talk = { kind: "announce", until, spot: [FRONT[0] + k * 2, FRONT[1]], face: "down" }; }
     else if (targets.length === 1 && chars[targets[0]] && !chars[targets[0]].hidden) c.talk = { kind: "visit", until, target: targets[0] };
     else c.talk = { kind: "here", until };
@@ -882,7 +882,7 @@ const office = (() => {
         if (performance.now() < c.enterAt || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) continue;
         c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
         const others = Object.values(chars).filter(o => o !== c);
-        if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; }
+        if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
@@ -894,7 +894,7 @@ const office = (() => {
             c.sleepReady = true; c.deskWait = null;
             // only about a third of them comment on it, and never the late-comer (who already apologised)
             const late = c.lateComer; c.lateComer = false;
-            if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[c.idx % NOTHING_TO_DO.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; }
+            if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[c.idx % NOTHING_TO_DO.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
           }
         }
         const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
@@ -924,24 +924,29 @@ const office = (() => {
       return;
     }
     const flip = c.dir === "right";
-    drawSprite(sprite(c.dir, c.frame), x, y, flip, c.pal, c.cap);
+    const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
+    const talking = c.talk && !c.moving && !c.steps.length && c.mode === "talk";
+    const tick = Math.floor(t * 7 + c.idx) % 2, bobY = working && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
+    drawSprite(sprite(c.dir, c.frame), x, y + bobY, flip, c.pal, c.cap);
+    if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.28)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
+    if (talking) {                                                                 // gesturing while talking: one arm up, then the other
+      const arm = Math.floor(t * 2 + c.idx) % 2, skin = c.pal.s;
+      ctx.fillStyle = skin;
+      if (c.dir === "down" || c.dir === "up") ctx.fillRect(arm ? x + 26 : x + 2, y + 20 - (Math.floor(t * 4) % 2) * 2, 4, 6); else ctx.fillRect(flip ? x + 26 : x + 2, y + 18 - (Math.floor(t * 4) % 2) * 3, 4, 6);
+    }
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
-    if (c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride) {
-      const tick = Math.floor(t * 7 + c.idx) % 2, skin = c.pal.s;
-      if (c.dir === "down") {                                                      // hands on the keyboard below, alternating
-        ctx.fillStyle = skin; ctx.fillRect(x + 6, c.py + 36 + tick * 2, 6, 4); ctx.fillRect(x + 20, c.py + 36 + (1 - tick) * 2, 6, 4);
-        if (Math.floor(t * 9 + c.idx) % 5 === 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 12 + (tick ? 6 : 0), c.py + 38, 2, 2); }
-      } else {                                                                   // back to the camera: elbows and shoulders work, the screen lights the desk
-        ctx.fillStyle = skin; ctx.fillRect(x + 1, y + 26 + tick * 2, 4, 3); ctx.fillRect(x + 27, y + 26 + (1 - tick) * 2, 4, 3);
-        ctx.fillStyle = Math.floor(t * 5 + c.idx) % 3 ? "rgba(120,200,255,.35)" : "rgba(120,200,255,.15)"; ctx.fillRect(x + 6, y - 14, 20, 6);
-      }
+    if (working && c.dir !== "down") {                                            // back to the camera: elbows and shoulders work, the screen lights the desk
+      const skin = c.pal.s;
+      ctx.fillStyle = skin; ctx.fillRect(x + 1, y + 26 + tick * 2, 4, 3); ctx.fillRect(x + 27, y + 26 + (1 - tick) * 2, 4, 3);
+      ctx.fillStyle = Math.floor(t * 5 + c.idx) % 3 ? "rgba(120,200,255,.35)" : "rgba(120,200,255,.15)"; ctx.fillRect(x + 6, y - 14, 20, 6);
     }
     if (c.bang > Date.now()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
   }
   function drawBubble(c) {
     if (!c.say || Date.now() > c.sayUntil) return;
     const lines = wrapLines(c.say, 22).slice(0, 4);
-    const shown = Math.floor((performance.now() - c.sayStart) / 1000 * 40);
+    const elapsed = (performance.now() - c.sayStart) / 1000, total = lines.reduce((n, l) => n + l.length, 0), cycle = total / 40 + 4;
+    const shown = Math.floor((c.sayLoop ? elapsed % cycle : elapsed) * 40);
     ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "left";
     const lw = Math.max(...lines.map(l => ctx.measureText(l).width)), bw = Math.min(W - 16, Math.ceil(lw) + 16), bh = lines.length * 12 + 12;
     let bx = Math.round(c.px + 16 - bw / 2); bx = Math.max(4, Math.min(W - bw - 4, bx));
@@ -985,7 +990,16 @@ const office = (() => {
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
-    for (const c of order) { const d = DESKS[c.idx]; if (d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1]) { TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskLBack(); TX += T; (d.dual ? TILES.deskRBack : TILES.deskPlain)(); } }
+    for (const c of order) {
+      const d = DESKS[c.idx]; if (!(d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
+      TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskLBack(); TX += T; (d.dual ? TILES.deskRBack : TILES.deskPlain)();
+      if (c.mode === "work" && !c.faceOverride) {
+        const tick = Math.floor(t * 7 + c.idx) % 2, dx = d.desk[0] * T, dy = d.desk[1] * T;
+        ctx.fillStyle = c.pal.s; ctx.fillRect(dx + 1, dy + 8 + tick * 2, 4, 5); ctx.fillRect(dx + 27, dy + 8 + (1 - tick) * 2, 4, 5);      // forearms either side of the monitor back
+        ctx.fillStyle = c.pal.c; ctx.fillRect(dx + 1, dy + 5 + tick * 2, 4, 3); ctx.fillRect(dx + 27, dy + 5 + (1 - tick) * 2, 4, 3);
+        if (Math.floor(t * 9 + c.idx) % 4 === 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(dx + (tick ? 3 : 28), dy + 10, 2, 2); }
+      }
+    }
     ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center";
     for (const c of order) { if (c.hidden) continue; const label = c.name.toUpperCase().slice(0, 12); ctx.fillStyle = "#ffffff"; ctx.fillText(label, c.px + 17, c.py + 41); ctx.fillStyle = "#3b2a1e"; ctx.fillText(label, c.px + 16, c.py + 40); }
     for (const c of order) if (!c.hidden) drawBubble(c);
