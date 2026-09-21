@@ -783,6 +783,11 @@ const office = (() => {
   const key = (x, y) => y * MW + x;
   function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self || o.hidden) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
   function path(from, to, self) {
+    // Prefer a route around other people; if none exists, route through them (the walker waits at a blocked step);
+    // if there is no route at all, return no steps rather than teleporting.
+    return bfs(from, to, self) ?? bfs(from, to, null) ?? [];
+  }
+  function bfs(from, to, self) {
     if (from[0] === to[0] && from[1] === to[1]) return [];
     const prev = new Map([[key(from[0], from[1]), null]]); const q = [from];
     while (q.length) {
@@ -796,7 +801,7 @@ const office = (() => {
         q.push([nx, ny]);
       }
     }
-    return [to];
+    return null;
   }
 
   // ---- characters
@@ -865,7 +870,7 @@ const office = (() => {
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
-      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
+      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
       if (!c.moving && c.steps.length) {
         const [nx, ny] = c.steps[0];
         if (heldBy(nx, ny, c)) { c.wait = (c.wait || 0) + dt; if (c.wait > 0.8) { c.wait = 0; c.steps = path([c.tx, c.ty], c.goal || [nx, ny], c); } }
