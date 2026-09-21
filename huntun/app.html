@@ -672,18 +672,30 @@ const office = (() => {
     carpet: () => { R(0, 0, 32, 32, C.carpet); for (let y = 0; y < 32; y += 8) for (let x = 0; x < 32; x += 8) if ((x + y) / 8 % 2) R(x, y, 8, 8, C.carpet2); for (let y = 3; y < 32; y += 8) for (let x = 3; x < 32; x += 8) R(x, y, 2, 2, C.carpetDot); },
     wallTop: () => { R(0, 0, 32, 32, C.wallTop); R(0, 0, 32, 2, C.wallTopHi); },
     wallFace: () => { R(0, 0, 32, 32, C.wall); R(0, 0, 32, 4, C.wallTrim); R(0, 4, 32, 1, "#b89a6e"); R(15, 5, 2, 22, C.wallPanel); R(0, 27, 32, 5, C.base); R(0, 27, 32, 1, C.baseLine); },
-    deskL: () => { R(2, 8, 30, 14, C.deskTop); R(2, 8, 30, 2, C.deskHi); R(2, 21, 30, 2, C.deskEdge); R(4, 23, 3, 8, C.leg); R(2, 8, 2, 15, C.deskEdge); },
-    deskR: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
-                   // monitor seen from the front: bezel, dark screen with a window and text lines, power LED, neck and foot
+    deskL: () => { R(2, 8, 30, 14, C.deskTop); R(2, 8, 30, 2, C.deskHi); R(2, 21, 30, 2, C.deskEdge); R(4, 23, 3, 8, C.leg); R(2, 8, 2, 15, C.deskEdge);
+                   // main monitor, centred over the seat below: bezel, dark screen with a window and text lines, LED, neck and foot; keyboard and mouse in front
                    R(5, 0, 22, 14, "#23262e"); R(6, 1, 20, 12, "#2f3340"); R(7, 2, 18, 10, "#101a2e"); R(8, 3, 16, 8, "#1c3358"); R(9, 4, 8, 5, "#3c8fd0"); R(10, 5, 5, 1, "#e8f2ff"); R(10, 7, 4, 1, "#bcd8f5"); R(18, 4, 5, 1, "#9fb6d6"); R(18, 6, 5, 1, "#9fb6d6"); R(18, 8, 4, 1, "#9fb6d6"); R(15, 12, 2, 1, "#5cff8a");
                    R(14, 14, 4, 3, "#2f3340"); R(10, 17, 12, 2, "#23262e"); R(11, 16, 10, 1, "#454a58");
-                   R(4, 20, 14, 5, C.keys); R(4, 20, 14, 1, "#d5d8e0"); for (let x = 5; x < 17; x += 2) { R(x, 22, 1, 1, C.key); R(x, 24, 1, 1, C.key); } R(21, 20, 4, 6, "#e6e8ee"); R(22, 21, 2, 2, "#b0b4c0"); },
-    deskRBack: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
-                       // keyboard and mouse on the occupant's side (top edge), monitor seen from behind: back panel, vents, logo, neck and foot
-                       R(4, 9, 14, 4, C.keys); R(4, 9, 14, 1, "#d5d8e0"); for (let x = 5; x < 17; x += 2) R(x, 11, 1, 1, C.key); R(21, 9, 4, 5, "#e6e8ee");
-                       // the monitor stands on the near part of the desktop; its back panel rises up the screen from the foot
+                   R(9, 20, 14, 5, C.keys); R(9, 20, 14, 1, "#d5d8e0"); for (let x = 10; x < 22; x += 2) { R(x, 22, 1, 1, C.key); R(x, 24, 1, 1, C.key); } R(25, 20, 4, 6, "#e6e8ee"); R(26, 21, 2, 2, "#b0b4c0"); },
+    deskLBack: () => { R(2, 8, 30, 14, C.deskTop); R(2, 8, 30, 2, C.deskHi); R(2, 21, 30, 2, C.deskEdge); R(4, 23, 3, 8, C.leg); R(2, 8, 2, 15, C.deskEdge);
+                       // occupant sits above: keyboard and mouse on the far (top) edge, main monitor seen from behind, standing on the near part of the desk
+                       R(9, 9, 14, 4, C.keys); R(9, 9, 14, 1, "#d5d8e0"); for (let x = 10; x < 22; x += 2) R(x, 11, 1, 1, C.key); R(25, 9, 4, 5, "#e6e8ee");
                        R(10, 17, 12, 2, "#23262e"); R(11, 16, 10, 1, "#454a58"); R(14, 13, 4, 4, "#2f3340");
                        R(5, 1, 22, 13, "#3a3e4a"); R(6, 2, 20, 11, "#4b5160"); R(7, 3, 18, 3, "#5a6170"); R(9, 7, 14, 1, "#2c3038"); R(9, 9, 14, 1, "#2c3038"); R(14, 11, 4, 1, "#7d8496"); R(5, 1, 22, 1, "#5f6675"); },
+    deskR: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
+                   // second monitor, angled toward the seat on the left: narrower panel, slanted right edge
+                   for (let r = 0; r < 13; r++) R(1, 1 + r, 18 - Math.floor(r / 4), 1, "#23262e"); for (let r = 0; r < 11; r++) R(2, 2 + r, 16 - Math.floor(r / 4), 1, "#2f3340"); for (let r = 0; r < 9; r++) R(3, 3 + r, 14 - Math.floor(r / 4), 1, "#101a2e");
+                   R(4, 4, 10, 6, "#1c3358"); R(5, 5, 6, 1, "#3c8fd0"); R(5, 7, 5, 1, "#bcd8f5"); R(5, 9, 7, 1, "#9fb6d6"); R(9, 12, 2, 1, "#5cff8a");
+                   R(8, 14, 4, 3, "#2f3340"); R(5, 17, 10, 2, "#23262e");
+                   R(22, 11, 6, 7, "#ffffff"); R(23, 12, 4, 5, "#e8e8e8"); R(28, 13, 2, 3, "#ffffff"); R(23, 12, 4, 1, "#7a4b2a"); },
+    deskRBack: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
+                       // second monitor seen from behind, angled toward the seat above-left
+                       R(5, 17, 10, 2, "#23262e"); R(8, 13, 4, 4, "#2f3340");
+                       for (let r = 0; r < 13; r++) R(1, 1 + r, 18 - Math.floor(r / 4), 1, "#3a3e4a"); for (let r = 0; r < 11; r++) R(2, 2 + r, 16 - Math.floor(r / 4), 1, "#4b5160"); R(3, 3, 14, 2, "#5a6170"); R(4, 7, 10, 1, "#2c3038"); R(4, 9, 10, 1, "#2c3038");
+                       R(22, 11, 6, 7, "#ffffff"); R(23, 12, 4, 5, "#e8e8e8"); R(28, 13, 2, 3, "#ffffff"); R(23, 12, 4, 1, "#7a4b2a"); },
+    deskPlain: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
+                       // papers, a pen and a mug for the non-developers
+                       R(4, 10, 13, 9, "#f7f7f2"); R(6, 12, 9, 1, "#b8bcc8"); R(6, 14, 7, 1, "#b8bcc8"); R(6, 16, 8, 1, "#b8bcc8"); R(18, 12, 1, 7, "#3a6fd8"); R(22, 11, 6, 7, "#ffffff"); R(23, 12, 4, 5, "#e8e8e8"); R(28, 13, 2, 3, "#ffffff"); R(23, 12, 4, 1, "#7a4b2a"); },
     chairUp: () => { R(8, 8, 16, 9, C.chair); R(8, 8, 16, 2, "#4d80e8"); R(9, 17, 14, 11, C.chairDark); R(10, 18, 12, 8, C.chair); R(14, 4, 4, 5, C.chairLeg); R(9, 28, 14, 2, C.chairLeg); },
     chair: () => { R(9, 2, 14, 10, C.chairDark); R(10, 3, 12, 8, C.chair); R(8, 12, 16, 9, C.chair); R(8, 12, 16, 2, "#4d80e8"); R(8, 21, 16, 2, C.chairDark); R(14, 23, 4, 5, C.chairLeg); R(9, 27, 14, 2, C.chairLeg); },
     bedHead: () => { R(2, 0, 28, 32, C.bedFrame); R(4, 2, 24, 30, C.mattress); R(6, 4, 20, 8, C.pillowSh); R(6, 4, 20, 6, C.pillow); R(4, 16, 24, 16, C.blanket); for (let y = 18; y < 32; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 16, 24, 2, "#ffffff"); },
@@ -733,8 +745,10 @@ const office = (() => {
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
   let DESKS = [], BEDS = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0, entered = 0;
+  const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
+  let teamRoles = [];
   function layout(n, masterIdx) {
-    n = Math.max(1, n); MASTER_IDX = masterIdx;
+    n = Math.max(1, n); MASTER_IDX = masterIdx; const team = teamRoles;
     const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0));
     const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
     const officeW = Math.max(14, 2 + islandsPerRow * 6), officeH = 4 + islandRows * 6;
@@ -745,14 +759,15 @@ const office = (() => {
     DESKS = new Array(n); BEDS = []; map = []; solid = [];
     const mx = 1 + Math.floor(officeW / 2) - 1;
     FRONT = [mx, 5];
-    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 3], chair: [mx, 2], dir: "down" };
+    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 3], chair: [mx, 2], dir: "down", dual: false };
     let j = 0;
     const islandX0 = 1 + Math.floor((officeW - islandsPerRow * 6 + 2) / 2);
     for (let i = 0; i < n; i++) {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
       const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 7 + row * 6;
-      DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down" } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up" };
+      const dual = DEV_ROLES.includes(team[i].role);
+      DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual };
       j++;
     }
     for (let i = 0; i < n; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 3 + Math.floor(i / bedsPerRow) * 3]);
@@ -763,7 +778,7 @@ const office = (() => {
     const doors = [Math.floor(MW / 3), Math.floor(MW * 2 / 3)];
     for (let x = 1; x < MW - 1; x++) if (!doors.includes(x)) { put(x, yMid, "wallTop"); put(x, yMid + 1, "wallFace"); }
     doors.forEach(x => put(x, yMid + 1, "mat", false));
-    DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], "deskL"); put(d.desk[0] + 1, d.desk[1], d.dir === "down" ? "deskRBack" : "deskR"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); });
+    DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], d.dir === "down" ? "deskLBack" : "deskL"); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); });
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
     [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x] && !map[y][x].includes("chair")) put(x, y, "plant"); });
@@ -772,7 +787,7 @@ const office = (() => {
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     builtFor = n;
   }
-  function ensureLayout(team) { const n = team.length, mi = team.findIndex(a => a.role === "master"); if (n !== builtFor || mi !== MASTER_IDX) { layout(n, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
+  function ensureLayout(team) { const n = team.length, mi = team.findIndex(a => a.role === "master"); const sig = team.map(a => a.role).join(","); if (n !== builtFor || mi !== MASTER_IDX || sig !== teamRoles.map(a => a.role).join(",")) { teamRoles = team.map(a => ({ role: a.role })); layout(n, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
   function renderMap() {
     off.width = W; off.height = H;
     mapImg = document.createElement("canvas"); mapImg.width = W; mapImg.height = H;
@@ -958,7 +973,7 @@ const office = (() => {
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
-    for (const c of order) { const d = DESKS[c.idx]; if (d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1]) { TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskL(); TX += T; TILES.deskRBack(); } }
+    for (const c of order) { const d = DESKS[c.idx]; if (d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1]) { TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskLBack(); TX += T; (d.dual ? TILES.deskRBack : TILES.deskPlain)(); } }
     ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center";
     for (const c of order) { if (c.hidden) continue; const label = c.name.toUpperCase().slice(0, 12); ctx.fillStyle = "#ffffff"; ctx.fillText(label, c.px + 17, c.py + 41); ctx.fillStyle = "#3b2a1e"; ctx.fillText(label, c.px + 16, c.py + 40); }
     for (const c of order) if (!c.hidden) drawBubble(c);
