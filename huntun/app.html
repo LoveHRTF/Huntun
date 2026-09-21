@@ -650,95 +650,103 @@ async function openAgent(id, name) {
   dlg.onclose = () => clearInterval(dlgTimer);
 }
 
-// ---------------------------------------------------------------- office view: a Game Boy style office (Pokémon-like), the team as sprites
+// ---------------------------------------------------------------- office view: a GBA-era Pokémon style office in colour, the team as sprites
 const office = (() => {
-  const T = 16, MW = 20, MH = 18, W = MW * T, H = MH * T;                 // native resolution 320x288, scaled by whole pixels
-  const PAL = ["#0f380f", "#306230", "#8bac0f", "#9bbc0f"];              // DMG shades: 0 darkest .. 3 lightest
+  const T = 32, MW = 20, MH = 18, W = MW * T, H = MH * T;                  // native 640x576, scaled by whole pixels when there is room
   let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
-  let scale = 2, ox = 0, oy = 0, msgQueue = [], msg = null;
+  let scale = 1, ox = 0, oy = 0, msgQueue = [], msg = null, last = 0;
+  const C = { wood: "#d8b26b", woodLine: "#c39a55", woodHi: "#e8c98a", wood2: "#c9a26a", wood2Line: "#b58b52", wallTop: "#3b2f22", wallTopHi: "#54432f", wall: "#f2e4c8", wallTrim: "#cdb38a", wallPanel: "#e6d5b3", base: "#8b6b43", baseLine: "#6e4f2e",
+              carpet: "#5e7ac9", carpet2: "#566fb8", carpetDot: "#7d98e2", deskTop: "#c58a4a", deskHi: "#d9a262", deskEdge: "#8f5e2f", leg: "#6e4726", pc: "#cfd3df", pcDark: "#9ea3b3", screen: "#3c8fd0", screenHi: "#6fc3f0", keys: "#b8bcc8", key: "#8f95a3",
+              chair: "#3a6fd8", chairDark: "#2f5fc0", chairLeg: "#2b2b2b", bedFrame: "#8b5a2b", mattress: "#f4efe6", pillow: "#ffffff", pillowSh: "#dcdcdc", blanket: "#d0413f", blanketHi: "#e85a58", tableTop: "#d9a262", tableEdge: "#7a5230",
+              pot: "#c0603a", potRim: "#d9805a", leaf: "#3fa34d", leafDark: "#2c7a39", door: "#7a5230", doorPanel: "#a97a4e", knob: "#ffd23f", mat: "#6a8fd8", matEdge: "#557ac0", shadow: "rgba(0,0,0,.28)" };
 
-  // ---- 16x16 tiles as shade strings ('.' = transparent over floor)
+  // ---- tile painters at 32x32 (tile-local pixel coordinates)
+  let TX = 0, TY = 0;
+  const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(TX + x, TY + y, w, h); };
+  const wood = (base, line, hi) => { R(0, 0, 32, 32, base); for (let y = 0; y < 32; y += 8) { R(0, y, 32, 1, line); const o = (y / 8) % 2 ? 16 : 0; R(o, y, 1, 8, line); R(o + 2, y + 3, 1, 1, hi); } };
   const TILES = {
-    floor: ["3333333333333333","3333333333333333","3333333333333333","3333333233333333","3333333333333333","3333333333333333","3333333333333333","3333333333333333","3333333333333333","3333333333333333","3323333333333333","3333333333333333","3333333333333333","3333333333333333","3333333333333323","3333333333333333"],
-    wallTop: ["0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000"],
-    wallFace: ["1111111111111111","1222122212221222","1222122212221222","1111111111111111","2212221222122212","2212221222122212","1111111111111111","1222122212221222","1222122212221222","1111111111111111","2212221222122212","2212221222122212","1111111111111111","1222122212221222","1222122212221222","0000000000000000"],
-    divider: ["1111111111111111","1222122212221222","1111111111111111","2212221222122212","1111111111111111","1222122212221222","1111111111111111","2212221222122212","1111111111111111","1222122212221222","1111111111111111","2212221222122212","1111111111111111","1222122212221222","1111111111111111","0000000000000000"],
-    deskL: ["................","................","................","................","................","..11111111111111",".1222222222222222",".1222222222222222",".1111111111111111",".1211111111111111",".1211111111111111",".1211111111111111",".121............",".121............",".111............","................"],
-    deskR: ["......0000000...","......0333330...","......0322230...","......0322230...","......0333330...","1111110000000...","2222222222221...","2222222222221...","1111111111111...","1111111111121...","1111111111121...","1111111111121...","............121.","............121.","............111.","................"],
-    chair: ["................","................","................","................","....11111111....","....12222221....","....12222221....","....11111111....","....11111111....","....12222221....","....11111111....","....1......1....","....1......1....","................","................","................"],
-    bedHead: [".11111111111111.","1222222222222221","1233333333333321","1233333333333321","1233333333333321","1222222222222221","1122222222222211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111"],
-    bedFoot: ["1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1122222222222211","1222222222222221",".11111111111111.","..1..........1..","..1..........1.."],
-    table: ["1111111111111111","1222222222222221","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1222222222222221","1111111111111111","..1..........1.."],
-    tableTop: ["................","................","................","1111111111111111","1222222222222221","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321"],
-    tableBot: ["1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1222222222222221","1111111111111111","..1..........1..","..1..........1..","................","................","................"],
-    plant: [".......00.......","......0220......",".....022220.....","....02022020....","...0220220220...","....02222220....","......0220......","......0110......",".....011110.....","....01111110....","....01222210....","....01222210....","....01111110....","....01111110....",".....011110.....","................"],
-    shelf: ["0000000000000000","0111111111111110","0122122122122110","0122122122122110","0122122122122110","0111111111111110","0121221221221210","0121221221221210","0121221221221210","0111111111111110","0122122122122110","0122122122122110","0122122122122110","0111111111111110","0000000000000000","................"],
-    mat: ["................","................","................","................","................","................","................","................","................","................","................","................","..22222222222...","..21212121212...","..22222222222...","................"],
-    door: ["0000000000000000","0111111111111110","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0122222220222210","0122222220222210","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0111111111111110","0000000000000000"],
+    floor: () => wood(C.wood, C.woodLine, C.woodHi),
+    floor2: () => wood(C.wood2, C.wood2Line, C.woodHi),
+    carpet: () => { R(0, 0, 32, 32, C.carpet); for (let y = 0; y < 32; y += 8) for (let x = 0; x < 32; x += 8) if ((x + y) / 8 % 2) R(x, y, 8, 8, C.carpet2); for (let y = 3; y < 32; y += 8) for (let x = 3; x < 32; x += 8) R(x, y, 2, 2, C.carpetDot); },
+    wallTop: () => { R(0, 0, 32, 32, C.wallTop); R(0, 0, 32, 2, C.wallTopHi); },
+    wallFace: () => { R(0, 0, 32, 32, C.wall); R(0, 0, 32, 4, C.wallTrim); R(0, 4, 32, 1, "#b89a6e"); R(15, 5, 2, 22, C.wallPanel); R(0, 27, 32, 5, C.base); R(0, 27, 32, 1, C.baseLine); },
+    deskL: () => { R(2, 8, 30, 14, C.deskTop); R(2, 8, 30, 2, C.deskHi); R(2, 21, 30, 2, C.deskEdge); R(4, 23, 3, 8, C.leg); R(2, 8, 2, 15, C.deskEdge); },
+    deskR: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
+                   R(6, 0, 18, 13, C.pcDark); R(7, 1, 16, 11, C.pc); R(9, 3, 12, 7, C.screen); R(10, 4, 5, 2, C.screenHi); R(13, 13, 4, 2, C.pcDark); R(10, 15, 10, 1, C.pcDark); R(3, 12, 12, 5, C.keys); for (let x = 4; x < 14; x += 2) R(x, 13, 1, 1, C.key); },
+    chair: () => { R(9, 2, 14, 10, C.chairDark); R(10, 3, 12, 8, C.chair); R(8, 12, 16, 9, C.chair); R(8, 12, 16, 2, "#4d80e8"); R(8, 21, 16, 2, C.chairDark); R(14, 23, 4, 5, C.chairLeg); R(9, 27, 14, 2, C.chairLeg); },
+    bedHead: () => { R(2, 0, 28, 32, C.bedFrame); R(4, 2, 24, 30, C.mattress); R(6, 4, 20, 8, C.pillowSh); R(6, 4, 20, 6, C.pillow); R(4, 16, 24, 16, C.blanket); for (let y = 18; y < 32; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 16, 24, 2, "#ffffff"); },
+    bedFoot: () => { R(2, 0, 28, 30, C.bedFrame); R(4, 0, 24, 24, C.blanket); for (let y = 0; y < 24; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 24, 24, 4, C.mattress); R(2, 28, 28, 4, "#6f4520"); R(4, 30, 4, 2, C.leg); R(24, 30, 4, 2, C.leg); },
+    tableTL: () => { R(4, 8, 28, 24, C.tableEdge); R(6, 10, 26, 22, C.tableTop); R(6, 10, 26, 2, "#eab77a"); }, tableTR: () => { R(0, 8, 28, 24, C.tableEdge); R(0, 10, 26, 22, C.tableTop); R(0, 10, 26, 2, "#eab77a"); },
+    tableML: () => { R(4, 0, 28, 32, C.tableEdge); R(6, 0, 26, 32, C.tableTop); }, tableMR: () => { R(0, 0, 28, 32, C.tableEdge); R(0, 0, 26, 32, C.tableTop); },
+    tableBL: () => { R(4, 0, 28, 22, C.tableEdge); R(6, 0, 26, 18, C.tableTop); R(6, 18, 26, 2, "#a0703f"); R(7, 22, 4, 6, C.leg); }, tableBR: () => { R(0, 0, 28, 22, C.tableEdge); R(0, 0, 26, 18, C.tableTop); R(0, 18, 26, 2, "#a0703f"); R(21, 22, 4, 6, C.leg); },
+    plant: () => { R(11, 20, 10, 10, C.pot); R(10, 19, 12, 3, C.potRim); R(13, 3, 6, 6, C.leaf); R(8, 8, 8, 6, C.leaf); R(16, 7, 9, 7, C.leafDark); R(10, 13, 12, 6, C.leaf); R(6, 12, 6, 5, C.leafDark); R(20, 13, 6, 5, C.leaf); R(14, 18, 4, 3, C.leafDark); },
+    shelf: () => { R(2, 0, 28, 30, C.bedFrame); R(4, 2, 24, 26, "#a97a4e"); [["#d84c4c", "#3a6fd8", "#e6c15a", "#3aa35b", "#f0f0f0", "#8e44ad"], ["#3a6fd8", "#f0f0f0", "#d84c4c", "#e6c15a", "#3aa35b", "#e67e22"]].forEach((row, r) => { R(4, 3 + r * 13, 24, 11, "#6e4726"); row.forEach((col, i) => R(5 + i * 4, 4 + r * 13, 3, 9, col)); }); R(2, 15, 28, 1, C.bedFrame); },
+    door: () => { R(2, 0, 28, 32, C.door); R(5, 3, 22, 12, C.doorPanel); R(5, 17, 22, 12, C.doorPanel); R(22, 15, 3, 3, C.knob); },
+    mat: () => { R(4, 20, 24, 12, C.matEdge); R(6, 22, 20, 8, C.mat); for (let x = 8; x < 26; x += 4) R(x, 24, 2, 4, "#7fa0e8"); },
   };
-  // ---- 16x16 sprites: base body (facing down / up / left); right is mirrored left. Two walk frames per direction.
-  const SPR = {
-    down: [
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....03333330....","....03030330....","....03333330....",".....033330.....","....01111110....","...0113333110...","...0313333130...","...0011111100...","....011..110....","....000..000....","................","................"],
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....03333330....","....03030330....","....03333330....",".....033330.....","....01111110....","...0113333110...","...0313333130...","...0011111100...","....011.0000....","....000.........","................","................"],
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....03333330....","....03030330....","....03333330....",".....033330.....","....01111110....","...0113333110...","...0313333130...","...0011111100...","....0000.110....","........000.....","................","................"]],
-    up: [
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....01111110....","....01111110....","....01111110....",".....011110.....","....01111110....","...0111111110...","...0311111130...","...0011111100...","....011..110....","....000..000....","................","................"],
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....01111110....","....01111110....","....01111110....",".....011110.....","....01111110....","...0111111110...","...0311111130...","...0011111100...","....011.0000....","....000.........","................","................"],
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....01111110....","....01111110....","....01111110....",".....011110.....","....01111110....","...0111111110...","...0311111130...","...0011111100...","....0000.110....","........000.....","................","................"]],
-    left: [
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....03331110....","....03031110....","....03331110....",".....033110.....","....01111110....","....01111110....","....03111110....","....00111100....","....0111110.....","....0000000.....","................","................"],
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....03331110....","....03031110....","....03331110....",".....033110.....","....01111110....","....01111110....","....03111110....","....00111100....","...0110.0110....","...000..000.....","................","................"],
-      ["......0000......",".....011110.....","....01111110....","....01111110....","....03331110....","....03031110....","....03331110....",".....033110.....","....01111110....","....01111110....","....03111110....","....00111100....","....01111110....","....00000000....","................","................"]],
+  // ---- 16x24 sprite art (drawn at 2 px per art pixel): o outline, h hair, s skin, e eye, c shirt, p pants, b shoes, . transparent
+  const BODY = ["...occccccco....", "..occcccccccco..", ".osccccccccccso.", ".osccccccccccso.", ".oocccccccccooo.", "..occcccccccco..", "..oppppppppppo.."];
+  const LEGS = { stand: ["..oppppooppppo..", "..opppo..opppo..", "..opppo..opppo..", "..obbbo..obbbo..", "..ooooo..ooooo..", "................"],
+                 w1: ["..oppppooppppo..", "..opppo..opppo..", "..opppo..obbbo..", "..obbbo..ooooo..", "..ooooo.........", "................"],
+                 w2: ["..oppppooppppo..", "..opppo..opppo..", "..obbbo..opppo..", "..ooooo..obbbo..", ".........ooooo..", "................"] };
+  const HEAD = {
+    down: ["......oooo......", "....oohhhhoo....", "...ohhhhhhhho...", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhsssssshho..", "..ohssssssssho..", "..ohsessssesho..", "..oossssssssoo..", "...osssssssso...", "....ossssso....."],
+    up: ["......oooo......", "....oohhhhoo....", "...ohhhhhhhho...", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..oohhhhhhhhoo..", "...ohhhhhhhho...", "....ossssso....."],
+    left: ["......oooo......", "....oohhhhoo....", "...ohhhhhhhho...", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..osshhhhhhhho..", "..osssshhhhhho..", "..oesssshhhhho..", "..ossssshhhhho..", "...osssshhhho...", "....ossssso....."],
   };
-  const SLEEP = ["................","................","................","................","................","................","................","................","....0000000000..","...011111111110.","..01222333333330","..03333303033330","..03333333333330","...033330111110.","....00000000000.","................"];
-  // hat / hair overlays keyed by variant (rows 0-3 replaced)
-  const HATS = [
-    null,
-    ["......0000......",".....000000.....","....00000000....","...0000000000...","....01111110...."],                    // cap
-    [".....00000......","....0111110.....","...011111110....","...011111110....","...011111110...."],                    // big hair
-    ["......0000......",".....022220.....","....02222220....","....02222220....","....01111110...."],                    // light hair
-    ["....00000000....","....01111110....","....01111110....","....01111110....","....03333330...."],                    // flat top
-    ["......0000......",".....011110.....","....00000000....","....00000000....","....03333330...."],                    // headband
-  ];
-  const CROWN = ["....0.0..0.0....","....0303303 0....","....0333333 0....","....00000000...."];
+  const SIDE_BODY = ["...occccccco....", "..occcccccccco..", "..occcccccsso...", "..occcccccsso...", "..occccccccoo...", "..occcccccccco..", "..oppppppppppo.."];
+  const SIDE_LEGS = { stand: ["...opppppppo....", "...oppppppo.....", "...opppopppo....", "...obbbobbbo....", "...oooo.oooo....", "................"],
+                      w1: ["...opppppppo....", "..oppppppppo....", "..oppo..oppo....", "..obbo..obbo....", "..oooo..oooo....", "................"],
+                      w2: ["...opppppppo....", "...oppppppo.....", "....opppo.......", "....obbbo.......", "....ooooo.......", "................"] };
+  const CAPS = [null, "cap", "bandana", "beanie"];                                  // per-agent headwear variants
+  const HAIR_COLORS = ["#2b2b2b", "#7a4b2a", "#e6c15a", "#c0392b", "#3a5fd8", "#3aa35b", "#8e44ad", "#e67e22"];
+  const CAP_COLORS = ["#d84c4c", "#3a6fd8", "#3aa35b", "#e6c15a"];
+  function sprite(dir, frame) {
+    const head = HEAD[dir === "right" ? "left" : dir], body = dir === "left" || dir === "right" ? SIDE_BODY : BODY, legs = (dir === "left" || dir === "right" ? SIDE_LEGS : LEGS)[frame];
+    return head.concat(body, legs);
+  }
+  function drawSprite(rows, x, y, flip, pal, cap) {
+    for (let r = 0; r < rows.length; r++) {
+      const line = rows[r];
+      for (let c = 0; c < 16; c++) {
+        let ch = line[flip ? 15 - c : c]; if (ch === ".") continue;
+        if (cap && r <= 4 && ch === "h") ch = "k";
+        if (cap === "beanie" && r === 4 && ch === "k") ch = "o";
+        const col = pal[ch]; if (!col) continue;
+        ctx.fillStyle = col; ctx.fillRect(x + c * 2, y + r * 2, 2, 2);
+      }
+    }
+  }
 
-  // ---- map (20x18): walls, two rooms, bunks
-  const DESKS = [[2, 3], [5, 3], [8, 3], [2, 6], [5, 6], [8, 6], [2, 9], [5, 9], [8, 9]];                    // deskL at (x,y), deskR at (x+1,y), chair below deskL
+  // ---- map (20x18): office (left), meeting room (right), bunks (bottom)
+  const DESKS = [[2, 3], [5, 3], [8, 3], [2, 6], [5, 6], [8, 6], [2, 9], [5, 9], [8, 9]];
   const SEATS = [[14, 4], [14, 5], [14, 6], [17, 4], [17, 5], [17, 6], [15, 3], [16, 3], [15, 7], [16, 7], [13, 4], [18, 5]];
   const BEDS = [[2, 13], [4, 13], [6, 13], [8, 13], [10, 13], [12, 13], [14, 13], [16, 13], [18, 13], [2, 15], [4, 15], [6, 15]];
   const map = [], solid = [];
   function buildMap() {
-    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = ["floor"]; solid[y][x] = false; } }
+    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [x >= 13 && x <= 18 && y >= 2 && y <= 10 ? "carpet" : y >= 13 ? "floor2" : "floor"]; solid[y][x] = false; } }
     const put = (x, y, t, s = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (s) solid[y][x] = true; };
     for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, 17, "wallTop"); }
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(19, y, "wallTop"); }
-    for (let y = 2; y < 11; y++) if (y !== 5 && y !== 8) put(12, y, "divider");                         // office | conference, with two gaps
-    for (let x = 1; x < 19; x++) if (x !== 4 && x !== 15) put(x, 11, "wallTop");                       // rooms | bunks, with two doors
-    for (let x = 1; x < 19; x++) if (x !== 4 && x !== 15) put(x, 12, "wallFace");
+    for (let y = 2; y < 11; y++) if (y !== 5 && y !== 8) put(12, y, "wallTop");
+    for (let x = 1; x < 19; x++) if (x !== 4 && x !== 15) { put(x, 11, "wallTop"); put(x, 12, "wallFace"); }
     put(4, 12, "mat", false); put(15, 12, "mat", false);
     DESKS.forEach(([x, y]) => { put(x, y, "deskL"); put(x + 1, y, "deskR"); put(x, y + 1, "chair", false); });
-    put(15, 4, "tableTop"); put(16, 4, "tableTop"); put(15, 5, "table"); put(16, 5, "table"); put(15, 6, "tableBot"); put(16, 6, "tableBot");
+    put(15, 4, "tableTL"); put(16, 4, "tableTR"); put(15, 5, "tableML"); put(16, 5, "tableMR"); put(15, 6, "tableBL"); put(16, 6, "tableBR");
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
-    put(1, 2, "plant"); put(18, 2, "plant"); put(11, 2, "plant"); put(13, 2, "plant"); put(18, 10, "plant"); put(1, 16, "plant"); put(18, 16, "plant");
+    [[1, 2], [18, 2], [11, 2], [13, 2], [18, 10], [1, 16], [18, 16], [11, 10]].forEach(([x, y]) => put(x, y, "plant"));
     put(3, 1, "shelf"); put(6, 1, "shelf"); put(16, 1, "shelf"); put(9, 1, "door");
   }
   buildMap();
-
-  // ---- pixel helpers at native resolution
-  function blit(rows, x, y, flip, tint) {
-    for (let r = 0; r < rows.length; r++) { const line = rows[r]; for (let c = 0; c < 16; c++) { const ch = line[flip ? 15 - c : c]; if (ch === "." || ch === " ") continue; ctx.fillStyle = PAL[+ch]; ctx.fillRect(x + c, y + r, 1, 1); } }
-  }
   function renderMap() {
-    off.width = W; off.height = H; ctx = off.getContext("2d");
+    off.width = W; off.height = H;
     mapImg = document.createElement("canvas"); mapImg.width = W; mapImg.height = H;
-    const save = ctx; ctx = mapImg.getContext("2d");
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) for (const t of map[y][x]) blit(TILES[t], x * T, y * T, false);
-    ctx = save;
+    ctx = mapImg.getContext("2d");
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; for (const t of map[y][x]) TILES[t](); }
+    ctx = off.getContext("2d");
   }
-  const variantOf = (name) => hash(name + "look") % HATS.length;
   const key = (x, y) => y * MW + x;
-  function path(from, to) {                                                      // BFS over walkable tiles, 4-neighbour
+  function path(from, to) {
     if (from[0] === to[0] && from[1] === to[1]) return [];
     const prev = new Map([[key(from[0], from[1]), null]]); const q = [from];
     while (q.length) {
@@ -746,8 +754,7 @@ const office = (() => {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
         const k = key(nx, ny); if (prev.has(k)) continue;
-        const goal = nx === to[0] && ny === to[1];
-        if (solid[ny][nx] && !goal) continue;
+        const goal = nx === to[0] && ny === to[1]; if (solid[ny][nx] && !goal) continue;
         prev.set(k, key(x, y)); if (goal) { const out = []; let cur = k; while (cur !== key(from[0], from[1])) { out.unshift([cur % MW, Math.floor(cur / MW)]); cur = prev.get(cur); } return out; }
         q.push([nx, ny]);
       }
@@ -756,8 +763,12 @@ const office = (() => {
   }
 
   // ---- characters
+  function palFor(name, role) {
+    const h = hash(name + "hue") % 360, v = hash(name + "look");
+    return { pal: { o: "#3b2a1e", h: role === "master" ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >> 3) % CAP_COLORS.length], s: "#f3c9a0", e: "#2b2b2b", c: "hsl(" + h + ",65%,50%)", p: (v >> 5) % 2 ? "#2f4a8a" : "#4a4a4a", b: "#3b2a1e" }, cap: role === "master" ? null : CAPS[(v >> 7) % CAPS.length] };
+  }
   function ensureChar(a, i) {
-    if (!chars[a.name]) { const spot = [4 + (i % 8), 12]; chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: 0, steps: [], mode: "idle", moving: false, prog: 0, bang: 0, variant: variantOf(a.name) }; }
+    if (!chars[a.name]) { const spot = [4 + (i % 8), 12]; const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, ...look }; }
     return chars[a.name];
   }
   function modeFor(a, st) {
@@ -787,39 +798,39 @@ const office = (() => {
     for (const c of Object.values(chars)) {
       if (!c.moving && c.steps.length) { const [nx, ny] = c.steps.shift(); c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
       if (c.moving) {
-        c.prog += dt * 3.2;                                                    // ~0.3s per tile, like the overworld
-        const e = Math.min(1, c.prog);
+        c.prog += dt * 3.4; const e = Math.min(1, c.prog);
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
-        c.frame = Math.floor(c.prog * 4) % 2 ? 1 + (Math.floor(c.prog * 2) % 2) : 0;
-        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = 0; if (!c.steps.length) { if (c.mode === "work") c.dir = "up"; else if (c.mode === "talk") { const s = SEATS.findIndex(sv => sv[0] === c.tx && sv[1] === c.ty); c.dir = c.tx < 15 ? "right" : c.tx > 16 ? "left" : c.ty < 5 ? "down" : "up"; if (s < 0) c.dir = "down"; } else c.dir = "down"; } }
+        c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
+        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "work") c.dir = "up"; else if (c.mode === "talk") c.dir = c.tx < 15 ? "right" : c.tx > 16 ? "left" : c.ty < 5 ? "down" : "up"; else c.dir = "down"; } }
       }
     }
   }
   function drawChar(c, t) {
-    const x = c.px, y = c.py - 4;                                              // sprites sit a little "above" their tile like NPCs do
+    const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
     const asleep = c.mode === "sleep" && !c.moving && !c.steps.length;
-    if (asleep) { blit(SLEEP, c.px, c.py - 2, false); const z = Math.floor(t * 2) % 3; ctx.fillStyle = PAL[0]; ctx.font = "7px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), c.px + 11, c.py - 2 - z); return; }
-    const dir = c.dir === "right" ? "left" : c.dir, flip = c.dir === "right";
-    const frames = SPR[dir], rows = frames[c.moving ? c.frame : 0].slice();
-    const hat = c.role === "master" ? null : HATS[c.variant];
-    if (hat && dir !== "up") for (let r = 0; r < hat.length; r++) rows[r] = hat[r];
-    blit(rows, x, y, flip);
-    if (c.role === "master") blit(CROWN.map(l => l.replace(/ /g, ".")), x, y - 3, flip);
-    if (c.mode === "work" && !c.moving) { if (Math.floor(t * 4) % 2) { ctx.fillStyle = PAL[3]; ctx.fillRect(x + 7, y - 15, 3, 2); } }
-    if (c.bang > Date.now()) { ctx.fillStyle = PAL[0]; ctx.fillRect(x + 7, y - 9, 2, 5); ctx.fillRect(x + 7, y - 3, 2, 2); }
+    ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+    if (asleep) {
+      // head on the pillow, the blanket covers the rest
+      const head = HEAD.down.slice(0, 10); drawSprite(head, x, c.py - 2, false, c.pal, c.cap);
+      const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 22, c.py - 4 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 21, c.py - 5 - z * 2);
+      return;
+    }
+    const flip = c.dir === "right";
+    drawSprite(sprite(c.dir, c.frame), x, y, flip, c.pal, c.cap);
+    if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
+    if (c.mode === "work" && !c.moving && Math.floor(t * 4) % 2) { ctx.fillStyle = C.screenHi; ctx.fillRect(x + 12, y - 12, 8, 3); }
+    if (c.bang > Date.now()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
   }
   function drawDialog(t) {
-    if (!msg && msgQueue.length) { const m = msgQueue.shift(); msg = { ...m, start: t, lines: wrapLines(m.who.toUpperCase() + ": " + m.text, 36).slice(0, 3) }; }
+    if (!msg && msgQueue.length) { const m = msgQueue.shift(); msg = { ...m, start: t, lines: wrapLines(m.who.toUpperCase() + ": " + m.text, 62).slice(0, 3) }; }
     if (!msg) return;
-    const bx = 8, by = H - 56, bw = W - 16, bh = 48;
-    ctx.fillStyle = PAL[3]; ctx.fillRect(bx, by, bw, bh);
-    ctx.fillStyle = PAL[0]; ctx.fillRect(bx, by, bw, 2); ctx.fillRect(bx, by + bh - 2, bw, 2); ctx.fillRect(bx, by, 2, bh); ctx.fillRect(bx + bw - 2, by, 2, bh);
-    ctx.fillStyle = PAL[1]; ctx.fillRect(bx + 2, by + 2, bw - 4, 1); ctx.fillRect(bx + 2, by + bh - 3, bw - 4, 1); ctx.fillRect(bx + 2, by + 2, 1, bh - 4); ctx.fillRect(bx + bw - 3, by + 2, 1, bh - 4);
-    const shown = Math.floor((t - msg.start) * 28);                             // typewriter
-    let count = 0; ctx.fillStyle = PAL[0]; ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "left";
-    msg.lines.forEach((l, i) => { const take = Math.max(0, Math.min(l.length, shown - count)); ctx.fillText(l.slice(0, take), bx + 8, by + 16 + i * 12); count += l.length; });
+    const bx = 16, by = H - 88, bw = W - 32, bh = 72;
+    ctx.fillStyle = "#2c3e72"; ctx.fillRect(bx, by, bw, bh); ctx.fillStyle = "#6c86c6"; ctx.fillRect(bx + 3, by + 3, bw - 6, bh - 6); ctx.fillStyle = "#ffffff"; ctx.fillRect(bx + 6, by + 6, bw - 12, bh - 12);
+    const shown = Math.floor((t - msg.start) * 30); let count = 0;
+    ctx.fillStyle = "#333333"; ctx.font = "10px 'Press Start 2P', monospace"; ctx.textAlign = "left";
+    msg.lines.forEach((l, i) => { const take = Math.max(0, Math.min(l.length, shown - count)); ctx.fillText(l.slice(0, take), bx + 16, by + 24 + i * 17); count += l.length; });
     const total = msg.lines.reduce((n, l) => n + l.length, 0);
-    if (shown >= total) { if (Math.floor(t * 2) % 2) { ctx.fillStyle = PAL[0]; ctx.fillRect(bx + bw - 12, by + bh - 9, 4, 4); } if (t - msg.start > total / 28 + 5) msg = null; }
+    if (shown >= total) { if (Math.floor(t * 2) % 2) { ctx.fillStyle = "#d84c4c"; ctx.fillRect(bx + bw - 22, by + bh - 18, 8, 8); } if (t - msg.start > total / 30 + 5) msg = null; }
   }
   function wrapLines(text, n) { const words = text.split(/\s+/), out = []; let cur = ""; for (const w of words) { if ((cur + " " + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += " " + w; } if (cur.trim()) out.push(cur.trim()); return out; }
 
@@ -827,7 +838,7 @@ const office = (() => {
   function start() {
     const box = $("#officebox"); if (!box) return;
     if (!canvas) {
-      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · beds = idle or paused · meeting table = just posted · the text box shows what was posted · click a sprite for details</span></div><canvas id="office"></canvas>';
+      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · meeting table = just posted · the text box shows what was posted · click a sprite for details</span></div><canvas id="office"></canvas>';
       canvas = $("#office"); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
       if (vctx) renderMap();
       canvas.onclick = onClick;
@@ -839,25 +850,26 @@ const office = (() => {
   function onClick(ev) {
     const r = canvas.getBoundingClientRect(); const mx = (ev.clientX - r.left) * (canvas.width / (r.width || 1)), my = (ev.clientY - r.top) * (canvas.height / (r.height || 1));
     const gx = (mx - ox) / scale, gy = (my - oy) / scale;
-    for (const c of Object.values(chars)) if (gx >= c.px && gx < c.px + T && gy >= c.py - 6 && gy < c.py + T) { if (boardId) openAgent(boardId, c.name); return; }
+    for (const c of Object.values(chars)) if (gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (boardId) openAgent(boardId, c.name); return; }
   }
-  let last = 0;
   function frame(now) {
     raf = null; if (!canvas || !vctx) return;
     const box = $("#officebox"); if (!box) return;
     const cw = Math.max(320, Math.floor(box.clientWidth || 0)), chh = Math.max(288, Math.floor((box.clientHeight || 0) - 40));
     if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
-    scale = Math.max(1, Math.floor(Math.min(cw / W, chh / H))); ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
+    scale = Math.min(cw / W, chh / H); scale = scale >= 1 ? Math.floor(scale) : scale;              // whole-pixel upscale; shrink smoothly only when the panel is smaller than native
+    ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
     const t = (now - t0) / 1000, dt = Math.min(0.1, (now - last) / 1000); last = now;
     stepChars(dt);
     ctx = off.getContext("2d"); ctx.imageSmoothingEnabled = false;
     ctx.drawImage(mapImg, 0, 0);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
-    for (const c of order) { ctx.fillStyle = PAL[0]; ctx.font = "5px 'Press Start 2P', monospace"; ctx.textAlign = "center"; ctx.fillText(c.name.toUpperCase().slice(0, 10), c.px + 8, c.py + 21); }
+    ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center";
+    for (const c of order) { const label = c.name.toUpperCase().slice(0, 12); ctx.fillStyle = "#ffffff"; ctx.fillText(label, c.px + 17, c.py + 41); ctx.fillStyle = "#3b2a1e"; ctx.fillText(label, c.px + 16, c.py + 40); }
     drawDialog(t);
     vctx.imageSmoothingEnabled = false; vctx.fillStyle = "#0a0c14"; vctx.fillRect(0, 0, cw, chh);
-    vctx.drawImage(off, 0, 0, W, H, ox, oy, W * scale, H * scale);
+    vctx.drawImage(off, 0, 0, W, H, ox, oy, Math.round(W * scale), Math.round(H * scale));
     raf = requestAnimationFrame(frame);
   }
   return { start, stop, update };
