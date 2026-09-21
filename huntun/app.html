@@ -732,7 +732,7 @@ const office = (() => {
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
-  let DESKS = [], BEDS = [], FRONT = [3, 5], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
+  let DESKS = [], BEDS = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0, entered = 0;
   function layout(n, masterIdx) {
     n = Math.max(1, n); MASTER_IDX = masterIdx;
     const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0));
@@ -767,7 +767,9 @@ const office = (() => {
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
     [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x] && !map[y][x].includes("chair")) put(x, y, "plant"); });
-    for (let x = 3; x < MW - 3; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, x % 2 ? "shelf" : "door");
+    DOOR = [MW - 4, 1];
+    for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
+    map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     builtFor = n;
   }
   function ensureLayout(team) { const n = team.length, mi = team.findIndex(a => a.role === "master"); if (n !== builtFor || mi !== MASTER_IDX) { layout(n, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
@@ -779,7 +781,7 @@ const office = (() => {
     ctx = off.getContext("2d");
   }
   const key = (x, y) => y * MW + x;
-  function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
+  function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self || o.hidden) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
   function path(from, to, self) {
     if (from[0] === to[0] && from[1] === to[1]) return [];
     const prev = new Map([[key(from[0], from[1]), null]]); const q = [from];
@@ -788,7 +790,7 @@ const office = (() => {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
         const k = key(nx, ny); if (prev.has(k)) continue;
-        const goal = nx === to[0] && ny === to[1]; if (solid[ny][nx] && !goal) continue;
+        const goal = nx === to[0] && ny === to[1]; if ((solid[ny][nx] || isDoor(nx, ny)) && !goal) continue;
         if (self && !goal && heldBy(nx, ny, self)) continue;
         prev.set(k, key(x, y)); if (goal) { const out = []; let cur = k; while (cur !== key(from[0], from[1])) { out.unshift([cur % MW, Math.floor(cur / MW)]); cur = prev.get(cur); } return out; }
         q.push([nx, ny]);
@@ -803,11 +805,13 @@ const office = (() => {
     return { pal: { o: "#3b2a1e", h: role === "master" ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >> 3) % CAP_COLORS.length], s: "#f3c9a0", e: "#2b2b2b", c: "hsl(" + h + ",65%,50%)", p: (v >> 5) % 2 ? "#2f4a8a" : "#4a4a4a", b: "#3b2a1e" }, cap: role === "master" ? null : CAPS[(v >> 7) % CAPS.length] };
   }
   function ensureChar(a, i) {
-    if (!chars[a.name]) { const spot = [Math.min(MW - 2, 2 + (i % (MW - 3))), 2]; const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, ...look }; }
+    if (!chars[a.name]) { const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, hidden: true, enterAt: performance.now() + 400 + entered++ * 900, ...look }; }
     return chars[a.name];
   }
   const tagsIn = (text) => { const out = []; for (const m of text.matchAll(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi)) { const n = m[2].toLowerCase(); if (!out.includes(n)) out.push(n); } return out; };
-  const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
+  const isDoor = (x, y) => x === DOOR[0] && y === DOOR[1];
+  const isEntry = (x, y) => x === DOOR[0] && y === DOOR[1] + 1;                       // the tile just inside the door stays clear so people can come in
+  const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !isDoor(nx, ny) && !isEntry(nx, ny) && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
   function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
   function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
@@ -821,7 +825,7 @@ const office = (() => {
     c.bang = Date.now() + 2500; c.say = text.slice(0, 140); c.sayStart = performance.now(); c.sayUntil = Date.now() + 14000;
     const until = Date.now() + 26000;
     if (announce) { let k = 0; while (k < 6 && Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "announce" && o.talk.spot[0] === FRONT[0] + k * 2)) k++; c.talk = { kind: "announce", until, spot: [FRONT[0] + k * 2, FRONT[1]], face: "down" }; }
-    else if (targets.length === 1 && chars[targets[0]]) c.talk = { kind: "visit", until, target: targets[0] };
+    else if (targets.length === 1 && chars[targets[0]] && !chars[targets[0]].hidden) c.talk = { kind: "visit", until, target: targets[0] };
     else c.talk = { kind: "here", until };
   }
   function modeFor(a, c, st) {
@@ -844,7 +848,7 @@ const office = (() => {
     for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
   }
   const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
-  function visitSpot(c, tc) { return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
+  function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
   function goalFor(c) {
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
@@ -852,6 +856,14 @@ const office = (() => {
   }
   function stepChars(dt) {
     for (const c of Object.values(chars)) {
+      if (c.hidden) {
+        // wait for your turn at the door, then step in; the last one in apologises on the way to their place
+        if (performance.now() < c.enterAt || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) continue;
+        c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
+        const others = Object.values(chars).filter(o => o !== c);
+        if (others.length && others.every(o => !o.hidden)) { c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; }
+        continue;
+      }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
       if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
       if (!c.moving && c.steps.length) {
@@ -860,7 +872,7 @@ const office = (() => {
         else { c.steps.shift(); c.wait = 0; c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
       }
       if (c.moving) {
-        c.prog += dt * 3.4; const e = Math.min(1, c.prog);
+        c.prog += dt * 2.8; const e = Math.min(1, c.prog);                   // ~0.36 s per tile, the same for everyone
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
         c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
         if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { const tc = c.talk.target && chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } else c.dir = c.talk.face || "down"; } else if (c.mode === "work") c.dir = DESKS[c.idx].dir; else c.dir = "down"; } }
@@ -868,6 +880,7 @@ const office = (() => {
     }
   }
   function drawChar(c, t) {
+    if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
     const asleep = c.mode === "sleep" && !c.moving && !c.steps.length;
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
@@ -934,7 +947,7 @@ const office = (() => {
     if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
     scale = Math.min(cw / W, chh / H);                                                            // fill the panel's full width or height
     ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
-    const t = (now - t0) / 1000, dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const t = (now - t0) / 1000, dt = Math.min(1 / 30, (now - last) / 1000); last = now;
     stepChars(dt);
     ctx = off.getContext("2d"); ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0);
@@ -942,8 +955,8 @@ const office = (() => {
     for (const c of order) drawChar(c, t);
     for (const c of order) { const d = DESKS[c.idx]; if (d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1]) { TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskL(); TX += T; TILES.deskRBack(); } }
     ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center";
-    for (const c of order) { const label = c.name.toUpperCase().slice(0, 12); ctx.fillStyle = "#ffffff"; ctx.fillText(label, c.px + 17, c.py + 41); ctx.fillStyle = "#3b2a1e"; ctx.fillText(label, c.px + 16, c.py + 40); }
-    for (const c of order) drawBubble(c);
+    for (const c of order) { if (c.hidden) continue; const label = c.name.toUpperCase().slice(0, 12); ctx.fillStyle = "#ffffff"; ctx.fillText(label, c.px + 17, c.py + 41); ctx.fillStyle = "#3b2a1e"; ctx.fillText(label, c.px + 16, c.py + 40); }
+    for (const c of order) if (!c.hidden) drawBubble(c);
     vctx.imageSmoothingEnabled = false; vctx.fillStyle = "#0a0c14"; vctx.fillRect(0, 0, cw, chh);
     vctx.drawImage(off, 0, 0, W, H, ox, oy, Math.round(W * scale), Math.round(H * scale));
     raf = requestAnimationFrame(frame);
