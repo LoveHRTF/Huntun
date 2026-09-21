@@ -684,6 +684,8 @@ const office = (() => {
     Q(x + 1, top, w - 2, h, "#3a3e4a"); Q(x, top + 1, w, h - 2, "#3a3e4a"); Q(x + 1, top, w - 2, 1, "#5f6675"); Q(x + 2, top + 2, w - 4, h - 4, "#4b5160"); Q(x + 4, top + 4, w - 8, 4, "#5a6170"); if (second) Q(x + w - 4, top + 2, 2, h - 4, "#30343e");
     Q(x + 8, top + 10, w - 16, 1, "#2c3038"); Q(x + 8, top + 13, w - 16, 1, "#2c3038"); Q(x + 8, top + 16, 4, 2, "#23262e"); Q(x + 14, top + 16, 3, 2, "#23262e"); Q(cx - 3, top + 17, 6, 2, "#7d8496");
     Q(cx - 4, top + h, 8, 6, "#2f3340"); Q(cx + 1, top + h, 1, 8, "#1a1c22"); Q(cx - 12, top + h + 6, 24, 4, "#23262e"); Q(cx - 10, top + h + 5, 20, 1, "#454a58"); Q(cx - 12, top + h + 9, 24, 1, "#15171c"); };
+  const chairSeatUp = () => { Q(17, -6, 30, 18, C.chair); Q(16, -5, 32, 16, C.chair); Q(17, -6, 30, 3, "#4d80e8"); Q(31, -3, 2, 12, C.chairDark); Q(12, -4, 4, 14, "#2b2b2b"); Q(48, -4, 4, 14, "#2b2b2b"); Q(12, -4, 4, 1, "#454545"); Q(48, -4, 4, 1, "#454545"); };
+  const chairBackUp = () => { Q(19, 12, 26, 22, C.chairDark); Q(18, 13, 28, 20, C.chairDark); Q(20, 14, 24, 18, C.chair); Q(20, 14, 24, 2, "#4d80e8"); Q(20, 23, 24, 1, C.chairDark); Q(18, 34, 28, 3, C.chairLeg); Q(16, 35, 5, 3, C.chairLeg); Q(43, 35, 5, 3, C.chairLeg); Q(17, 36, 2, 1, "#555555"); Q(44, 36, 2, 1, "#555555"); };
   const keyboard = (x, y) => { Q(x, y, 28, 8, C.keys); Q(x, y, 28, 1, "#d5d8e0"); Q(x, y + 7, 28, 1, "#8f95a3"); for (const yy of [y + 2, y + 5]) for (let xx = x + 2; xx < x + 26; xx += 3) Q(xx, yy, 2, 2, C.key); Q(x + 9, y + 5, 10, 2, "#a3a8b6"); };
   const mouse = (x, y) => { Q(x + 1, y, 6, 10, "#e6e8ee"); Q(x, y + 1, 8, 8, "#e6e8ee"); Q(x + 4, y + 1, 1, 4, "#b0b4c0"); Q(x + 3, y + 2, 2, 2, "#8f95a3"); Q(x + 1, y + 9, 6, 1, "#c4c7cf"); };
   const mug = (x, y) => { Q(x + 1, y, 10, 14, "#ffffff"); Q(x, y + 1, 12, 12, "#ffffff"); Q(x + 11, y + 4, 4, 6, "#ffffff"); Q(x + 12, y + 5, 2, 4, C.deskTop); Q(x + 2, y + 1, 8, 2, "#7a4b2a"); Q(x + 3, y + 1, 2, 1, "#a06a3f"); Q(x + 1, y + 4, 1, 8, "#f5f5f5"); Q(x + 1, y + 12, 10, 1, "#dcdcdc"); Q(x + 4, y + 6, 4, 4, "#d84c4c"); };
@@ -703,10 +705,10 @@ const office = (() => {
     deskR: () => { deskBase(false); monitorFront(4, 36, true); mug(44, 22); },
     deskRBack: () => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); },
     deskPlain: () => { deskBase(false); papers(); mug(44, 22); },
-    chairUp: () => { Q(28, 8, 8, 8, C.chairLeg); Q(28, 8, 2, 8, "#3d3d3d"); Q(17, 16, 30, 18, C.chair); Q(16, 17, 32, 16, C.chair); Q(17, 16, 30, 3, "#4d80e8"); Q(31, 19, 2, 12, C.chairDark); Q(12, 18, 4, 14, "#2b2b2b"); Q(48, 18, 4, 14, "#2b2b2b"); Q(12, 18, 4, 1, "#454545"); Q(48, 18, 4, 1, "#454545");
-                     Q(19, 34, 26, 22, C.chairDark); Q(18, 35, 28, 20, C.chairDark); Q(20, 36, 24, 18, C.chair); Q(20, 36, 24, 2, "#4d80e8"); Q(20, 45, 24, 1, C.chairDark); Q(18, 56, 28, 3, C.chairLeg); Q(16, 57, 5, 3, C.chairLeg); Q(43, 57, 5, 3, C.chairLeg); Q(17, 58, 2, 1, "#555555"); Q(44, 58, 2, 1, "#555555"); },
-    chair: () => { Q(19, 4, 26, 20, C.chairDark); Q(18, 5, 28, 18, C.chairDark); Q(20, 6, 24, 16, C.chair); Q(20, 6, 24, 2, "#4d80e8"); Q(20, 13, 24, 1, C.chairDark); Q(12, 26, 4, 12, "#2b2b2b"); Q(48, 26, 4, 12, "#2b2b2b"); Q(12, 26, 4, 1, "#454545"); Q(48, 26, 4, 1, "#454545");
-                   Q(17, 24, 30, 18, C.chair); Q(16, 25, 32, 16, C.chair); Q(17, 24, 30, 3, "#4d80e8"); Q(31, 27, 2, 12, C.chairDark); Q(16, 40, 32, 3, C.chairDark); Q(17, 43, 30, 1, "#264c9a"); Q(28, 46, 8, 8, C.chairLeg); Q(28, 46, 2, 8, "#3d3d3d"); Q(18, 54, 28, 3, C.chairLeg); Q(16, 56, 5, 3, C.chairLeg); Q(43, 56, 5, 3, C.chairLeg); Q(30, 57, 4, 3, C.chairLeg); Q(17, 57, 2, 1, "#555555"); Q(44, 57, 2, 1, "#555555"); },
+    chairUp: () => { chairSeatUp(); chairBackUp(); },
+    chairUpBack: () => chairBackUp(),
+    chair: () => { Q(19, 22, 26, 20, C.chairDark); Q(18, 23, 28, 18, C.chairDark); Q(20, 24, 24, 16, C.chair); Q(20, 24, 24, 2, "#4d80e8"); Q(20, 31, 24, 1, C.chairDark); Q(12, 44, 4, 12, "#2b2b2b"); Q(48, 44, 4, 12, "#2b2b2b"); Q(12, 44, 4, 1, "#454545"); Q(48, 44, 4, 1, "#454545");
+                   Q(17, 42, 30, 18, C.chair); Q(16, 43, 32, 16, C.chair); Q(17, 42, 30, 3, "#4d80e8"); Q(31, 45, 2, 12, C.chairDark); Q(16, 58, 32, 3, C.chairDark); Q(17, 61, 30, 1, "#264c9a"); },
     bedHead: () => { Q(4, 0, 56, 64, C.bedFrame); Q(4, 0, 56, 8, "#6f4520"); Q(4, 0, 56, 2, "#9a6a3a"); Q(4, 0, 5, 12, "#5c3a1c"); Q(55, 0, 5, 12, "#5c3a1c"); Q(9, 8, 46, 56, C.mattress); Q(9, 8, 46, 1, "#e6e0d4");
                      Q(13, 10, 38, 16, C.pillowSh); Q(14, 9, 36, 14, C.pillow); Q(13, 10, 1, 12, C.pillow); Q(50, 10, 1, 12, C.pillow); Q(18, 13, 28, 1, "#f2f2f2"); Q(22, 17, 20, 1, "#f2f2f2");
                      Q(9, 30, 46, 34, C.blanket); Q(9, 30, 46, 5, "#f1eae0"); Q(9, 35, 46, 1, "#d9d2c6"); for (let y = 40; y < 64; y += 8) { Q(9, y, 46, 2, C.blanketHi); for (let x = 12; x < 55; x += 8) Q(x, y + 4, 2, 1, "#b73634"); } Q(9, 36, 1, 28, "#b53230"); Q(54, 36, 1, 28, "#b53230"); },
@@ -744,7 +746,75 @@ const office = (() => {
   // per-agent variations on the source art: hair style, beard, glasses and shirt style
   const ROWS = new Map();
   const rowSet = (row, edits) => { const a = [...row]; for (const [i, ch] of edits) a[i] = ch; return a.join(""); };
+  // ---- species: anthropomorphic zoo animals share the human body and get their own head (ears, muzzle, markings). Colours: s fur, n light muzzle/face, a accent (inner ear, patches, beak), m nose
+  const ANIMALS = {
+    cat:      { ears: "point", fur: ["#f2a65a", "#8c8c8c", "#2b2b2b", "#f5f5f5"], a: "#f4a7b9", n: "#fff1e0", m: "#e88aa0", face: ["muzzle"] },
+    fox:      { ears: "point", fur: ["#e8792b"], a: "#2b2b2b", n: "#fff6ea", m: "#2b2b2b", face: ["muzzle", "cheeks"] },
+    tiger:    { ears: "point", fur: ["#f28c28"], a: "#2b2b2b", n: "#fff6ea", m: "#e88aa0", face: ["muzzle", "stripes"] },
+    lion:     { ears: "point", fur: ["#e0a94a"], a: "#a5561f", n: "#fff1d0", m: "#6b3e1e", face: ["muzzle", "mane"] },
+    pig:      { ears: "point", fur: ["#f7b6c2"], a: "#f08ca0", n: "#f7b6c2", m: "#b85c72", face: ["snout"] },
+    bear:     { ears: "round", fur: ["#8b5a2b", "#5a3a1e", "#f5f5f5"], a: "#c88a55", n: "#d9b382", m: "#2b2b2b", face: ["muzzle"] },
+    panda:    { ears: "round", earFur: true, fur: ["#f7f7f7"], a: "#2b2b2b", n: "#f7f7f7", m: "#2b2b2b", face: ["patches", "nose"] },
+    koala:    { ears: "fluffy", fur: ["#9a9a9a"], a: "#2b2b2b", n: "#c8c8c8", m: "#2b2b2b", face: ["bignose"] },
+    monkey:   { ears: "side", fur: ["#8b5a2b"], a: "#5a3a1e", n: "#f3c9a0", m: "#5a3a1e", face: ["facepatch", "nose"] },
+    dog:      { ears: "floppy", fur: ["#c9a26a", "#5a3a1e", "#f5f5f5", "#8c8c8c"], a: "#7a5230", n: "#fff1e0", m: "#2b2b2b", face: ["muzzle"] },
+    rabbit:   { ears: "tall", fur: ["#f5f5f5", "#bdbdbd", "#c9a26a"], a: "#f4a7b9", n: "#ffffff", m: "#e88aa0", face: ["muzzle"] },
+    frog:     { ears: "bumps", fur: ["#5cb85c"], a: "#3f8f3f", n: "#a8e0a8", m: "#2f6f2f", face: ["frog"] },
+    penguin:  { ears: "none", fur: ["#2b2b2b"], a: "#f2a33a", n: "#f7f7f7", m: "#f2a33a", face: ["facepatch", "beak"] },
+    elephant: { ears: "big", fur: ["#9aa0a8"], a: "#c9b0b8", n: "#9aa0a8", m: "#7d838b", face: ["trunk"] },
+  };
+  const ANIMAL_NAMES = Object.keys(ANIMALS);
+  const EARS = {                                                             // extra rows above the head, then the head's top two rows
+    point:  { top: ["...o........o...", "..oso......oso..", "..osao....oaso.."], r0: "..osaaooooaaso..", r1: "..oossssssssoo.." },
+    round:  { top: ["..oooo....oooo..", ".osaaso..osaaso."], r0: ".ossssoooosssso.", r1: "..oossssssssoo.." },
+    fluffy: { top: [".ooooo....ooooo.", "osaaaso..osaaaso"], r0: "osssssoooosssss" + "o", r1: ".osssssssssssso." },
+    tall:   { top: ["....oo....oo....", "...osso..osso...", "...osao..oaso...", "...osao..oaso...", "...osao..oaso..."], r0: "...osaooooaso...", r1: "...osssssssso..." },
+    bumps:  { top: ["...oo......oo...", "..owwo....owwo..", "..oweo....oewo.."], r0: "..osssoooossso..", r1: "..oossssssssoo.." },
+    none:   { top: [], r0: "......oooo......", r1: "....oossssoo...." },
+  };
+  const range = (a, b) => { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; };
+  function animalHead(c, dir) {
+    const sp = ANIMALS[c.species], ear = EARS[sp.ears] || EARS.none, side = dir === "left";
+    let rows = HEAD[dir].map(r => r.replace(/h/g, "s"));
+    rows[0] = ear.r0; rows[1] = ear.r1; rows[2] = "..osssssssssso..";
+    rows = ear.top.concat(rows);
+    const t = ear.top.length;
+    if (sp.earFur) rows = rows.map((r, i) => i <= t ? r.replace(/[sa]/g, "a") : r);
+    const E = (r, edits) => { rows[t + r] = rowSet(rows[t + r], edits); };
+    const mirror = (edits) => side ? edits.filter(([i]) => i >= 8) : edits;                     // in profile only the ear at the back of the head shows
+    const both = (cols, ch) => cols.flatMap(i => [[i, ch], [15 - i, ch]]);
+    if (sp.ears === "floppy" || sp.ears === "big") { const lo = sp.ears === "big" ? 2 : 3, hi = sp.ears === "big" ? 9 : 8; for (let r = lo; r <= hi; r++) E(r, mirror([[0, "o"], [1, "a"], [2, "a"], [13, "a"], [14, "a"], [15, "o"]])); E(lo - 1, mirror(both([1, 2], "o"))); E(hi + 1, mirror(both([1, 2], "o"))); }
+    if (sp.ears === "side") { for (let r = 5; r <= 7; r++) E(r, mirror([[0, "o"], [1, r === 6 ? "a" : "s"], [2, "s"], [13, "s"], [14, r === 6 ? "a" : "s"], [15, "o"]])); E(4, mirror(both([1, 2], "o"))); E(8, mirror(both([1, 2], "o"))); }
+    const has = (f) => sp.face.includes(f);
+    if (dir === "down") {
+      if (has("facepatch")) for (let r = 5; r <= 9; r++) E(r, range(4, 11).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
+      if (has("muzzle")) { E(8, range(6, 9).map(i => [i, "n"])); E(9, range(6, 9).map(i => [i, "n"])); }
+      if (has("muzzle") || has("nose")) E(8, [[7, "m"], [8, "m"]]);
+      if (has("cheeks")) { E(6, both([3, 4], "n")); E(7, both([3, 4], "n")); }
+      if (has("patches")) { for (let r = 6; r <= 8; r++) E(r, both([4, 5], "a")); E(7, [[5, "w"], [10, "w"]]); }
+      if (has("bignose")) for (let r = 7; r <= 9; r++) E(r, range(6, 9).map(i => [i, "a"]));
+      if (has("snout")) { E(8, range(6, 9).map(i => [i, "a"])); E(9, [[6, "a"], [7, "m"], [8, "m"], [9, "a"]]); }
+      if (has("beak")) { E(8, range(6, 9).map(i => [i, "a"])); E(9, [[7, "a"], [8, "a"]]); }
+      if (has("frog")) { E(7, [[5, "s"], [10, "s"]]); E(8, range(4, 11).map(i => [i, "m"])); }
+      if (c.glasses && !has("frog")) E(7, [[4, "g"], [6, "g"], [7, "g"], [8, "g"], [9, "g"], [11, "g"]]);
+    } else if (side) {
+      if (has("facepatch")) for (let r = 5; r <= 9; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
+      if (has("muzzle")) { E(8, range(3, 5).map(i => [i, "n"])); E(9, [[4, "n"], [5, "n"]]); }
+      if (has("muzzle") || has("nose")) E(8, [[3, "m"]]);
+      if (has("cheeks")) { E(6, [[4, "n"], [5, "n"]]); E(7, [[4, "n"], [5, "n"]]); }
+      if (has("patches")) { for (let r = 6; r <= 8; r++) E(r, [[3, "a"], [4, "a"]]); E(7, [[3, "w"]]); }
+      if (has("bignose")) for (let r = 7; r <= 9; r++) E(r, range(3, 5).map(i => [i, "a"]));
+      if (has("snout")) { E(8, [[1, "o"], [2, "a"], [3, "a"], [4, "a"]]); E(9, [[2, "o"], [3, "a"], [4, "m"]]); }
+      if (has("beak")) E(8, [[1, "a"], [2, "a"], [3, "a"]]);
+      if (has("frog")) { E(7, [[3, "s"]]); E(8, range(3, 8).map(i => [i, "m"])); }
+      if (c.glasses && !has("frog")) E(7, [[4, "g"], [5, "g"]]);
+    }
+    if (has("stripes")) { if (side) { E(2, [[6, "a"], [9, "a"]]); E(3, [[4, "a"], [8, "a"], [12, "a"]]); E(4, [[6, "a"], [10, "a"]]); } else { E(2, [[5, "a"], [10, "a"]]); E(3, [[3, "a"], [7, "a"], [8, "a"], [12, "a"]]); E(4, [[5, "a"], [10, "a"]]); } }
+    if (has("mane")) for (let r = 1; r <= 9; r++) E(r, range(2, 13).filter(i => rows[t + r][i] === "s" && (i <= 3 || i >= 12 || r === 1 || (r === 9 && !side))).map(i => [i, "a"]));
+    return rows;
+  }
   function headRows(c, dir) {
+    if (c.species && c.species !== "human") return animalHead(c, dir);
     let rows = HEAD[dir].slice(); const st = c.hair;
     if (st === "spiky") { rows[0] = "....oo.oooo.oo.."; rows[1] = "...ohhohhhhohho."; }
     if (st === "short") { if (dir === "down") for (const r of [5, 6, 7]) rows[r] = rowSet(rows[r], [[3, "s"], [4, "s"], [11, "s"], [12, "s"]]); else if (dir === "up") { rows[7] = "..osssssssssso.."; rows[8] = "..oossssssssoo.."; rows[9] = "...osssssssso..."; } else for (const r of [7, 8]) rows[r] = rowSet(rows[r], [[8, "s"], [9, "s"], [10, "s"]]); }
@@ -760,17 +830,18 @@ const office = (() => {
     if (st === "vneck" && dir === "down") { rows[0] = rowSet(rows[0], [[7, "s"]]); rows[1] = rowSet(rows[1], [[7, "s"]]); }
     if (st === "logo" && dir === "down") for (const r of [2, 3]) rows[r] = rowSet(rows[r], [[7, "l"], [8, "l"]]);
     if (st === "jacket") for (let r = 0; r < 6; r++) rows[r] = rowSet(rows[r], (side ? [3, 4] : [3, 4, 11, 12]).filter(i => rows[r][i] === "c").map(i => [i, "d"]));
+    if (c.species === "elephant") for (let r = 0; r < 4; r++) rows[r] = rowSet(rows[r], dir === "down" ? [[6, "o"], [7, "s"], [8, "s"], [9, "o"]] : side ? [[1, "o"], [2, "s"], [3, "s"], [4, "o"]] : []);   // the trunk hangs over the chest
     return rows;
   }
   function sprite(c, dir, frame) {
-    const hd = dir === "right" ? "left" : dir, key = c.pal.key + "|" + c.hair + c.beard + c.glasses + c.shirt + "|" + hd + "|" + frame;
+    const hd = dir === "right" ? "left" : dir, key = c.pal.key + "|" + c.species + c.hair + c.beard + c.glasses + c.shirt + "|" + hd + "|" + frame;
     let rows = ROWS.get(key); if (rows) return rows;
     rows = headRows(c, hd).concat(bodyRows(c, hd), (hd === "left" ? SIDE_LEGS : LEGS)[frame]); ROWS.set(key, rows); return rows;
   }
   // ---- 16x24 source art, upscaled to 32x48 with Scale2x (rounds the corners) and then shaded and detailed; drawn at 1 unit per art pixel
   const HIRES = new Map(), SPR = new Map(), DERIVED = new WeakMap(), LIGHT = { c: "1", p: "2", h: "3", k: "4" };
-  function hires(rows, cap, dir) {
-    const key = dir + "|" + cap + "|" + rows.join("|"); if (HIRES.has(key)) return HIRES.get(key);
+  function hires(rows, cap, dir, top) {
+    const key = dir + "|" + cap + "|" + top + "|" + rows.join("|"); if (HIRES.has(key)) return HIRES.get(key);
     const h = rows.length, src = rows.map((line, r) => [...line].map(ch => { if (cap && r <= 4 && ch === "h") ch = "k"; if (cap === "beanie" && r === 4 && ch === "k") ch = "o"; return ch; }));
     const at = (r, c) => r < 0 || c < 0 || r >= h || c >= 16 ? "." : src[r][c];
     const out = []; for (let r = 0; r < h * 2; r++) out.push(new Array(32).fill("."));
@@ -788,17 +859,18 @@ const office = (() => {
       else if (lf === "o" || ((ch === "h" || ch === "k") && up === "o")) art[r][c] = LIGHT[ch];
     }
     for (let r = 0; r < h * 2 - 1; r++) for (let c = 0; c < 31; c++) if (out[r][c] === "e" && out[r][c + 1] === "e" && out[r + 1][c] === "e" && g(r - 1, c) !== "e" && g(r, c - 1) !== "e") art[r][c] = "w";   // eye highlight
-    if (dir === "down" && h > 8) { art[17][15] = "m"; art[17][16] = "m"; } else if (dir === "left" && h > 8) art[17][6] = "m";                 // mouth
+    const mr = 17 + (top || 0) * 2;                                                                                                          // mouth, unless the species already has a nose or beak there
+    if (dir === "down" && h * 2 > mr && art[mr][15] === "s") { art[mr][15] = "m"; art[mr][16] = "m"; } else if (dir === "left" && h * 2 > mr && art[mr][6] === "s") art[mr][6] = "m";
     const res = { key, rows: art }; HIRES.set(key, res); return res;
   }
-  function fullPal(pal) { let d = DERIVED.get(pal); if (d) return d; d = { ...pal, w: "#ffffff", m: "#c9705f", S: tint(pal.s, -0.14) }; for (const k of ["c", "p", "h", "k"]) { const base = pal[k] || pal.h || "#888888"; d[k.toUpperCase()] = tint(base, -0.28); d[LIGHT[k]] = tint(base, 0.22); } DERIVED.set(pal, d); return d; }
-  function spriteImage(rows, cap, dir, flip, pal) {
-    const art = hires(rows, cap, dir), key = art.key + "|" + flip + "|" + pal.key; let cv = SPR.get(key); if (cv) return cv;
+  function fullPal(pal) { let d = DERIVED.get(pal); if (d) return d; d = { ...pal, w: "#ffffff", m: pal.m || "#c9705f", S: tint(pal.s, -0.14) }; for (const k of ["c", "p", "h", "k"]) { const base = pal[k] || pal.h || "#888888"; d[k.toUpperCase()] = tint(base, -0.28); d[LIGHT[k]] = tint(base, 0.22); } DERIVED.set(pal, d); return d; }
+  function spriteImage(rows, cap, dir, flip, pal, top) {
+    const art = hires(rows, cap, dir, top), key = art.key + "|" + flip + "|" + pal.key; let cv = SPR.get(key); if (cv) return cv;
     cv = document.createElement("canvas"); cv.width = 32; cv.height = art.rows.length; const cx = cv.getContext("2d"), d = fullPal(pal);
     art.rows.forEach((row, r) => row.forEach((ch, c) => { const col = d[ch]; if (!col || ch === ".") return; cx.fillStyle = col; cx.fillRect(flip ? 31 - c : c, r, 1, 1); }));
     SPR.set(key, cv); return cv;
   }
-  function drawSprite(rows, x, y, flip, pal, cap, dir) { ctx.drawImage(spriteImage(rows, cap, dir, flip, pal), x, y); }
+  function drawSprite(rows, x, y, flip, pal, cap, dir, top) { ctx.drawImage(spriteImage(rows, cap, dir, flip, pal, top || 0), x, y); }
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
@@ -891,7 +963,9 @@ const office = (() => {
     const hair = master ? ["bowl", "short"][u % 2] : HAIR_STYLES[(v >>> 10) % HAIR_STYLES.length];
     const pal = { o: "#3b2a1e", h: master ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >>> 3) % CAP_COLORS.length], s: SKIN[(v >>> 20) % SKIN.length], e: "#2b2b2b", c: shirt, p: master ? "#2b2b2b" : PANTS[(v >>> 5) % PANTS.length], b: SHOES[(v >>> 23) % SHOES.length], g: GLASSES[(v >>> 27) % GLASSES.length], l: (u >>> 5) % 2 ? "#ffffff" : "#ffd23f" };
     pal.d = (v >>> 25) % 2 ? "#f4f4f4" : tint(shirt, -0.45); pal.key = JSON.stringify(pal);
-    return { pal, hair, cap: master || hair === "bald" ? null : CAPS[(v >>> 7) % CAPS.length], glasses: (v >>> 13) % 3 === 0, beard: !master && (v >>> 15) % 4 === 0, shirt: master ? "plain" : SHIRTS[(v >>> 17) % SHIRTS.length] };
+    const w = hash(name + "species"), species = master || w % 5 < 2 ? "human" : ANIMAL_NAMES[(w >>> 3) % ANIMAL_NAMES.length], sp = ANIMALS[species];
+    if (sp) { pal.s = sp.fur[(w >>> 8) % sp.fur.length]; pal.n = sp.n; pal.a = sp.a; pal.m = sp.m; pal.key = JSON.stringify(pal); }
+    return { pal, species, top: sp ? (EARS[sp.ears] || EARS.none).top.length : 0, hair: sp ? "bald" : hair, cap: master || sp || hair === "bald" ? null : CAPS[(v >>> 7) % CAPS.length], glasses: (v >>> 13) % 3 === 0, beard: !master && !sp && (v >>> 15) % 4 === 0, shirt: master ? "plain" : SHIRTS[(v >>> 17) % SHIRTS.length] };
   }
   function ensureChar(a) {
     if (!chars[a.name]) {
@@ -1001,7 +1075,7 @@ const office = (() => {
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (asleep) {
       // head on the pillow, the blanket covers the rest
-      const head = headRows(c, "down").slice(0, 10); drawSprite(head, x, c.py - 2, false, c.pal, c.cap, "down");
+      const head = headRows(c, "down").slice(0, 10 + c.top); drawSprite(head, x, c.py - 2 - c.top * 2, false, c.pal, c.cap, "down", c.top);
       const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 22, c.py - 4 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 21, c.py - 5 - z * 2);
       return;
     }
@@ -1009,7 +1083,7 @@ const office = (() => {
     const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
     const talking = c.talk && !c.moving && !c.steps.length && c.mode === "talk";
     const tick = Math.floor(t * 7 + c.idx) % 2, bobY = working && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
-    drawSprite(sprite(c, c.dir, c.frame), x, y + bobY, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir);
+    drawSprite(sprite(c, c.dir, c.frame), x, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
     if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
     if (talking) {                                                                 // gesturing while talking: one arm up, then the other
       const arm = Math.floor(t * 2 + c.idx) % 2, skin = c.pal.s;
@@ -1080,7 +1154,8 @@ const office = (() => {
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
     for (const c of order) {
-      const d = DESKS[c.idx]; if (!(d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
+      const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
+      if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); continue; }                          // the chair back sits between the camera and the occupant
       TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskLBack(); TX += T; (d.dual ? TILES.deskRBack : TILES.deskPlain)();
       if (c.mode === "work" && !c.faceOverride) {
         const tick = Math.floor(t * 7 + c.idx) % 2, x = c.px, y = c.py - 20, dy = d.desk[1] * T;
@@ -1098,7 +1173,7 @@ const office = (() => {
     vctx.drawImage(off, 0, 0, W * P, H * P, ox, oy, Math.round(W * scale), Math.round(H * scale));
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH }) };
+  return { start, stop, update, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES }) };
 })();
 route();
 </script>
