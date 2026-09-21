@@ -882,7 +882,7 @@ const office = (() => {
         if (performance.now() < c.enterAt || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) continue;
         c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
         const others = Object.values(chars).filter(o => o !== c);
-        if (others.length && others.every(o => !o.hidden)) { c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; }
+        if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; }
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
@@ -890,7 +890,12 @@ const office = (() => {
         if (m !== "sleep") { c.sleepReady = false; c.deskWait = null; }
         else if (!c.sleepReady && c.tx === DESKS[c.idx].chair[0] && c.ty === DESKS[c.idx].chair[1]) {   // sat down, found nothing to do
           if (!c.deskWait) { c.deskWait = performance.now() + 2500; c.dir = DESKS[c.idx].dir; }
-          else if (performance.now() > c.deskWait) { c.sleepReady = true; c.deskWait = null; c.say = NOTHING_TO_DO[c.idx % NOTHING_TO_DO.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; }
+          else if (performance.now() > c.deskWait) {
+            c.sleepReady = true; c.deskWait = null;
+            // only about a third of them comment on it, and never the late-comer (who already apologised)
+            const late = c.lateComer; c.lateComer = false;
+            if (!late && Math.random() < 1 / 3) { c.say = NOTHING_TO_DO[Math.floor(Math.random() * NOTHING_TO_DO.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; }
+          }
         }
         const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
       if (!c.moving && c.steps.length) {
