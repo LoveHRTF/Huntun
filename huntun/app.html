@@ -751,21 +751,21 @@ const office = (() => {
     n = Math.max(1, n); MASTER_IDX = masterIdx; const team = teamRoles;
     const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0));
     const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
-    const officeW = Math.max(14, 2 + islandsPerRow * 6), officeH = 4 + islandRows * 6;
+    const officeW = Math.max(14, 2 + islandsPerRow * 6), officeH = 5 + islandRows * 6;
     MW = officeW + 2;
     const yMid = 2 + officeH;
     const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(n / bedsPerRow);
     MH = yMid + 2 + 1 + bedRows * 3 + 1; W = MW * T; H = MH * T;
     DESKS = new Array(n); BEDS = []; map = []; solid = [];
     const mx = 1 + Math.floor(officeW / 2) - 1;
-    FRONT = [mx, 5];
-    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 3], chair: [mx, 2], dir: "down", dual: false };
+    FRONT = [mx, 6];
+    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 4], chair: [mx, 3], dir: "down", dual: false };   // row 2 stays clear: it is the corridor from the door
     let j = 0;
     const islandX0 = 1 + Math.floor((officeW - islandsPerRow * 6 + 2) / 2);
     for (let i = 0; i < n; i++) {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
-      const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 7 + row * 6;
+      const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 8 + row * 6;
       const dual = DEV_ROLES.includes(team[i].role);
       DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual };
       j++;
@@ -894,7 +894,7 @@ const office = (() => {
             c.sleepReady = true; c.deskWait = null;
             // only about a third of them comment on it, and never the late-comer (who already apologised)
             const late = c.lateComer; c.lateComer = false;
-            if (!late && Math.random() < 1 / 3) { c.say = NOTHING_TO_DO[Math.floor(Math.random() * NOTHING_TO_DO.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; }
+            if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[c.idx % NOTHING_TO_DO.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; }
           }
         }
         const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
@@ -993,7 +993,7 @@ const office = (() => {
     vctx.drawImage(off, 0, 0, W, H, ox, oy, Math.round(W * scale), Math.round(H * scale));
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, _debug: () => ({ chars, DESKS, BEDS, FRONT, MW, MH }) };
+  return { start, stop, update, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH }) };
 })();
 route();
 </script>
