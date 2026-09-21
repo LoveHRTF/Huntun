@@ -137,6 +137,16 @@
   .dlg .log .e .k { color:var(--muted); font-size:10.5px; margin-right:8px; }
   .notes { flex:1; overflow:auto; padding:10px 18px; }
   details summary { cursor:pointer; }
+  .needs { background:var(--warn); } .needs.zero { background:var(--panel2); color:var(--muted); }
+  .att { border:2px solid var(--line); background:var(--panel2); padding:10px 12px; margin-bottom:8px; box-shadow:3px 3px 0 var(--ink); }
+  .att .t { white-space:pre-line; line-height:1.45; margin:4px 0; }
+  .live { border-top:3px solid var(--line); padding:10px 18px; max-height:260px; overflow:auto; background:#0d1120; font-size:13px; }
+  .live .l { padding:4px 0; border-bottom:1px dashed var(--line); white-space:pre-wrap; word-break:break-word; line-height:1.45; }
+  .live .l.thinking { color:var(--pink); font-style:italic; } .live .l.tool { color:var(--cyan); font-family:var(--mono); font-size:12px; } .live .l.result { color:var(--muted); font-family:var(--mono); font-size:12px; }
+  .live .l.error { color:var(--err); } .live .l.cycle { color:var(--warn); } .live .l.text { color:var(--text); }
+  .live .k { color:var(--muted); font-size:10.5px; font-family:var(--mono); margin-right:6px; }
+  #office { width:100%; height:calc(100vh - 54px - 32px); display:block; image-rendering: pixelated; background:#0a0c14; border:3px solid var(--line); box-shadow:4px 4px 0 var(--ink); }
+  .viewbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
   @media (max-width: 1000px) { main.board { grid-template-columns: 1fr; height:auto; } aside { border:0; border-bottom:3px solid var(--line); } aside.right { border-left:0; } .msg { max-width:100%; } .dlg .cols { grid-template-columns:1fr; } .dlg .cols > div + div { border-left:0; border-top:3px solid var(--line); } .plan-agent { grid-template-columns: 44px 1fr; } .plan-agent .ctl { grid-column: 1 / -1; flex-direction:row; } }
 </style>
 </head>
@@ -150,6 +160,7 @@
 </header>
 <main id="main"><section id="view"></section></main>
 <dialog id="agentdlg"></dialog>
+<dialog id="attdlg"></dialog>
 <script>
 const $ = (s, el) => (el || document).querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -214,7 +225,7 @@ const isWorking = (st) => /^(working|resuming)/.test(st || "");
 
 let timer = null;
 function route() {
-  clearInterval(timer);
+  clearInterval(timer); office.stop();
   const h = location.hash || "#/";
   let m;
   if ((m = h.match(/^#\/w\/([0-9a-f]{10})\/setup$/))) return setupView(m[1]);
@@ -301,7 +312,7 @@ async function setupView(id) {
   const draw = async () => {
     const w = await api("/api/workspaces/" + id);
     $("#hgoal").textContent = w.path;
-    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend"]); location.hash = "#/w/" + id; return; }
+    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend", "maxagents"]); location.hash = "#/w/" + id; return; }
     if (w.state === "clarifying") {
       $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
         '<p><span class="blink">▮</span> ' + esc(w.progress || "Checking the goal") + ' … ' + w.elapsed + 's</p>' +
@@ -314,10 +325,11 @@ async function setupView(id) {
       '<form id="setupform" style="margin-top:12px">' +
       '<label>Goal — what should the team build or change?</label><textarea id="goal" placeholder="e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI">' + esc(goal) + '</textarea>' +
       '<label>Context (optional) — constraints, stack preferences, what to keep</label><textarea id="context" style="min-height:60px" placeholder="e.g. Python 3.12 + FastAPI, keep the existing database schema, small team">' + esc(ctx) + '</textarea>' +
+      '<label>Team size limit (besides the master)</label><select id="maxagents"><option value="0">no limit (the master decides)</option>' + [2, 3, 4, 5, 6, 8, 10, 12].map(n => '<option value="' + n + '"' + (String(n) === loadDraft(id, "maxagents", "0") ? " selected" : "") + '>up to ' + n + ' agents</option>').join("") + '</select>' +
       '<label>Backend</label><select id="backend"><option value="">auto (Claude Code if installed, else API key)</option><option value="claude-code">Claude Code (your Claude login)</option><option value="codex">OpenAI Codex (your ChatGPT login)</option><option value="api">Anthropic API (ANTHROPIC_API_KEY)</option></select>' +
       '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
     if (be) $("#backend").value = be;
-    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value));
+    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value));
     if (w.error) $("#view").insertAdjacentHTML("beforeend", '<p class="hint">Your goal and context are kept as typed; fix the cause and send again.</p>');
     $("#setupform").addEventListener("submit", (e) => startPlanning(e, id));
     $("#forgetbtn").addEventListener("click", () => forget(id));
@@ -328,7 +340,7 @@ async function setupView(id) {
 async function startPlanning(e, id) {
   e.preventDefault();
   const btn = e.target.querySelector("button"); btn.disabled = true;
-  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null }); setupView(id); }
+  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null, max_agents: Number($("#maxagents").value || 0) }); setupView(id); }
   catch (err) { alert(err.message); btn.disabled = false; }
 }
 
@@ -367,6 +379,7 @@ function attachMentions(textarea, names) {
 }
 
 // ---------------------------------------------------------------- board
+let officeOn = (() => { try { return localStorage.getItem("huntun.office") === "1"; } catch (e) { return false; } })();
 let state = null, composing = false, boardId = null, openThread = null, sortBy = localStorage.getItem("huntun.sort") || "activity", filterBy = localStorage.getItem("huntun.filter") || "all";
 let threadKey = "", chatKey = "", chatData = null;
 async function boardView(id, threadId) {
@@ -384,19 +397,24 @@ async function boardView(id, threadId) {
       layout = want;
       $("#main").className = want === "board" ? "board" : "";
       $("#main").innerHTML = want === "board"
-        ? '<aside><h2>Team</h2><div id="agents"></div></aside><section id="view"><div id="threadsbox"></div></section><aside class="right"><h2>Activity</h2><div class="events" id="events"></div></aside>'
+        ? '<aside><div class="hrow"><h2>Team</h2><button class="small secondary" id="viewtoggle">' + (officeOn ? "Threads" : "Office view") + '</button></div><div id="agents"></div></aside><section id="view"><div id="threadsbox"' + (officeOn ? ' style="display:none"' : '') + '></div><div id="officebox"' + (officeOn ? '' : ' style="display:none"') + '></div></section><aside class="right"><h2>Activity</h2><div class="events" id="events"></div></aside>'
         : '<section id="view" class="approve-page"><div id="approval"></div><div id="threadsbox"></div></section>';
+      if (want === "board") { $("#viewtoggle").onclick = () => { officeOn = !officeOn; try { localStorage.setItem("huntun.office", officeOn ? "1" : ""); } catch (e) {} $("#threadsbox").style.display = officeOn ? "none" : ""; $("#officebox").style.display = officeOn ? "" : "none"; $("#viewtoggle").textContent = officeOn ? "Threads" : "Office view"; if (officeOn) office.start(); else office.stop(); }; if (officeOn) office.start(); }
       threadKey = ""; approvalKey = ""; goalKey = "";
     }
-    $("#hgoal").textContent = state.workspace.name + " — " + state.goal; $("#hgoal").title = state.workspace.path + "\n" + state.goal;
+    $("#hgoal").textContent = state.workspace.name; $("#hgoal").title = state.workspace.path + "\n\n" + state.goal;
     const lim = state.limits || {};
     $("#hstatus").style.display = ""; $("#hstatus").textContent = !state.goal_confirmed ? "confirm goal" : !state.approved ? "awaiting approval" : lim.paused ? "limit: " + Object.keys(lim.backends || {}).join(", ") : state.running ? "running" : "paused";
     $("#hstatus").className = "pill " + (!state.approved ? "busy" : lim.paused ? "off" : state.running ? "on" : "off");
     drawCounters(lim, state.totals);
-    $("#hactions").innerHTML = (state.approved ? '<button id="toggle" class="' + (state.running ? "secondary" : "ok") + '">' + (state.running ? "Pause all" : "Start all") + '</button>' : '') + '<a class="hint" href="#/">Projects</a>';
+    const n = state.attention_count || 0;
+    $("#hactions").innerHTML = '<button id="needs" class="needs' + (n ? "" : " zero") + '" title="items that need your decision, approval, or input">Needs you (' + n + ')</button>' + (state.approved ? '<button id="toggle" class="' + (state.running ? "secondary" : "ok") + '">' + (state.running ? "Pause all" : "Start all") + '</button>' : '') + '<a class="hint" href="#/">Projects</a>';
     if ($("#toggle")) $("#toggle").onclick = async () => { try { await api("/api/workspaces/" + id + "/control", { action: state.running ? "pause" : "start" }); } catch (err) { alert(err.message); } refresh(); };
+    $("#needs").onclick = () => openAttention(id);
+    if ($("#attdlg").open) drawAttention(id);
     if (want === "board") {
       drawTeam();
+      if (officeOn) office.update(state);
       $("#events").innerHTML = state.events.map(e => '<div class="ev">' + avatar(e.agent, "sm") + '<div class="t"><b>@' + esc(e.agent) + '</b> ' + esc(e.kind) + ' · ' + when(e.created_at) + '<br>' + esc(e.detail.slice(0, 160)) + '</div></div>').join("") || '<div class="hint">Nothing yet.</div>';
     } else if (want === "approve") {
       drawApproval(id);
@@ -498,7 +516,7 @@ function drawApproval(id) {
       '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (a.effort || "high") ? " selected" : "") + '>' + e + '</option>').join("") + '</select>' +
       '<button type="button" class="small danger rm">Remove</button></div></div>';
   }).join("");
-  box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
+  box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + (state.max_agents ? '<p class="hint">Team size limit: ' + state.max_agents + ' agents besides the master.</p>' : '') + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
     estBox + '<h2>Team</h2>' + cards +
     '<div class="plan-actions"><button class="ok" id="approvebtn">Approve plan</button><span class="hint">Agents load paused; press Start all afterwards.</span></div>' +
     '<form class="card" id="replanform"><label>Ask the master to revise</label><textarea id="feedback" style="min-height:56px" placeholder="e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA">' + esc(loadDraft(id, "feedback", "")) + '</textarea><div class="row"><button class="secondary">Request changes</button></div></form>' +
@@ -524,9 +542,12 @@ function sortedThreads() {
   ts.sort((a, b) => sortBy === "posted" ? (b.created_at < a.created_at ? -1 : 1) : (b.last_activity < a.last_activity ? -1 : 1));
   return ts;
 }
+let threadsDirty = false;
+function typingInThreads() { const a = document.activeElement; return !!(a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT") && a.closest("#threadsbox")); }
 async function drawThreads(force) {
   if (!state) return;
   const id = boardId, base = "/api/w/" + id;
+  if (!force && typingInThreads()) { threadsDirty = true; if (openThread) drawChat(); return; }
   const names = state.agents.filter(a => a.status !== "retired").map(a => a.name);
   const key = sortBy + "|" + filterBy + "|" + composing + "|" + openThread + "|" + JSON.stringify(state.threads.map(t => [t.id, t.last_activity, t.comment_count]));
   if (key !== threadKey || force) {
@@ -539,6 +560,7 @@ async function drawThreads(force) {
         (!open && t.last_comments.length ? '<div class="replies">' + t.last_comments.map(c => '<div class="reply">' + avatar(c.author, "sm") + '<div class="snip"><b>@' + esc(c.author) + '</b> <span class="meta">' + when(c.created_at) + '</span><br>' + esc(c.snippet.replace(/\s+/g, " ")) + '</div></div>').join("") + '</div>' : '') +
         (open ? '<div class="chat" id="chat"><div class="messages" id="messages"><span class="hint">loading…</span></div><form class="compose" id="cform"><div class="compose-wrap"><textarea id="cbody" placeholder="Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act."></textarea></div><div class="row"><button>Send</button><span class="hint">Cmd/Ctrl-Enter to send</span></div></form></div>' : '') + '</div>';
     }).join("") || '<p class="hint">' + (state.threads.length ? "Nothing matches this filter." : "No threads yet. Agents post here when they have something to discuss; you can also start one.") + '</p>';
+    threadsDirty = false;
     $("#threadsbox").innerHTML = '<div class="toolbar"><h2 style="margin:0">Threads</h2><button class="small" id="newbtn">' + (composing ? "Cancel" : "+ New thread") + '</button><div class="sort"><label>show</label><select id="filtersel"><option value="all"' + (filterBy === "all" ? " selected" : "") + '>everything</option><option value="discussions"' + (filterBy === "discussions" ? " selected" : "") + '>discussions</option><option value="commits"' + (filterBy === "commits" ? " selected" : "") + '>commit updates</option></select><label>sort</label><select id="sortsel"><option value="activity"' + (sortBy === "activity" ? " selected" : "") + '>last response</option><option value="posted"' + (sortBy === "posted" ? " selected" : "") + '>time posted</option></select></div></div>' +
       (composing ? '<form class="card composer top" id="newform"><input id="ntitle" placeholder="Title" autocomplete="off"><div class="compose-wrap"><textarea id="nbody" placeholder="Ask a question or add a requirement. Type @ to tag an agent."></textarea></div><div class="row"><button>Post thread</button><span class="hint">Tagged agents are woken up and decide whether to act.</span></div></form>' : '') +
       '<div id="threads">' + list + '</div>';
@@ -551,6 +573,7 @@ async function drawThreads(force) {
       attachMentions($("#nbody"), names);
       $("#newform").onsubmit = async (e) => { e.preventDefault(); const title = $("#ntitle").value.trim(), body = $("#nbody").value.trim(); if (!title || !body) return; const t = await api(base + "/threads", { title, body }); composing = false; openThread = t.id; sortBy = sortBy; chatKey = ""; state.threads.unshift({ id: t.id, title, author: "human", created_at: t.created_at, last_activity: t.created_at, comment_count: 0, snippet: body, last_comments: [], commit_sha: null }); drawThreads(true); };
     }
+    $("#threadsbox").addEventListener("focusout", () => { setTimeout(() => { if (threadsDirty && !typingInThreads()) drawThreads(true); }, 250); });
     if (openThread && $("#cbody")) {
       $("#cbody").value = draftC;
       attachMentions($("#cbody"), names);
@@ -567,16 +590,28 @@ async function drawChat() {
   const key = openThread + ":" + data.comments.length + ":" + (data.comments.at(-1)?.id || 0);
   if (key === chatKey) return;
   chatKey = key;
+  const active = document.activeElement, keepFocus = active && active.id === "cbody" ? { s: active.selectionStart, e: active.selectionEnd } : null;
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60 || !box.querySelector(".msg");
   const bubble = (m, first) => '<div class="msg' + (m.author === "human" ? " me" : "") + (first ? " first" : "") + '">' + avatar(m.author) + '<div class="bubble"><div class="bhead"><b>@' + esc(m.author) + '</b><span class="meta">' + when(m.created_at) + '</span></div><div class="md">' + md(m.body) + '</div></div></div>';
   box.innerHTML = bubble(data.thread, true) + data.comments.map(c => bubble(c, false)).join("");
   if (atBottom) box.scrollTop = box.scrollHeight;
+  if (keepFocus && $("#cbody")) { const ta = $("#cbody"); ta.focus({ preventScroll: true }); try { ta.setSelectionRange(keepFocus.s, keepFocus.e); } catch (e) {} }
+}
+
+// ---------------------------------------------------------------- attention dialog: what the human needs to act on
+async function openAttention(id) { const dlg = $("#attdlg"); dlg.innerHTML = '<div class="dlg"><div class="top"><div class="body"><div class="title"><h3>Needs you</h3><button class="small secondary" id="attclose" style="margin-left:auto">Close</button></div><p class="hint">Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.</p></div></div><div class="notes" id="attlist"></div></div>'; $("#attclose").onclick = () => dlg.close(); dlg.showModal(); await drawAttention(id); }
+async function drawAttention(id) {
+  let d; try { d = await api("/api/w/" + id + "/attention"); } catch (err) { $("#attlist").innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
+  $("#attlist").innerHTML = d.items.length ? d.items.map(it => '<div class="att"><div class="hrow"><span class="who">' + avatar(it.agent, "sm") + '<b>@' + esc(it.agent) + '</b><span class="meta">' + when(it.created_at) + ' · in <a href="#/w/' + id + '/t/' + it.thread_id + '" onclick="document.getElementById(\'attdlg\').close()">' + esc(it.title) + '</a></span></span><button class="small secondary attdone" data-id="' + it.id + '">Done</button></div><div class="t">' + esc(it.text.slice(0, 500)) + '</div></div>').join("") : '<p class="hint">Nothing needs you right now.</p>';
+  $("#attlist").querySelectorAll(".attdone").forEach(b => b.onclick = async () => { await api("/api/w/" + id + "/attention/" + b.dataset.id + "/resolve", {}); drawAttention(id); });
 }
 
 // ---------------------------------------------------------------- agent dialog
 let dlgTimer = null;
+let liveCursor = 0;
 async function openAgent(id, name) {
   const dlg = $("#agentdlg");
+  liveCursor = 0;
   const spec = state.agents.find(a => a.name === name) || { name, title: "", brief: "", role: "" };
   const live = spec.live || {}, st = live.status || spec.status;
   const brief = spec.brief.split("\n\nModel choice:")[0], why = (spec.brief.split("\n\nModel choice:")[1] || "").trim();
@@ -586,10 +621,16 @@ async function openAgent(id, name) {
     '<div class="tiles" id="tiles"></div>' +
     '<div class="cols"><div><h2>Role</h2><p><b>' + esc(spec.title) + '</b> <span class="meta">(' + esc(spec.role) + ')</span></p><p>' + esc(brief) + '</p>' + (why ? '<p class="meta"><i>Model choice: ' + esc(why) + '</i></p>' : '') + (spec.estimated_cycles ? '<p class="meta">Estimated ~' + spec.estimated_cycles + ' cycles × ~' + fmtNum(spec.tokens_per_cycle) + ' tokens</p>' : '') + '</div>' +
     '<div><h2>Current task</h2><p id="dlgcur">—</p><h2>Last cycle</h2><p id="dlglast" class="meta">—</p><h2>Uncommitted files</h2><p id="dlgfiles" class="meta">—</p></div></div>' +
+    '<div class="tabs"><h2 style="margin:0">Live</h2><span class="hint" id="livehint">what the model is doing right now: its thinking, what it says, and the tools it runs (newest at the bottom)</span></div><div class="live" id="dlglive"><p class="hint">Loading…</p></div>' +
     '<div class="notes" id="dlgcycles"><h2>Recent cycles</h2><p class="hint">Loading…</p></div></div>';
   $("#dlgclose", dlg).onclick = () => dlg.close();
   const pull = async () => {
-    let d; try { d = await api("/api/w/" + id + "/agents/" + name + "/activity?after=0"); } catch (err) { $("#dlgcycles", dlg).innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
+    let d; try { d = await api("/api/w/" + id + "/agents/" + name + "/activity?after=" + Math.max(0, liveCursor - 60)); } catch (err) { $("#dlgcycles", dlg).innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
+    const live = $("#dlglive", dlg), liveBottom = live.scrollHeight - live.scrollTop - live.clientHeight < 40 || !live.querySelector(".l");
+    const shown = (d.entries || []).filter(e => ["thinking", "text", "tool", "error", "cycle", "result"].includes(e.kind)).slice(-60);
+    live.innerHTML = shown.length ? shown.map(e => '<div class="l ' + esc(e.kind) + '"><span class="k">' + clock(e.at) + '</span>' + (e.kind === "thinking" ? "💭 " : e.kind === "tool" ? "⚙ " : e.kind === "result" ? "↳ " : "") + esc(e.text.length > 700 ? e.text.slice(0, 700) + "…" : e.text) + '</div>').join("") : '<p class="hint">Nothing yet — the agent has not started a cycle.</p>';
+    if (liveBottom) live.scrollTop = live.scrollHeight;
+    liveCursor = d.cursor || 0;
     const info = d.agent, lv = d.live || {}, u = info.usage || {};
     const tokens = (u.input || 0) + (u.output || 0) + (u.cache_read || 0);
     const pct = info.context_limit ? Math.min(100, Math.round(100 * (info.context_tokens || 0) / info.context_limit)) : 0;
@@ -605,9 +646,141 @@ async function openAgent(id, name) {
   dlg.showModal();
   clearInterval(dlgTimer);
   await pull();
-  dlgTimer = setInterval(() => { if (dlg.open) pull(); else clearInterval(dlgTimer); }, 4000);
+  dlgTimer = setInterval(() => { if (dlg.open) pull(); else clearInterval(dlgTimer); }, 2500);
   dlg.onclose = () => clearInterval(dlgTimer);
 }
+
+// ---------------------------------------------------------------- office view: isometric pixel office, the team as characters
+const office = (() => {
+  const TILE_W = 64, TILE_H = 32, COLS = 16, ROWS = 12;
+  let canvas = null, ctx = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
+  const iso = (gx, gy) => ({ x: (gx - gy) * TILE_W / 2, y: (gx + gy) * TILE_H / 2 });
+  const DESKS = [[2, 2], [2, 4], [2, 6], [4, 2], [4, 4], [4, 6], [6, 2], [6, 4], [6, 6], [8, 2], [8, 4], [8, 6]];
+  const BEDS = [[2, 9.5], [3.5, 9.5], [5, 9.5], [6.5, 9.5], [8, 9.5], [9.5, 9.5], [11, 9.5], [12.5, 9.5], [14, 9.5], [2, 11], [3.5, 11], [5, 11]];
+  const CONF = { x: 11.5, y: 3.5, w: 3, h: 2 };
+  const SEATS = [[10.6, 2.6], [11.6, 2.6], [12.6, 2.6], [13.6, 2.6], [10.6, 5.4], [11.6, 5.4], [12.6, 5.4], [13.6, 5.4], [10.3, 4], [14.3, 4], [10.3, 3.2], [14.3, 4.8]];
+  const hueOf = (name) => hash(name + "hue") % 360;
+  const colr = (h, sat, l) => "hsl(" + h + "," + sat + "%," + l + "%)";
+
+  function ensureChar(a, i) {
+    if (!chars[a.name]) { const p = iso(1 + (i % 6), 1); chars[a.name] = { name: a.name, x: p.x, y: p.y, tx: p.x, ty: p.y, mode: "idle", say: null, sayUntil: 0, step: Math.random() * 100, seat: i }; }
+    return chars[a.name];
+  }
+  function modeFor(a, st) {
+    const s = (a.live && a.live.status) || a.status || "";
+    const recentPost = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 120000);
+    if (recentPost) return { mode: "talk", post: recentPost };
+    if (/^(working|resuming)/.test(s)) return { mode: "work" };
+    return { mode: "sleep" };
+  }
+  function update(st) {
+    lastState = st;
+    const team = st.agents.filter(a => a.status !== "retired");
+    team.forEach((a, i) => {
+      const c = ensureChar(a, i); c.seat = i; c.title = a.title; c.role = a.role;
+      const m = modeFor(a, st);
+      c.mode = m.mode;
+      if (m.post && c.lastPostId !== m.post.id) { c.lastPostId = m.post.id; c.say = m.post.detail.replace(/^#\d+:?\s*/, "").slice(0, 90); c.sayUntil = Date.now() + 25000; }
+      let target;
+      if (c.mode === "work") target = DESKS[i % DESKS.length].map((v, k) => v + (k ? 0.55 : 0));
+      else if (c.mode === "talk") target = SEATS[i % SEATS.length];
+      else target = BEDS[i % BEDS.length].map((v, k) => v + (k ? 0.25 : 0.3));
+      const p = iso(target[0], target[1]); c.tx = p.x; c.ty = p.y;
+    });
+    for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
+  }
+  function start() {
+    const box = $("#officebox"); if (!box) return;
+    if (!canvas) { box.innerHTML = '<div class="viewbar"><span class="hint">🏢 desks = working · 🛏 bunks = idle or paused · 🗣 conference table = just posted on the board · click a character for details</span></div><canvas id="office"></canvas>'; canvas = $("#office"); ctx = canvas.getContext ? canvas.getContext("2d") : null; canvas.onclick = onClick; }
+    if (lastState) update(lastState);
+    if (!raf && ctx) raf = requestAnimationFrame(frame);
+  }
+  function stop() { if (raf) cancelAnimationFrame(raf); raf = null; canvas = null; ctx = null; }
+  function onClick(ev) {
+    const r = canvas.getBoundingClientRect(), sx = canvas.width / (r.width || 1), sy = canvas.height / (r.height || 1), mx = (ev.clientX - r.left) * sx, my = (ev.clientY - r.top) * sy;
+    const off = origin();
+    for (const c of Object.values(chars)) { const x = c.x + off.x, y = c.y + off.y; if (Math.abs(mx - x) < 18 && my < y + 6 && my > y - 44) { if (boardId) openAgent(boardId, c.name); return; } }
+  }
+  function origin() { return { x: canvas.width / 2 + TILE_W, y: 60 }; }
+  function frame(now) {
+    raf = null; if (!canvas || !ctx) return;
+    const box = $("#officebox"); if (!box) return;
+    const W = Math.max(640, Math.floor(box.clientWidth || 0)), H = Math.max(420, Math.floor((box.clientHeight || 0) - 40));
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    const off = origin(); const t = (now - t0) / 1000;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.translate(off.x, off.y);
+    for (let gy = 0; gy < ROWS; gy++) for (let gx = 0; gx < COLS; gx++) {
+      const p = iso(gx, gy); const carpet = gy >= 8.5, conf = gx >= 10 && gx <= 15 && gy >= 2 && gy <= 6;
+      ctx.fillStyle = conf ? ((gx + gy) % 2 ? "#243354" : "#1f2c4a") : carpet ? ((gx + gy) % 2 ? "#2a2440" : "#252038") : ((gx + gy) % 2 ? "#1c2238" : "#181d30");
+      diamond(p.x, p.y, TILE_W, TILE_H);
+    }
+    ctx.fillStyle = "#2f3660"; for (let gx = 0; gx < COLS; gx++) { const p = iso(gx, 0); wall(p.x, p.y, true); } for (let gy = 0; gy < ROWS; gy++) { const p = iso(0, gy); wall(p.x, p.y, false); }
+    { const a = iso(CONF.x, CONF.y), b = iso(CONF.x + CONF.w, CONF.y), c = iso(CONF.x + CONF.w, CONF.y + CONF.h), d = iso(CONF.x, CONF.y + CONF.h);
+      ctx.fillStyle = "#6b4a2b"; ctx.beginPath(); ctx.moveTo(a.x, a.y - 14); ctx.lineTo(b.x, b.y - 14); ctx.lineTo(c.x, c.y - 14); ctx.lineTo(d.x, d.y - 14); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#4e351f"; ctx.beginPath(); ctx.moveTo(d.x, d.y - 14); ctx.lineTo(c.x, c.y - 14); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#3e2a18"; ctx.beginPath(); ctx.moveTo(c.x, c.y - 14); ctx.lineTo(b.x, b.y - 14); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.closePath(); ctx.fill();
+      label(iso(CONF.x + 1.5, CONF.y - 1.2), "CONFERENCE"); }
+    const items = [];
+    DESKS.forEach((d, i) => items.push({ y: iso(d[0], d[1]).y, draw: () => desk(d[0], d[1], i) }));
+    BEDS.forEach((b, i) => items.push({ y: iso(b[0], b[1]).y, draw: () => bed(b[0], b[1], i) }));
+    const team = lastState ? lastState.agents.filter(a => a.status !== "retired") : [];
+    for (const c of Object.values(chars)) {
+      const dx = c.tx - c.x, dy = c.ty - c.y, dist = Math.hypot(dx, dy), speed = 1.6;
+      if (dist > 1) { c.x += dx / dist * Math.min(speed, dist); c.y += dy / dist * Math.min(speed, dist); c.walking = true; } else { c.walking = false; }
+      c.step += c.walking ? 0.25 : 0.06;
+      items.push({ y: c.y + 2, draw: () => character(c, t, team.find(a => a.name === c.name)) });
+    }
+    items.sort((p, q) => p.y - q.y).forEach(it => it.draw());
+    label(iso(2, 0.2), "OFFICE"); label(iso(2, 8.7), "BUNKS");
+    ctx.restore();
+    raf = requestAnimationFrame(frame);
+  }
+  function diamond(x, y, w, h) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w / 2, y + h / 2); ctx.lineTo(x, y + h); ctx.lineTo(x - w / 2, y + h / 2); ctx.closePath(); ctx.fill(); }
+  function wall(x, y, back) { ctx.beginPath(); if (back) { ctx.moveTo(x, y); ctx.lineTo(x + TILE_W / 2, y + TILE_H / 2); ctx.lineTo(x + TILE_W / 2, y + TILE_H / 2 - 40); ctx.lineTo(x, y - 40); } else { ctx.moveTo(x, y); ctx.lineTo(x - TILE_W / 2, y + TILE_H / 2); ctx.lineTo(x - TILE_W / 2, y + TILE_H / 2 - 40); ctx.lineTo(x, y - 40); } ctx.closePath(); ctx.fill(); }
+  function label(p, text) { ctx.font = "8px 'Press Start 2P', monospace"; ctx.fillStyle = "#8f98b8"; ctx.textAlign = "center"; ctx.fillText(text, p.x, p.y); }
+  function desk(gx, gy, i) {
+    const p = iso(gx, gy); const x = p.x, y = p.y;
+    ctx.fillStyle = "#5a3f26"; diamond(x, y - 12, 44, 22); ctx.fillStyle = "#3e2a18"; ctx.fillRect(x - 18, y - 6, 4, 12); ctx.fillRect(x + 14, y - 6, 4, 12);
+    ctx.fillStyle = "#1a1f3a"; ctx.fillRect(x - 8, y - 30, 16, 12); ctx.fillStyle = "#4fe3f0"; ctx.fillRect(x - 6, y - 28, 12, 8); ctx.fillStyle = "#1a1f3a"; ctx.fillRect(x - 2, y - 18, 4, 4);
+  }
+  function bed(gx, gy, i) {
+    const p = iso(gx, gy); const x = p.x, y = p.y;
+    ctx.fillStyle = "#3a3f6a"; diamond(x, y - 8, 46, 23); ctx.fillStyle = "#e9ecf5"; diamond(x - 12, y - 10, 14, 7); ctx.fillStyle = "#7b4fbf"; diamond(x + 6, y - 6, 26, 13);
+  }
+  function character(c, t, a) {
+    const x = Math.round(c.x), y = Math.round(c.y), h = hueOf(c.name), skin = "#f1c9a5", body = colr(h, 60, 45), dark = colr(h, 60, 30);
+    const sleeping = c.mode === "sleep" && !c.walking, working = c.mode === "work" && !c.walking, talking = c.mode === "talk" && !c.walking;
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(x, y + 2, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
+    if (sleeping) {
+      ctx.fillStyle = body; ctx.fillRect(x - 12, y - 10, 22, 8); ctx.fillStyle = skin; ctx.fillRect(x - 20, y - 12, 9, 9); ctx.fillStyle = "#0a0c14"; ctx.fillRect(x - 17, y - 9, 2, 1); ctx.fillRect(x - 13, y - 9, 2, 1);
+      const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#8f98b8"; ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x - 8, y - 18 - z * 3);
+    } else {
+      const bob = c.walking ? Math.round(Math.sin(c.step) * 2) : 0, legL = c.walking ? Math.round(Math.sin(c.step) * 3) : 0, legR = -legL;
+      ctx.fillStyle = dark; ctx.fillRect(x - 6, y - 8 + Math.max(0, legL), 5, 8 - Math.max(0, legL)); ctx.fillRect(x + 1, y - 8 + Math.max(0, legR), 5, 8 - Math.max(0, legR));
+      ctx.fillStyle = body; ctx.fillRect(x - 8, y - 24 + bob, 16, 16);
+      if (working) { const arm = Math.floor(t * 8) % 2; ctx.fillStyle = skin; ctx.fillRect(x - 12, y - 16 + bob + arm, 5, 3); ctx.fillRect(x + 7, y - 16 + bob + (1 - arm), 5, 3); }
+      else if (talking) { const arm = Math.floor(t * 3) % 2 ? -2 : 0; ctx.fillStyle = skin; ctx.fillRect(x + 8, y - 20 + bob + arm, 4, 6); }
+      else { ctx.fillStyle = skin; ctx.fillRect(x - 11, y - 20 + bob, 3, 8); ctx.fillRect(x + 8, y - 20 + bob, 3, 8); }
+      ctx.fillStyle = skin; ctx.fillRect(x - 7, y - 38 + bob, 14, 14);
+      ctx.fillStyle = colr(h, 50, 22); ctx.fillRect(x - 7, y - 40 + bob, 14, 5); ctx.fillRect(x - 8, y - 38 + bob, 2, 6); ctx.fillRect(x + 6, y - 38 + bob, 2, 6);
+      ctx.fillStyle = "#0a0c14"; ctx.fillRect(x - 4, y - 32 + bob, 2, 2); ctx.fillRect(x + 2, y - 32 + bob, 2, 2);
+      if (working && Math.floor(t * 6) % 2) { ctx.fillStyle = "#4fe3f0"; ctx.fillRect(x - 2, y - 46 + bob, 4, 2); }
+      if (a && a.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x - 5, y - 44 + bob, 10, 3); ctx.fillRect(x - 5, y - 47 + bob, 2, 3); ctx.fillRect(x - 1, y - 47 + bob, 2, 3); ctx.fillRect(x + 3, y - 47 + bob, 2, 3); }
+    }
+    ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#e9ecf5"; ctx.fillText("@" + c.name, x, y + 14);
+    if (c.say && Date.now() < c.sayUntil) speech(x, y - 50, c.say);
+  }
+  function speech(x, y, text) {
+    ctx.font = "11px Inter, sans-serif"; const lines = wrap(text, 26); const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + 14, h = lines.length * 14 + 10;
+    const bx = Math.round(x - w / 2), by = Math.round(y - h);
+    ctx.fillStyle = "#05070d"; ctx.fillRect(bx - 2, by - 2, w + 4, h + 4); ctx.fillStyle = "#e9ecf5"; ctx.fillRect(bx, by, w, h); ctx.fillRect(x - 3, by + h, 6, 4);
+    ctx.fillStyle = "#05070d"; ctx.textAlign = "left"; lines.forEach((l, i) => ctx.fillText(l, bx + 7, by + 14 + i * 14));
+  }
+  function wrap(text, n) { const words = text.split(/\s+/), out = []; let cur = ""; for (const wd of words) { if ((cur + " " + wd).trim().length > n) { out.push(cur.trim()); cur = wd; } else cur += " " + wd; if (out.length === 3) break; } if (cur.trim() && out.length < 4) out.push(cur.trim()); return out.length ? out : [text.slice(0, n)]; }
+  return { start, stop, update };
+})();
 route();
 </script>
 </body>

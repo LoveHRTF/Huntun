@@ -22,6 +22,7 @@ from claude_agent_sdk import (
     ResultMessage,
     SystemMessage,
     TextBlock,
+    ThinkingBlock,
     ToolUseBlock,
     create_sdk_mcp_server,
     query,
@@ -258,6 +259,8 @@ class ClaudeCodeBackend:
                                 elif isinstance(b, TextBlock) and b.text.strip():
                                     text_parts.append(b.text.strip())
                                     memory.activity("text", b.text.strip())
+                                elif isinstance(b, ThinkingBlock) and (b.thinking or "").strip():
+                                    memory.activity("thinking", b.thinking.strip())
                         elif isinstance(msg, ResultMessage):
                             session_id = msg.session_id
                             usage["cost_usd"] += msg.total_cost_usd or 0.0

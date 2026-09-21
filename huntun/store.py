@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS events (
   agent TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agent_status (
   name TEXT PRIMARY KEY, status TEXT NOT NULL, task TEXT NOT NULL DEFAULT '', last_active TEXT);
+CREATE TABLE IF NOT EXISTS attention (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL, text TEXT NOT NULL, thread_id INTEGER NOT NULL, comment_id INTEGER,
+  created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT);
 """
 
 
@@ -125,6 +129,8 @@ class Store:
         self._record_mentions(author, "comment", cid, thread_id, body)
         if thread["author"] not in (author, "human"):
             self._insert_mention(thread["author"], "comment", cid, thread_id, author, now)
+        if author == "human":
+            self.resolve_attention_for_thread(thread_id, "reply")
         self.log_event(author, "comment", f"#{thread_id}: {body[:120]}")
         self._emit("comment", thread_id, cid)
         return {"id": cid, "thread_id": thread_id, "author": author, "body": body, "created_at": now}
@@ -139,6 +145,18 @@ class Store:
         if self._one("SELECT id FROM mentions WHERE target = ? AND kind = ? AND ref_id = ?", target, kind, ref_id):
             return
         self._exec("INSERT INTO mentions(target, kind, ref_id, thread_id, author, seen, created_at) VALUES(?, ?, ?, ?, ?, 0, ?)", target, kind, ref_id, thread_id, author, now)
+        if target == "human" and author != "human":
+            # Tagging the human means an action is needed from them: track it until they respond.
+            text = ""
+            if kind == "thread":
+                t = self.get_thread(thread_id)
+                text = f"{t['title']}: {t['body']}" if t else ""
+            else:
+                c = self._one("SELECT body FROM comments WHERE id = ?", ref_id)
+                text = c["body"] if c else ""
+            self._exec("INSERT INTO attention(agent, text, thread_id, comment_id, created_at) VALUES(?, ?, ?, ?, ?)",
+                       author, text[:600], thread_id, ref_id if kind == "comment" else None, now)
+            self._emit("attention", thread_id)
         self._emit("mention", target)
 
     def get_thread(self, tid: int) -> dict[str, Any] | None:
@@ -206,6 +224,26 @@ class Store:
     def max_comment_id(self) -> int:
         row = self._one("SELECT COALESCE(MAX(id), 0) AS m FROM comments")
         return int(row["m"]) if row else 0
+
+    # ---- attention: what the human needs to act on -----------------------------
+
+    def open_attention(self, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._q("SELECT a.*, t.title FROM attention a JOIN threads t ON t.id = a.thread_id WHERE a.resolved_at IS NULL ORDER BY a.id DESC LIMIT ?", limit)
+        return [dict(r) for r in rows]
+
+    def attention_count(self) -> int:
+        row = self._one("SELECT COUNT(*) AS n FROM attention WHERE resolved_at IS NULL")
+        return int(row["n"]) if row else 0
+
+    def resolve_attention(self, item_id: int, by: str = "human") -> bool:
+        with self._lock:
+            cur = self._db.execute("UPDATE attention SET resolved_at = ?, resolved_by = ? WHERE id = ? AND resolved_at IS NULL", (now_iso(), by, item_id))
+            return cur.rowcount > 0
+
+    def resolve_attention_for_thread(self, thread_id: int, by: str = "reply") -> int:
+        with self._lock:
+            cur = self._db.execute("UPDATE attention SET resolved_at = ?, resolved_by = ? WHERE thread_id = ? AND resolved_at IS NULL", (now_iso(), by, thread_id))
+            return cur.rowcount
 
     # ---- events / status -------------------------------------------------------
 

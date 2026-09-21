@@ -146,6 +146,9 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     "plan_thread_id": int(store.get_control("plan_thread_id", "0") or 0) or None,
                     "totals": _totals(orch, entry.path),
                     "estimate": orch.config.estimate or None,
+                    "max_agents": orch.config.max_agents,
+                    "attention": store.open_attention(20),
+                    "attention_count": store.attention_count(),
                     "models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label} for m, b in (catalog_available() or [(m, orch.backend_name) for m in catalog_for(orch.backend_name)])],
                     "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()},
                     "personalities": [{"id": p.id, "name": p.name, "text": p.text, "group": p.group} for p in PERSONALITIES],
@@ -154,6 +157,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     "threads": threads,
                     "events": store.list_events(0, 40),
                 })
+            if sub == "/attention":
+                return self._json(200, {"items": store.open_attention(100), "count": store.attention_count()})
             am = re.match(r"^/agents/([a-z0-9-]+)/activity$", sub)
             if am:
                 rt = orch.runtimes.get(am.group(1))
@@ -213,7 +218,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             if sub == "/init":
                 backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex") else None
                 try:
-                    e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""))
+                    e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0))
                 except ValueError as ex:
                     raise HttpError(409 if "progress" in str(ex) else 400, str(ex)) from None
                 return self._json(202, e.summary())
@@ -261,6 +266,9 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 if not title or not text:
                     raise HttpError(400, "title and body are required")
                 return self._json(201, store.create_thread("human", title, text))
+            rm = re.match(r"^/attention/(\d+)/resolve$", sub)
+            if rm:
+                return self._json(200, {"ok": store.resolve_attention(int(rm.group(1)))})
             if sub == "/comments":
                 text = str(body.get("body") or "").strip()
                 tid = int(body.get("thread_id") or 0)

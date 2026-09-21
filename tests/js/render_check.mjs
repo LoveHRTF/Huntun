@@ -16,7 +16,7 @@ const errors = [];
 const finish = () => {
   const view = dom?.window.document.querySelector("#view")?.textContent?.trim() || "";
   const main = dom?.window.document.querySelector("#main")?.textContent?.trim() || "";
-  console.log(JSON.stringify({ route, errors, viewChars: view.length, mainChars: main.length, status: dom?.window.document.querySelector("#hstatus")?.textContent || "", sample: main.replace(/\s+/g, " ").slice(0, 220), text: main.replace(/\s+/g, " ").slice(0, 20000) }));
+  console.log(JSON.stringify({ route, errors, viewChars: view.length, mainChars: main.length, status: dom?.window.document.querySelector("#hstatus")?.textContent || "", sample: main.replace(/\s+/g, " ").slice(0, 220), text: main.replace(/\s+/g, " ").slice(0, 20000), header: (dom?.window.document.querySelector("header")?.textContent || "").replace(/\s+/g, " ") }));
   process.exit(errors.length || main.length < 40 ? 1 : 0);
 };
 process.on("uncaughtException", (e) => { errors.push("uncaught: " + (e.stack || e)); finish(); });
@@ -35,6 +35,8 @@ w.fetch = async (url, opts) => {
   return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) };
 };
 w.confirm = () => true; w.alert = (m) => errors.push("alert: " + m);
+if (process.env.HUNTUN_RENDER_OFFICE) { try { w.localStorage.setItem("huntun.office", "1"); } catch (e) {} }
+w.requestAnimationFrame = (fn) => setTimeout(() => fn(performance.now()), 16); w.cancelAnimationFrame = (id) => clearTimeout(id);
 if (!w.HTMLDialogElement.prototype.showModal) { w.HTMLDialogElement.prototype.showModal = function () { this.open = true; }; w.HTMLDialogElement.prototype.close = function () { this.open = false; }; }
 w.addEventListener("error", (e) => errors.push("window.error: " + (e.error?.stack || e.message)));
 w.addEventListener("unhandledrejection", (e) => errors.push("unhandledrejection: " + (e.reason?.stack || e.reason)));

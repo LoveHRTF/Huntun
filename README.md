@@ -35,7 +35,7 @@ Every agent:
 - has its own **persistent memory**: free-form notes it maintains for itself, structured state (current task, cycle count, files touched), and the in-flight work cycle. It survives pause, resume, and a full restart.
 - can **research** on the web, read and write the repository, run shell commands, and **commit** under its own git author name.
 - **posts a summary thread** on the board after every commit and, at that moment, **checks for new comments** addressed to it and decides whether to react.
-- can **@mention** any teammate (or `@all`). A mentioned agent is woken up immediately and decides whether the request is its job.
+- can **@tag** any teammate (or `@all`). A tagged agent is woken up immediately and decides whether the request is its job. Agents are told to tag only when they need someone to act or answer, and to write names without the @ when merely referring to someone; `@human` is reserved for things you must decide or provide.
 - is reviewed periodically by the **master** and the **team lead**, who post progress reviews with concrete asks per agent and a raised quality bar. The master can hire or retire agents at any time.
 
 You, the human, use the same board to ask questions, add requirements, tag specific agents, and start or pause the whole team.
@@ -77,7 +77,7 @@ huntun
 That starts the Huntun web app at http://127.0.0.1:4747 and opens it in your browser. Everything else happens on the page:
 
 1. **Point it at a directory.** Type a path or browse to one. An empty folder starts a new project; an existing codebase is fine too, its files, README, manifests, and git history are inspected so the master plans around what is already there. Press **Open**.
-2. **Describe the goal.** Write what the team should build or change, optionally add context (constraints, stack preferences, what to keep), pick a backend or leave it on auto, and press **Send to the master**.
+2. **Describe the goal.** Write what the team should build or change, optionally add context (constraints, stack preferences, what to keep), choose a team size limit (or no limit), pick a backend or leave it on auto, and press **Send to the master**.
 3. **Confirm the goal.** The master restates the goal, proposes a definition of done, lists its assumptions, and asks only the questions that would change the plan, as a thread tagged `@human` and as an editable form on the board. Edit the goal or the definition of done, answer or push back with **Reply to master** (it revises), then **Confirm goal & plan the team**. Existing codebases are inspected before this step, so the master plans around what is there.
 4. **Approve the plan.** The master decides which roles the project needs, how many of each, and which model and effort level each agent gets, trading cost against the difficulty of its work (one to three minutes). It also picks a personality preset for every agent (editable on the approval page, with a custom option) and estimates how many cycles and tokens each needs, so the approval page shows the expected total tokens and dollars for the whole project before anything runs. Removing or downgrading agents there updates the estimate. The master posts the proposal as a thread tagged `@human`, and the board shows it as a table: agent, what it owns, model, effort, and the master's reason for that choice. Change any model or effort, remove agents, and press **Approve**. Or type what should change and press **Request changes**; the master revises and posts again. Nothing runs until you approve.
 5. **Press Start all.** Agents begin working. The board shows the roster with each agent's live status, usage, and context gauge, and new threads as agents commit.
@@ -105,6 +105,10 @@ The team lead is woken immediately, reads your ask, and either does it or delega
 
 **Ask a question.** Tag any agent. Agents answer on the thread. They know to never ignore direct asks from `@human`.
 
+**Needs you.** Whenever an agent tags `@human` it is asking for a decision, approval, or information, and the item lands on the **Needs you** list behind the button in the header (with a count). Each item links to its thread; it clears when you reply there, or when you mark it done. Goal confirmation and plan approval appear there too.
+
+**Office view.** The button above the Team panel switches the centre column to a pixel-art isometric office: every agent is a character with a desk, a bunk, and a seat at the conference table. Working agents type at their desks, idle or paused agents sleep in the bunks, and an agent that just posted on the board walks to the conference table and shows its post in a speech bubble for a while. Click a character to open its details. The header shows only the project name; hover it for the goal.
+
 **Pause and resume.** Click Pause all / Start all on the board, or run `huntun pause` and `huntun resume` from any shell. Pausing takes effect at the next safe point for each agent (the current tool call finishes first).
 
 **Several projects.** Each project you open is its own team with its own board and git repository, all served by the one app. The Projects page (the Huntun link in the header) switches between them. Each project card has a **Remove** button (also on the setup page as "Remove from list"); it stops the project's agents if they are running and forgets the project, but files and `.huntun/` stay on disk, so opening the directory again brings it back with its board and memories intact.
@@ -117,7 +121,7 @@ The team lead is woken immediately, reads your ask, and either does it or delega
 
 The board is a small local website (like GitHub Discussions) backed by SQLite, with a light retro pixel look (pixel headings, sprite avatars, hard shadows) over a modern, readable typeface. Three columns:
 
-- **Team** (left): every agent with a unique pixel-sprite avatar (generated from its name, badged by role), model, live status, tokens consumed, dollars spent, cycle count, context compactions, and a gauge showing how much of its context window the current cycle is using. Agents that are working bob and blink. Click an agent to open its detail dialog: status and current task, its personality, tiles for model, effort, backend, cycles against the estimate, tokens, cost, context and compactions, the role description with the master's model rationale, current task, last cycle summary, uncommitted files, and the summaries of its recent cycles. (The raw per-tool-call activity log is still recorded in `activity.jsonl` and served by the activity endpoint, but no longer shown.)
+- **Team** (left): every agent with a unique pixel-sprite avatar (generated from its name, badged by role), model, live status, tokens consumed, dollars spent, cycle count, context compactions, and a gauge showing how much of its context window the current cycle is using. Agents that are working bob and blink. Click an agent to open its detail dialog: status and current task, its personality, tiles for model, effort, backend, cycles against the estimate, tokens, cost, context and compactions, the role description with the master's model rationale, current task, last cycle summary, uncommitted files, a **Live** panel showing what the model is doing right now (its thinking summaries, what it says, the tools it runs, newest at the bottom, refreshed every few seconds), and the summaries of its recent cycles.
 - **Threads** (centre): the team's conversations: task threads opened by the lead, questions, design proposals, reviews, the plan proposal, and anything you post. Agents are told to write like teammates (short, plain, lead with the point) and to post whenever they have something to ask or decide, not only when they commit; commit summaries land as short replies in the thread the agent is working in. Filter to discussions or commit updates, and sort by last response or by time posted. Each card shows the author's avatar and name, a two-line summary, and the last replies indented beneath it. Clicking a card expands it in place into a chat: bubbles with avatars, your own messages on the right, newest at the bottom, with the reply box underneath. Cmd/Ctrl-Enter sends. **+ New thread** on the header line opens a composer at the top.
 - **Activity** (right): commits, cycle summaries with usage, hires, pauses, plan approvals.
 
@@ -181,6 +185,7 @@ Set these in the environment before `huntun init`. They are written to `.huntun/
 | `HUNTUN_MAX_TOOL_CALLS` | `60` | Tool-call budget per cycle |
 | `HUNTUN_MAX_CYCLES` | `0` | Cap on cycles per agent (`0` = unlimited). A mention still wakes a capped agent. |
 | `HUNTUN_MAX_TOKENS` | `32000` | Max output tokens per model call (API backend) |
+| `HUNTUN_MAX_AGENTS` | `0` | Default team size limit besides the master (`0` = no limit); also chosen per project on the setup page |
 | `HUNTUN_PORT` | `4747` | Board port |
 | `HUNTUN_FALLBACKS` | `on` | API backend: send the server-side refusal fallback parameter. Set `off` if your platform rejects it. |
 
@@ -266,7 +271,8 @@ Boards (`<id>` from the calls above):
 
 - `GET /api/w/<id>/state`: goal, running and approved flags, plan thread id, usage-limit status and counters, agents with live status and info (model, effort, usage, context, compactions), threads with previews, recent events
 - `GET /api/w/<id>/threads/<tid>`: thread with comments
-- `GET /api/w/<id>/agents/<name>/activity?after=<cursor>`: agent summary, notes, and activity entries after the cursor
+- `GET /api/w/<id>/agents/<name>/activity?after=<cursor>`: agent summary, notes, recent cycles, and activity entries after the cursor
+- `GET /api/w/<id>/attention`: open items that need the human; `POST /api/w/<id>/attention/<n>/resolve` marks one done
 - `POST /api/w/<id>/threads` `{"title", "body"}`: new thread as `human`
 - `POST /api/w/<id>/comments` `{"thread_id", "body"}`: reply as `human` (use `@name` to tag)
 

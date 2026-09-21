@@ -57,6 +57,8 @@ class HuntunConfig:
     goal_confirmed: bool = False
     # Master's estimate for completing the project: {"tokens", "cost_usd", "cycles", "notes", "per_agent": [...]}
     estimate: dict[str, Any] = field(default_factory=dict)
+    # Maximum number of agents besides the master (0 = no limit).
+    max_agents: int = 0
     backend: str = "auto"
     model: str = ""  # empty = backend default (claude-opus-5 for api, Claude Code's configured model for claude-code)
     lead_effort: str = "xhigh"

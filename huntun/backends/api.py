@@ -112,6 +112,7 @@ class ApiBackend:
                 "tools": defs,
                 "messages": messages,
                 "output_config": {"effort": effort},
+                "thinking": {"type": "adaptive", "display": "summarized"},
             }
             try:
                 message = await self._call(params, use_fallbacks)
@@ -172,6 +173,8 @@ class ApiBackend:
             for b in message.content:
                 if b.type == "text" and b.text.strip():
                     memory.activity("text", b.text.strip())
+                elif b.type == "thinking" and getattr(b, "thinking", "").strip():
+                    memory.activity("thinking", b.thinking.strip())
             content = _serializable(message.content)
             if message.stop_reason == "pause_turn":
                 messages.append({"role": "assistant", "content": content})

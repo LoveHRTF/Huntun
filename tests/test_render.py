@@ -10,7 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.test_hub import HubTests
+try:
+    from test_hub import HubTests  # when discovered with -s tests
+except ImportError:  # pragma: no cover
+    from tests.test_hub import HubTests
 
 HARNESS = Path(__file__).parent / "js" / "render_check.mjs"
 
@@ -32,11 +35,11 @@ def jsdom_path() -> str | None:
 class RenderTests(HubTests):
     """Reuses the hub test fixture (fake backend, HTTP server) to produce real page states, then renders each."""
 
-    def render(self, route: str, responses: dict) -> dict:
+    def render(self, route: str, responses: dict, office: bool = False) -> dict:
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(responses, f)
         try:
-            env = {**os.environ, "NODE_PATH": jsdom_path() or ""}
+            env = {**os.environ, "NODE_PATH": jsdom_path() or "", "HUNTUN_RENDER_OFFICE": "1" if office else ""}
             proc = subprocess.run(["node", str(HARNESS), route, f.name], capture_output=True, text=True, timeout=60, env=env)
         finally:
             os.unlink(f.name)
@@ -81,7 +84,10 @@ class RenderTests(HubTests):
         st = snap[f"/api/w/{wid}/state"]
         out = self.render(f"#/w/{wid}", snap)
         self.assertIn("paused", out["status"])
+        self.assertIn("Needs you", out["header"])
         self.render(f"#/w/{wid}/t/{st['threads'][0]['id']}", snap)
+        out = self.render(f"#/w/{wid}", snap, office=True)
+        self.assertIn("Threads", out["text"], "office view toggled on shows the switch-back button")
 
     # the inherited hub tests already run in test_hub; skip them here
     def test_web_flow_open_plan_run_pause(self) -> None:

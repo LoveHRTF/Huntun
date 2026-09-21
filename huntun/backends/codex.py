@@ -248,7 +248,7 @@ class CodexBackend:
                     texts.append(str(item.get("text") or ""))
                     memory.activity("text", str(item.get("text") or ""))
                 elif kind == "reasoning":
-                    memory.activity("text", "(reasoning) " + str(item.get("text") or ""))
+                    memory.activity("thinking", str(item.get("text") or ""))
                 elif kind == "command_execution":
                     memory.activity("tool", f"shell {item.get('command')}")
                     if item.get("aggregated_output") or item.get("output"):

@@ -200,7 +200,7 @@ class Hub:
 
     # ---- phase 1: confirm the goal and the definition of done with the human --------------------
 
-    def begin_init(self, wid: str, goal: str, backend: str | None, context: str) -> WorkspaceEntry:
+    def begin_init(self, wid: str, goal: str, backend: str | None, context: str, max_agents: int = 0) -> WorkspaceEntry:
         """Validates and starts the goal check in the background (callable from any thread)."""
         e = self.workspaces[wid]
         with self.lock:
@@ -212,10 +212,10 @@ class Hub:
             if not goal:
                 raise ValueError("a goal is required")
             e.state, e.error, e.progress, e.started_at = "clarifying", None, "Inspecting the directory", time.time()
-        self.submit(self.clarify(wid, goal, backend, context))
+        self.submit(self.clarify(wid, goal, backend, context, max_agents=max_agents))
         return e
 
-    async def clarify(self, wid: str, goal: str, backend: str | None, context: str, conversation: str = "") -> WorkspaceEntry:
+    async def clarify(self, wid: str, goal: str, backend: str | None, context: str, conversation: str = "", max_agents: int = 0) -> WorkspaceEntry:
         """The master restates the goal, proposes a definition of done, and asks the human to confirm."""
         e = self.workspaces[wid]
         e.state, e.error, e.started_at = "clarifying", None, e.started_at or time.time()
@@ -225,6 +225,7 @@ class Hub:
             else:
                 config = default_config(goal)
                 config.context = context.strip()
+                config.max_agents = max(0, int(max_agents or 0))
                 if backend in ("api", "claude-code", "codex"):
                     config.backend = backend
                 config.backend = resolve_backend(config)

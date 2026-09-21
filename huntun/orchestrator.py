@@ -279,6 +279,8 @@ class Orchestrator:
             return "ERROR: invalid name"
         if any(a.name == name and a.status != "retired" for a in self.team):
             return f"ERROR: @{name} already exists"
+        if self.config.max_agents and len([a for a in self.active_team() if a.role != "master"]) >= self.config.max_agents:
+            return f"ERROR: the human capped the team at {self.config.max_agents} agents; retire someone first or ask @human to raise the cap"
         role = spec_in["role"] if spec_in["role"] in ROLE_CATALOG and spec_in["role"] != "master" else "fullstack"
         existing = next((a for a in self.team if a.name == name), None)
         model = spec_in.get("model") or None

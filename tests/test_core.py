@@ -95,6 +95,23 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(self.store.take_inbox("backend-1"), [], "inbox is marked seen")
         self.assertEqual(self.store.peek_inbox_count("qa-1"), 1)
 
+    def test_tagging_human_creates_attention_until_they_reply(self) -> None:
+        self.assertEqual(self.store.attention_count(), 0)
+        t = self.store.create_thread("master", "Need a decision", "@human should we use Postgres or SQLite?")
+        self.assertEqual(self.store.attention_count(), 1)
+        self.store.add_comment(t["id"], "team-lead", "I'd go SQLite; the owner said small.")  # no @human: no new item
+        self.assertEqual(self.store.attention_count(), 1)
+        self.store.add_comment(t["id"], "qa-1", "@human also, which browsers matter?")
+        items = self.store.open_attention()
+        self.assertEqual([i["agent"] for i in items], ["qa-1", "master"])
+        self.assertEqual(items[0]["title"], "Need a decision")
+        self.store.add_comment(t["id"], "human", "SQLite, Chrome only.")
+        self.assertEqual(self.store.attention_count(), 0, "a human reply in the thread clears its items")
+        t2 = self.store.create_thread("master", "Approve?", "@human ok?")
+        self.assertTrue(self.store.resolve_attention(self.store.open_attention()[0]["id"]))
+        self.assertEqual(self.store.attention_count(), 0)
+        self.assertIsNotNone(t2)
+
     def test_broadcast_does_not_wake_author(self) -> None:
         self.store.create_thread("master", "Kickoff", "@all read this")
         self.assertEqual(self.store.peek_inbox_count("master"), 0)

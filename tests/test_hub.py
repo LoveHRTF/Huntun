@@ -156,7 +156,7 @@ class HubTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, 400)
 
         # Phase 1: the master checks the goal with the human before any planning
-        w = self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "context": "keep it small"})
+        w = self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "context": "keep it small", "max_agents": 2})
         self.assertEqual(w["state"], "clarifying")
         w = self.wait_state(wid, ("goal_proposed", "error"))
         self.assertEqual(w["state"], "goal_proposed", w.get("error"))
@@ -187,10 +187,12 @@ class HubTests(unittest.TestCase):
         self.assertEqual(w["state"], "proposed", w.get("error"))
         self.assertEqual((w["goal"], w["goal_confirmed"], w["definition_of_done"]), ("Add a CLI to myapp, final", True, "CLI runs\ntests pass\ndocs updated"))
         self.assertIn("docs updated", FakeBackend.last_prompt, "the plan prompt carries the agreed definition of done")
+        self.assertIn("at most 2 agents", FakeBackend.last_prompt)
+        self.assertEqual(w["agents"], 3, "master + 2: the fake plan's third agent was trimmed to the cap")
         self.assertIn("src/main.py", FakeBackend.last_prompt)
         self.assertIn("keep it small", FakeBackend.last_prompt)
         self.assertIn("claude-haiku-4-5", FakeBackend.last_prompt, "model catalog is offered to the master")
-        self.assertEqual((w["agents"], w["running"], w["initialized"], w["approved"]), (4, False, True, False))
+        self.assertEqual((w["agents"], w["running"], w["initialized"], w["approved"]), (3, False, True, False))
         self.assertTrue((self.project / ".huntun" / "team.json").exists())
         self.assertTrue((self.project / ".git").exists())
         self.assertIn(".huntun/", (self.project / ".gitignore").read_text())
@@ -212,7 +214,9 @@ class HubTests(unittest.TestCase):
         self.assertIn("jokester", [p["id"] for p in st["personalities"] if p["group"] == "human"])
         est = st["estimate"]
         self.assertEqual(est["notes"], "rough guess")
-        self.assertEqual(est["tokens"], 8 * 120000 + 4 * 200000 + 10 * 300000 + 2 * 100000)
+        self.assertEqual(est["tokens"], 8 * 120000 + 4 * 200000 + 10 * 300000)
+        self.assertEqual(st["max_agents"], 2)
+        self.assertGreaterEqual(st["attention_count"], 1, "the plan tagged @human, so it is on the attention list")
         self.assertGreater(est["cost_usd"], 0)
         self.assertIn("Estimate to finish", st["threads"][0]["snippet"] + self.srv.call(f"/api/w/{wid}/threads/{st['plan_thread_id']}")["thread"]["body"])
         self.assertIn("Model choice: routine", by_name["dev-1"]["brief"])
@@ -239,16 +243,18 @@ class HubTests(unittest.TestCase):
         self.assertTrue(all(set(m) >= {"id", "backend", "vendor"} for m in st["models"]))
         self.assertIn("api", st["backends"])
         w = self.srv.call(f"/api/workspaces/{wid}/approve", {"agents": [{"name": "dev-1", "model": "claude-opus-5", "effort": "xhigh", "personality_preset": "custom", "personality": "Grumpy but brilliant."},
-                                                                          {"name": "team-lead", "personality_preset": "skeptic", "personality": "ignored when a preset is chosen"},
-                                                                          {"name": "docs-1", "remove": True}]})
+                                                                          {"name": "team-lead", "personality_preset": "skeptic", "personality": "ignored when a preset is chosen"}]})
         self.assertEqual((w["state"], w["approved"], w["running"]), ("ready", True, False))
         st = self.srv.call(f"/api/w/{wid}/state")
         self.assertTrue(st["approved"])
         self.assertEqual([a["name"] for a in st["agents"]], ["master", "team-lead", "dev-1"])
+        self.assertEqual(st["attention_count"], 0, "approving (a human reply on the plan thread) clears the item")
+        att = self.srv.call(f"/api/w/{wid}/attention")
+        self.assertEqual(att["items"], [])
         dev = [a for a in st["agents"] if a["name"] == "dev-1"][0]
         self.assertEqual((dev["model"], dev["effort"], dev["info"]["model"], dev["info"]["effort"]), ("claude-opus-5", "xhigh", "claude-opus-5", "xhigh"))
         self.assertIn(dev["backend"], ("api", "claude-code"))
-        self.assertEqual(st["estimate"]["tokens"], 8 * 120000 + 4 * 200000 + 10 * 300000, "estimate recomputed without the removed writer")
+        self.assertEqual(st["estimate"]["tokens"], 8 * 120000 + 4 * 200000 + 10 * 300000)
         self.assertEqual((dev["personality"], dev["personality_preset"]), ("Grumpy but brilliant.", "custom"))
         lead = [a for a in st["agents"] if a["name"] == "team-lead"][0]
         self.assertEqual(lead["personality_preset"], "skeptic")
@@ -258,7 +264,7 @@ class HubTests(unittest.TestCase):
         self.assertEqual((st["agents"][0]["info"]["cycles"], st["agents"][0]["info"]["compactions"]), (0, 0))
         plan = self.srv.call(f"/api/w/{wid}/threads/{st['plan_thread_id']}")
         self.assertIn("approved", plan["comments"][-1]["body"].lower())
-        self.assertIn("removed @docs-1", plan["comments"][-1]["body"])
+        self.assertIn("personality -> custom", plan["comments"][-1]["body"])
 
         # Human posts and tags from the page; thread previews carry a snippet and the last comments
         t = self.srv.call(f"/api/w/{wid}/threads", {"title": "Req", "body": "@team-lead add --json"})

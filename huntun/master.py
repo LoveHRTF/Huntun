@@ -227,6 +227,7 @@ Pick a personality preset for every agent so the team reads like real, different
 For each agent, estimate how many work cycles it needs to finish its part and the typical tokens per cycle, so the human can see the expected total tokens and cost before approving. Be honest and slightly conservative; explain the basis in estimate_notes.
 
 # Rules
+- {"The human allows at most " + str(config.max_agents) + " agents besides you; do not exceed it." if config.max_agents else "The human set no limit on team size; still keep it as small as the work allows."}
 - Always include exactly one "team-lead". Include a "scrum-master" only for teams of 5 or more workers.
 - Choose the number of agents per role from the goal's actual needs (a CLI tool may need 2-3 agents; a full product with ML needs more). Fewer, well-briefed agents beat many idle ones; you can hire more later.
 - Every agent name must be unique and a lowercase slug (letters, digits, hyphens). Use numbered names for multiple agents in one role (backend-1, backend-2).
@@ -268,6 +269,9 @@ async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str =
                                 personality=personality_text(str(a.get("personality") or ""), str(a.get("personality_note") or "")),
                                 personality_preset=str(a.get("personality")) if a.get("personality") in PERSONALITY_IDS else "custom",
                                 estimated_cycles=max(1, int(a.get("estimated_cycles") or 0)), tokens_per_cycle=max(10_000, int(a.get("tokens_per_cycle") or 0))))
+    if config.max_agents and len(agents) > config.max_agents:
+        keep = [a for a in agents if a.role == "team-lead"][:1] + [a for a in agents if a.role != "team-lead"]
+        agents = keep[: config.max_agents]
     if not any(a.role == "team-lead" for a in agents):
         agents.insert(0, AgentSpec("team-lead", "team-lead", ROLE_CATALOG["team-lead"].title,
                                    "Own architecture and coordination. Write the initial plan thread, assign first tasks, review commits.", created_at=now))
