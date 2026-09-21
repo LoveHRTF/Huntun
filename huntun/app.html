@@ -652,7 +652,7 @@ async function openAgent(id, name) {
 
 // ---------------------------------------------------------------- office view: a GBA-era Pokémon style office in colour, the team as sprites
 const office = (() => {
-  const T = 32, MW = 20, MH = 18, W = MW * T, H = MH * T;                  // native 640x576, scaled by whole pixels when there is room
+  const T = 32, BAND = 96; let MW = 20, MH = 18, W = MW * T, H = MH * T + BAND;   // native size follows the team size (+ a dialog band under the map); scaled to fill the panel
   let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
   let scale = 1, ox = 0, oy = 0, msgQueue = [], msg = null, last = 0;
   const C = { wood: "#d8b26b", woodLine: "#c39a55", woodHi: "#e8c98a", wood2: "#c9a26a", wood2Line: "#b58b52", wallTop: "#3b2f22", wallTopHi: "#54432f", wall: "#f2e4c8", wallTrim: "#cdb38a", wallPanel: "#e6d5b3", base: "#8b6b43", baseLine: "#6e4f2e",
@@ -718,29 +718,41 @@ const office = (() => {
     }
   }
 
-  // ---- map (20x18): office (left), meeting room (right), bunks (bottom)
-  const DESKS = [[2, 3], [5, 3], [8, 3], [2, 6], [5, 6], [8, 6], [2, 9], [5, 9], [8, 9]];
-  const SEATS = [[14, 4], [14, 5], [14, 6], [17, 4], [17, 5], [17, 6], [15, 3], [16, 3], [15, 7], [16, 7], [13, 4], [18, 5]];
-  const BEDS = [[2, 13], [4, 13], [6, 13], [8, 13], [10, 13], [12, 13], [14, 13], [16, 13], [18, 13], [2, 15], [4, 15], [6, 15]];
-  const map = [], solid = [];
-  function buildMap() {
-    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [x >= 13 && x <= 18 && y >= 2 && y <= 10 ? "carpet" : y >= 13 ? "floor2" : "floor"]; solid[y][x] = false; } }
-    const put = (x, y, t, s = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (s) solid[y][x] = true; };
-    for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, 17, "wallTop"); }
-    for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(19, y, "wallTop"); }
-    for (let y = 2; y < 11; y++) if (y !== 5 && y !== 8) put(12, y, "wallTop");
-    for (let x = 1; x < 19; x++) if (x !== 4 && x !== 15) { put(x, 11, "wallTop"); put(x, 12, "wallFace"); }
-    put(4, 12, "mat", false); put(15, 12, "mat", false);
+  // ---- layout: one desk, one meeting seat, and one bunk per agent, generated from the team size
+  let DESKS = [], SEATS = [], BEDS = [], map = [], solid = [], builtFor = -1;
+  function layout(n) {
+    n = Math.max(1, n);
+    const deskCols = Math.min(4, Math.ceil(Math.sqrt(n))), deskRows = Math.ceil(n / deskCols);
+    const officeW = 3 + deskCols * 4, officeH = 3 + deskRows * 4;                       // desk unit: 2 wide + 2 gap; desk row + chair row + 2 gap
+    const perSide = Math.ceil(n / 2), tableH = Math.max(2, perSide), roomW = 10, roomH = tableH + 5;
+    const dividerX = 1 + officeW; MW = dividerX + 1 + roomW + 1;
+    const yMid = 2 + Math.max(officeH, roomH);
+    const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(n / bedsPerRow);
+    MH = yMid + 2 + 1 + bedRows * 3 + 1; W = MW * T; H = MH * T + BAND;
+    DESKS = []; SEATS = []; BEDS = []; map = []; solid = [];
+    for (let i = 0; i < n; i++) DESKS.push([3 + (i % deskCols) * 4, 3 + Math.floor(i / deskCols) * 4]);
+    const tx = dividerX + 5, ty = 4;
+    for (let i = 0; i < n; i++) SEATS.push(i % 2 ? [tx + 2, ty + Math.floor(i / 2)] : [tx - 1, ty + Math.floor(i / 2)]);
+    for (let i = 0; i < n; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 3 + Math.floor(i / bedsPerRow) * 3]);
+    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [x > dividerX && x < MW - 1 && y >= 2 && y < yMid ? "carpet" : y > yMid + 1 ? "floor2" : "floor"]; solid[y][x] = false; } }
+    const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
+    for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
+    for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
+    for (let y = 2; y < yMid; y++) if ((y - 2) % 4 !== 3) put(dividerX, y, "wallTop");                                  // office | meeting room, a gap every 4 tiles
+    const doors = [Math.floor(officeW / 2), dividerX + Math.floor(roomW / 2) + 1];
+    for (let x = 1; x < MW - 1; x++) if (!doors.includes(x)) { put(x, yMid, "wallTop"); put(x, yMid + 1, "wallFace"); }
+    doors.forEach(x => put(x, yMid + 1, "mat", false));
     DESKS.forEach(([x, y]) => { put(x, y, "deskL"); put(x + 1, y, "deskR"); put(x, y + 1, "chair", false); });
-    put(15, 4, "tableTL"); put(16, 4, "tableTR"); put(15, 5, "tableML"); put(16, 5, "tableMR"); put(15, 6, "tableBL"); put(16, 6, "tableBR");
+    for (let r = 0; r < tableH; r++) { put(tx, ty + r, r === 0 ? "tableTL" : r === tableH - 1 ? "tableBL" : "tableML"); put(tx + 1, ty + r, r === 0 ? "tableTR" : r === tableH - 1 ? "tableBR" : "tableMR"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
-    [[1, 2], [18, 2], [11, 2], [13, 2], [18, 10], [1, 16], [18, 16], [11, 10]].forEach(([x, y]) => put(x, y, "plant"));
-    put(3, 1, "shelf"); put(6, 1, "shelf"); put(16, 1, "shelf"); put(9, 1, "door");
+    [[1, 2], [dividerX - 1, 2], [dividerX + 1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, MH - 2], [MW - 2, MH - 2], [dividerX - 1, yMid - 1]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
+    for (let x = 3; x < MW - 3; x += 5) put(x, 1, x % 2 ? "shelf" : "door");
+    builtFor = n;
   }
-  buildMap();
+  function ensureLayout(n) { if (n !== builtFor) { layout(n); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
   function renderMap() {
     off.width = W; off.height = H;
-    mapImg = document.createElement("canvas"); mapImg.width = W; mapImg.height = H;
+    mapImg = document.createElement("canvas"); mapImg.width = W; mapImg.height = MH * T;
     ctx = mapImg.getContext("2d");
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; for (const t of map[y][x]) TILES[t](); }
     ctx = off.getContext("2d");
@@ -768,7 +780,7 @@ const office = (() => {
     return { pal: { o: "#3b2a1e", h: role === "master" ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >> 3) % CAP_COLORS.length], s: "#f3c9a0", e: "#2b2b2b", c: "hsl(" + h + ",65%,50%)", p: (v >> 5) % 2 ? "#2f4a8a" : "#4a4a4a", b: "#3b2a1e" }, cap: role === "master" ? null : CAPS[(v >> 7) % CAPS.length] };
   }
   function ensureChar(a, i) {
-    if (!chars[a.name]) { const spot = [4 + (i % 8), 12]; const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, ...look }; }
+    if (!chars[a.name]) { const spot = [Math.min(MW - 2, 2 + (i % (MW - 3))), 2]; const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, ...look }; }
     return chars[a.name];
   }
   function modeFor(a, st) {
@@ -781,15 +793,16 @@ const office = (() => {
   function update(st) {
     lastState = st;
     const team = st.agents.filter(a => a.status !== "retired");
+    ensureLayout(team.length);
     team.forEach((a, i) => {
       const c = ensureChar(a, i); c.role = a.role; c.title = a.title;
       const m = modeFor(a, st); c.mode = m.mode;
       const postId = m.post ? (m.post.id ?? m.post.created_at) : null;
       if (m.post && c.lastPostId !== postId) { c.lastPostId = postId; c.bang = Date.now() + 2500; msgQueue.push({ who: a.name, text: m.post.detail.replace(/^#\d+:?\s*/, "") }); if (msgQueue.length > 6) msgQueue.shift(); }
       let goal;
-      if (c.mode === "work") { const d = DESKS[i % DESKS.length]; goal = [d[0], d[1] + 1]; }
-      else if (c.mode === "talk") goal = SEATS[i % SEATS.length];
-      else { const b = BEDS[i % BEDS.length]; goal = [b[0], b[1]]; }
+      if (c.mode === "work") { const d = DESKS[i]; goal = [d[0], d[1] + 1]; }
+      else if (c.mode === "talk") goal = SEATS[i];
+      else { const b = BEDS[i]; goal = [b[0], b[1]]; }
       if (goal[0] !== c.tx || goal[1] !== c.ty) { c.goal = goal; if (!c.moving) c.steps = path([c.tx, c.ty], goal); }
     });
     for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
@@ -801,7 +814,7 @@ const office = (() => {
         c.prog += dt * 3.4; const e = Math.min(1, c.prog);
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
         c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
-        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "work") c.dir = "up"; else if (c.mode === "talk") c.dir = c.tx < 15 ? "right" : c.tx > 16 ? "left" : c.ty < 5 ? "down" : "up"; else c.dir = "down"; } }
+        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "work") c.dir = "up"; else if (c.mode === "talk") { const s = SEATS.findIndex(sv => sv[0] === c.tx && sv[1] === c.ty); c.dir = s >= 0 && s % 2 === 0 ? "right" : "left"; } else c.dir = "down"; } }
       }
     }
   }
@@ -822,9 +835,9 @@ const office = (() => {
     if (c.bang > Date.now()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
   }
   function drawDialog(t) {
-    if (!msg && msgQueue.length) { const m = msgQueue.shift(); msg = { ...m, start: t, lines: wrapLines(m.who.toUpperCase() + ": " + m.text, 62).slice(0, 3) }; }
+    if (!msg && msgQueue.length) { const m = msgQueue.shift(); msg = { ...m, start: t, lines: wrapLines(m.who.toUpperCase() + ": " + m.text, Math.floor((W - 64) / 10)).slice(0, 3) }; }
     if (!msg) return;
-    const bx = 16, by = H - 88, bw = W - 32, bh = 72;
+    const bx = 16, by = MH * T + 12, bw = W - 32, bh = 72;
     ctx.fillStyle = "#2c3e72"; ctx.fillRect(bx, by, bw, bh); ctx.fillStyle = "#6c86c6"; ctx.fillRect(bx + 3, by + 3, bw - 6, bh - 6); ctx.fillStyle = "#ffffff"; ctx.fillRect(bx + 6, by + 6, bw - 12, bh - 12);
     const shown = Math.floor((t - msg.start) * 30); let count = 0;
     ctx.fillStyle = "#333333"; ctx.font = "10px 'Press Start 2P', monospace"; ctx.textAlign = "left";
@@ -840,6 +853,7 @@ const office = (() => {
     if (!canvas) {
       box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · meeting table = just posted · the text box shows what was posted · click a sprite for details</span></div><canvas id="office"></canvas>';
       canvas = $("#office"); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
+      ensureLayout(lastState ? lastState.agents.filter(a => a.status !== "retired").length : 4);
       if (vctx) renderMap();
       canvas.onclick = onClick;
     }
@@ -855,14 +869,15 @@ const office = (() => {
   function frame(now) {
     raf = null; if (!canvas || !vctx) return;
     const box = $("#officebox"); if (!box) return;
-    const cw = Math.max(320, Math.floor(box.clientWidth || 0)), chh = Math.max(288, Math.floor((box.clientHeight || 0) - 40));
+    const cw = Math.max(320, Math.floor(box.clientWidth || 0)), chh = Math.max(288, Math.floor((box.clientHeight || 0) - 34));
     if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
-    scale = Math.min(cw / W, chh / H); scale = scale >= 1 ? Math.floor(scale) : scale;              // whole-pixel upscale; shrink smoothly only when the panel is smaller than native
+    scale = Math.min(cw / W, chh / H);                                                            // fill the panel's full width or height
     ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
     const t = (now - t0) / 1000, dt = Math.min(0.1, (now - last) / 1000); last = now;
     stepChars(dt);
     ctx = off.getContext("2d"); ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(mapImg, 0, 0);
+    ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0);
+    if (!msg && !msgQueue.length) { ctx.fillStyle = "#2c3e72"; ctx.fillRect(16, MH * T + 12, W - 32, 72); ctx.fillStyle = "#6c86c6"; ctx.fillRect(19, MH * T + 15, W - 38, 66); ctx.fillStyle = "#ffffff"; ctx.fillRect(22, MH * T + 18, W - 44, 60); }
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
     ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center";
