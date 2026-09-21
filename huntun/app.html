@@ -741,9 +741,31 @@ const office = (() => {
   const CAPS = [null, "cap", "bandana", "beanie"];                                  // per-agent headwear variants
   const HAIR_COLORS = ["#2b2b2b", "#7a4b2a", "#e6c15a", "#c0392b", "#3a5fd8", "#3aa35b", "#8e44ad", "#e67e22"];
   const CAP_COLORS = ["#d84c4c", "#3a6fd8", "#3aa35b", "#e6c15a"];
-  function sprite(dir, frame) {
-    const head = HEAD[dir === "right" ? "left" : dir], body = dir === "left" || dir === "right" ? SIDE_BODY : BODY, legs = (dir === "left" || dir === "right" ? SIDE_LEGS : LEGS)[frame];
-    return head.concat(body, legs);
+  // per-agent variations on the source art: hair style, beard, glasses and shirt style
+  const ROWS = new Map();
+  const rowSet = (row, edits) => { const a = [...row]; for (const [i, ch] of edits) a[i] = ch; return a.join(""); };
+  function headRows(c, dir) {
+    let rows = HEAD[dir].slice(); const st = c.hair;
+    if (st === "spiky") { rows[0] = "....oo.oooo.oo.."; rows[1] = "...ohhohhhhohho."; }
+    if (st === "short") { if (dir === "down") for (const r of [5, 6, 7]) rows[r] = rowSet(rows[r], [[3, "s"], [4, "s"], [11, "s"], [12, "s"]]); else if (dir === "up") { rows[7] = "..osssssssssso.."; rows[8] = "..oossssssssoo.."; rows[9] = "...osssssssso..."; } else for (const r of [7, 8]) rows[r] = rowSet(rows[r], [[8, "s"], [9, "s"], [10, "s"]]); }
+    if (st === "long") { if (dir === "down") { rows[8] = "..ohssssssssho.."; rows[9] = "..ohhsssssshho.."; } else if (dir === "up") { rows[8] = "..ohhhhhhhhhho.."; rows[9] = "..ohhhhhhhhhho.."; rows[10] = "...ohhhhhhhho..."; } else { rows[9] = "...osssshhhhho.."; rows[10] = "....oshhhhhho..."; } }
+    if (st === "bald") rows = rows.map(r => r.replace(/h/g, "s"));
+    if (c.beard) { if (dir === "down") { rows[8] = rowSet(rows[8], [[4, "h"], [11, "h"]]); rows[9] = "...ohhhhhhhho..."; } else if (dir === "left") { rows[8] = rowSet(rows[8], [[3, "h"], [4, "h"]]); rows[9] = rowSet(rows[9], [[4, "h"], [5, "h"], [6, "h"]]); } }
+    if (c.glasses) { if (dir === "down") rows[7] = rowSet(rows[7], [[4, "g"], [6, "g"], [7, "g"], [8, "g"], [9, "g"], [11, "g"]]); else if (dir === "left") rows[7] = rowSet(rows[7], [[4, "g"], [5, "g"]]); }
+    return rows;
+  }
+  function bodyRows(c, dir) {
+    const side = dir === "left", rows = (side ? SIDE_BODY : BODY).slice(), st = c.shirt;
+    if (st === "stripes") for (const r of [1, 3, 5]) rows[r] = rows[r].replace(/c/g, "d");
+    if (st === "vneck" && dir === "down") { rows[0] = rowSet(rows[0], [[7, "s"]]); rows[1] = rowSet(rows[1], [[7, "s"]]); }
+    if (st === "logo" && dir === "down") for (const r of [2, 3]) rows[r] = rowSet(rows[r], [[7, "l"], [8, "l"]]);
+    if (st === "jacket") for (let r = 0; r < 6; r++) rows[r] = rowSet(rows[r], (side ? [3, 4] : [3, 4, 11, 12]).filter(i => rows[r][i] === "c").map(i => [i, "d"]));
+    return rows;
+  }
+  function sprite(c, dir, frame) {
+    const hd = dir === "right" ? "left" : dir, key = c.pal.key + "|" + c.hair + c.beard + c.glasses + c.shirt + "|" + hd + "|" + frame;
+    let rows = ROWS.get(key); if (rows) return rows;
+    rows = headRows(c, hd).concat(bodyRows(c, hd), (hd === "left" ? SIDE_LEGS : LEGS)[frame]); ROWS.set(key, rows); return rows;
   }
   // ---- 16x24 source art, upscaled to 32x48 with Scale2x (rounds the corners) and then shaded and detailed; drawn at 1 unit per art pixel
   const HIRES = new Map(), SPR = new Map(), DERIVED = new WeakMap(), LIGHT = { c: "1", p: "2", h: "3", k: "4" };
@@ -780,7 +802,7 @@ const office = (() => {
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
-  let DESKS = [], BEDS = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0, entered = 0;
+  let DESKS = [], BEDS = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
   const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
   let teamRoles = [];
   function layout(n, masterIdx) {
@@ -791,7 +813,7 @@ const office = (() => {
     MW = officeW + 2;
     const yMid = 2 + officeH;
     const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(n / bedsPerRow);
-    MH = yMid + 2 + 1 + bedRows * 3 + 1; W = MW * T; H = MH * T;
+    MH = yMid + bedRows * 3 + 2; W = MW * T; H = MH * T;
     DESKS = new Array(n); BEDS = []; map = []; solid = [];
     const mx = 1 + Math.floor(officeW / 2) - 1;
     FRONT = [mx, 6];
@@ -802,18 +824,15 @@ const office = (() => {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
       const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 8 + row * 6;
-      const dual = DEV_ROLES.includes(team[i].role);
+      const dual = !!team[i] && DEV_ROLES.includes(team[i].role);
       DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual };
       j++;
     }
-    for (let i = 0; i < n; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 3 + Math.floor(i / bedsPerRow) * 3]);
-    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [y > yMid + 1 ? "floor2" : "office"]; solid[y][x] = false; } }
+    for (let i = 0; i < n; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 2 + Math.floor(i / bedsPerRow) * 3]);
+    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [y >= yMid ? "floor2" : "office"]; solid[y][x] = false; } }              // the bunk room is open to the office: only the floor changes
     const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
     for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
-    const doors = [Math.floor(MW / 3), Math.floor(MW * 2 / 3)];
-    for (let x = 1; x < MW - 1; x++) if (!doors.includes(x)) { put(x, yMid, "wallTop"); put(x, yMid + 1, "wallFace"); }
-    doors.forEach(x => put(x, yMid + 1, "mat", false));
     DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], d.dir === "down" ? "deskLBack" : "deskL"); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); });
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
@@ -823,7 +842,15 @@ const office = (() => {
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     builtFor = n;
   }
-  function ensureLayout(team) { const n = team.length, mi = team.findIndex(a => a.role === "master"); const sig = team.map(a => a.role).join(","); if (n !== builtFor || mi !== MASTER_IDX || sig !== teamRoles.map(a => a.role).join(",")) { teamRoles = team.map(a => ({ role: a.role })); layout(n, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
+  let seats = [];                                   // stable seating: first come, first seated; a leaver's desk stays empty for the next hire
+  function seatsFor(st) {
+    const team = st.agents.filter(a => a.status !== "retired");
+    seats.forEach((x, i) => { if (x && !team.some(a => a.name === x.name)) seats[i] = null; });
+    team.forEach(a => { const mine = seats.find(x => x && x.name === a.name); if (mine) mine.role = a.role; else { const hole = seats.findIndex(x => x === null); if (hole >= 0) seats[hole] = { name: a.name, role: a.role }; else seats.push({ name: a.name, role: a.role }); } });
+    while (seats.length && seats[seats.length - 1] === null) seats.pop();
+    return seats;
+  }
+  function ensureLayout(list) { const n = list.length, mi = list.findIndex(a => a && a.role === "master"); const sig = list.map(a => a ? a.role : "-").join(","); if (n !== builtFor || mi !== MASTER_IDX || sig !== teamRoles.map(a => a ? a.role : "-").join(",")) { teamRoles = list.map(a => a && { role: a.role }); layout(n, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
   function renderMap() {
     off.width = W * P; off.height = H * P;
     mapImg = document.createElement("canvas"); mapImg.width = W * P; mapImg.height = H * P;
@@ -856,15 +883,24 @@ const office = (() => {
   }
 
   // ---- characters
-  function palFor(name, role) {
-    const h = hash(name + "hue") % 360, v = hash(name + "look");
-    const pal = { o: "#3b2a1e", h: role === "master" ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >> 3) % CAP_COLORS.length], s: "#f3c9a0", e: "#2b2b2b", c: "hsl(" + h + ",65%,50%)", p: (v >> 5) % 2 ? "#2f4a8a" : "#4a4a4a", b: "#3b2a1e" }; pal.key = JSON.stringify(pal);
-    return { pal, cap: role === "master" ? null : CAPS[(v >> 7) % CAPS.length] };
+  const SKIN = ["#f3c9a0", "#ffdbb4", "#e8b48a", "#c68642", "#a86b3c", "#8d5524"], PANTS = ["#2f4a8a", "#4a4a4a", "#b08d5a", "#556b2f", "#6d6d6d", "#3b2a1e"], SHOES = ["#3b2a1e", "#1e1e1e", "#e8e8e8", "#c0392b"];
+  const HAIR_STYLES = ["bowl", "short", "long", "spiky", "bald"], SHIRTS = ["plain", "stripes", "vneck", "logo", "jacket"], GLASSES = ["#1f1f1f", "#6b4a2a", "#3a5fd8"];
+  function palFor(name, role) {                                              // every look is derived from the name, so it is stable across reloads
+    const h = hash(name + "hue") % 360, v = hash(name + "look"), u = hash(name + "style"), master = role === "master";
+    const shirt = "hsl(" + h + "," + (55 + (u % 3) * 10) + "%," + (42 + ((u >>> 2) % 3) * 8) + "%)";
+    const hair = master ? ["bowl", "short"][u % 2] : HAIR_STYLES[(v >>> 10) % HAIR_STYLES.length];
+    const pal = { o: "#3b2a1e", h: master ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >>> 3) % CAP_COLORS.length], s: SKIN[(v >>> 20) % SKIN.length], e: "#2b2b2b", c: shirt, p: master ? "#2b2b2b" : PANTS[(v >>> 5) % PANTS.length], b: SHOES[(v >>> 23) % SHOES.length], g: GLASSES[(v >>> 27) % GLASSES.length], l: (u >>> 5) % 2 ? "#ffffff" : "#ffd23f" };
+    pal.d = (v >>> 25) % 2 ? "#f4f4f4" : tint(shirt, -0.45); pal.key = JSON.stringify(pal);
+    return { pal, hair, cap: master || hair === "bald" ? null : CAPS[(v >>> 7) % CAPS.length], glasses: (v >>> 13) % 3 === 0, beard: !master && (v >>> 15) % 4 === 0, shirt: master ? "plain" : SHIRTS[(v >>> 17) % SHIRTS.length] };
   }
-  function ensureChar(a, i) {
-    if (!chars[a.name]) { const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, hidden: true, enterAt: performance.now() + 400 + entered++ * 900, ...look }; }
+  function ensureChar(a) {
+    if (!chars[a.name]) {
+      const look = palFor(a.name, a.role), waiting = Object.values(chars).filter(o => o.hidden).length, populated = Object.values(chars).some(o => !o.hidden);
+      chars[a.name] = { name: a.name, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, hidden: true, newHire: populated, enterAt: performance.now() + 400 + waiting * 900, ...look };
+    }
     return chars[a.name];
   }
+  const GOODBYES = ["That's a wrap for me. Bye everyone!", "Signing off, it's been a pleasure!", "My work here is done. See you around!"];
   const tagsIn = (text) => { const out = []; for (const m of text.matchAll(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi)) { const n = m[2].toLowerCase(); if (!out.includes(n)) out.push(n); } return out; };
   const isDoor = (x, y) => x === DOOR[0] && y === DOOR[1];
   const isEntry = (x, y) => x === DOOR[0] && y === DOOR[1] + 1;                       // the tile just inside the door stays clear so people can come in
@@ -896,15 +932,20 @@ const office = (() => {
   function update(st) {
     lastState = st;
     const team = st.agents.filter(a => a.status !== "retired");
-    ensureLayout(team);
-    team.forEach((a, i) => { const c = ensureChar(a, i); c.role = a.role; c.title = a.title; c.idx = i; });   // everyone exists before anyone looks for a teammate
-    team.forEach((a, i) => {
+    ensureLayout(seatsFor(st));
+    team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name); });   // everyone exists before anyone looks for a teammate
+    team.forEach(a => {
       const c = chars[a.name];
       c.mode = modeFor(a, c, st);
       c.goal = goalFor(c);
       if (!c.moving && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);
     });
-    for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
+    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving) {                 // retired: say goodbye and walk out through the door
+      if (c.hidden) { delete chars[c.name]; continue; }
+      c.leaving = true; c.talk = null; c.faceOverride = null; c.mode = "leave"; c.bang = Date.now() + 2500;
+      c.say = GOODBYES[hash(c.name) % GOODBYES.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false;
+      c.goal = [DOOR[0], DOOR[1]]; c.steps = path([c.tx, c.ty], c.goal, c);
+    }
   }
   const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
   function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
@@ -921,11 +962,13 @@ const office = (() => {
         if (performance.now() < c.enterAt || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) continue;
         c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
         const others = Object.values(chars).filter(o => o !== c);
-        if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
+        if (c.newHire) { c.newHire = false; c.bang = Date.now() + 2500; c.say = "Hi everyone! I'm " + c.name + ", the new " + (c.title || c.role) + "."; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
+        else if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
-      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
+      if (c.leaving) { if (!c.moving && !c.steps.length) { if (c.tx === DOOR[0] && c.ty === DOOR[1]) { delete chars[c.name]; continue; } c.retry = (c.retry || 0) + dt; if (c.retry > 0.5) { c.retry = 0; c.steps = path([c.tx, c.ty], [DOOR[0], DOOR[1]], c); } } }
+      else if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
         if (m !== "sleep") { c.sleepReady = false; c.deskWait = null; }
         else if (!c.sleepReady && c.tx === DESKS[c.idx].chair[0] && c.ty === DESKS[c.idx].chair[1]) {   // sat down, found nothing to do
           if (!c.deskWait) { c.deskWait = performance.now() + 2500; c.dir = DESKS[c.idx].dir; }
@@ -958,7 +1001,7 @@ const office = (() => {
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (asleep) {
       // head on the pillow, the blanket covers the rest
-      const head = HEAD.down.slice(0, 10); drawSprite(head, x, c.py - 2, false, c.pal, c.cap, "down");
+      const head = headRows(c, "down").slice(0, 10); drawSprite(head, x, c.py - 2, false, c.pal, c.cap, "down");
       const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 22, c.py - 4 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 21, c.py - 5 - z * 2);
       return;
     }
@@ -966,7 +1009,7 @@ const office = (() => {
     const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
     const talking = c.talk && !c.moving && !c.steps.length && c.mode === "talk";
     const tick = Math.floor(t * 7 + c.idx) % 2, bobY = working && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
-    drawSprite(sprite(c.dir, c.frame), x, y + bobY, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir);
+    drawSprite(sprite(c, c.dir, c.frame), x, y + bobY, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir);
     if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
     if (talking) {                                                                 // gesturing while talking: one arm up, then the other
       const arm = Math.floor(t * 2 + c.idx) % 2, skin = c.pal.s;
@@ -1007,7 +1050,7 @@ const office = (() => {
     if (!canvas) {
       box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · a post with several tags is announced from the front, a post tagging one agent is said beside that agent, anything else is said in place · click a sprite for details</span></div><canvas id="office"></canvas>';
       canvas = $("#office"); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
-      ensureLayout(lastState ? lastState.agents.filter(a => a.status !== "retired") : [{ role: "master" }, {}, {}, {}]);
+      ensureLayout(lastState ? seatsFor(lastState) : [{ role: "master" }, {}, {}, {}]);
       if (vctx) renderMap();
       canvas.onclick = onClick;
     }
