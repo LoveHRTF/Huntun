@@ -145,7 +145,7 @@
   .live .l.thinking { color:var(--pink); font-style:italic; } .live .l.tool { color:var(--cyan); font-family:var(--mono); font-size:12px; } .live .l.result { color:var(--muted); font-family:var(--mono); font-size:12px; }
   .live .l.error { color:var(--err); } .live .l.cycle { color:var(--warn); } .live .l.text { color:var(--text); }
   .live .k { color:var(--muted); font-size:10.5px; font-family:var(--mono); margin-right:6px; }
-  #office { width:100%; height:calc(100vh - 54px - 32px); display:block; image-rendering: pixelated; background:#0a0c14; border:3px solid var(--line); box-shadow:4px 4px 0 var(--ink); }
+  #office { width:100%; height:calc(100vh - 54px - 32px); display:block; image-rendering: pixelated; image-rendering: crisp-edges; background:#0a0c14; border:3px solid var(--line); box-shadow:4px 4px 0 var(--ink); }
   .viewbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
   @media (max-width: 1000px) { main.board { grid-template-columns: 1fr; height:auto; } aside { border:0; border-bottom:3px solid var(--line); } aside.right { border-left:0; } .msg { max-width:100%; } .dlg .cols { grid-template-columns:1fr; } .dlg .cols > div + div { border-left:0; border-top:3px solid var(--line); } .plan-agent { grid-template-columns: 44px 1fr; } .plan-agent .ctl { grid-column: 1 / -1; flex-direction:row; } }
 </style>
@@ -650,26 +650,120 @@ async function openAgent(id, name) {
   dlg.onclose = () => clearInterval(dlgTimer);
 }
 
-// ---------------------------------------------------------------- office view: isometric pixel office, the team as characters
+// ---------------------------------------------------------------- office view: a Game Boy style office (Pokémon-like), the team as sprites
 const office = (() => {
-  const TILE_W = 64, TILE_H = 32, COLS = 16, ROWS = 12;
-  let canvas = null, ctx = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
-  const iso = (gx, gy) => ({ x: (gx - gy) * TILE_W / 2, y: (gx + gy) * TILE_H / 2 });
-  const DESKS = [[2, 2], [2, 4], [2, 6], [4, 2], [4, 4], [4, 6], [6, 2], [6, 4], [6, 6], [8, 2], [8, 4], [8, 6]];
-  const BEDS = [[2, 9.5], [3.5, 9.5], [5, 9.5], [6.5, 9.5], [8, 9.5], [9.5, 9.5], [11, 9.5], [12.5, 9.5], [14, 9.5], [2, 11], [3.5, 11], [5, 11]];
-  const CONF = { x: 11.5, y: 3.5, w: 3, h: 2 };
-  const SEATS = [[10.6, 2.6], [11.6, 2.6], [12.6, 2.6], [13.6, 2.6], [10.6, 5.4], [11.6, 5.4], [12.6, 5.4], [13.6, 5.4], [10.3, 4], [14.3, 4], [10.3, 3.2], [14.3, 4.8]];
-  const hueOf = (name) => hash(name + "hue") % 360;
-  const colr = (h, sat, l) => "hsl(" + h + "," + sat + "%," + l + "%)";
+  const T = 16, MW = 20, MH = 18, W = MW * T, H = MH * T;                 // native resolution 320x288, scaled by whole pixels
+  const PAL = ["#0f380f", "#306230", "#8bac0f", "#9bbc0f"];              // DMG shades: 0 darkest .. 3 lightest
+  let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
+  let scale = 2, ox = 0, oy = 0, msgQueue = [], msg = null;
 
+  // ---- 16x16 tiles as shade strings ('.' = transparent over floor)
+  const TILES = {
+    floor: ["3333333333333333","3333333333333333","3333333333333333","3333333233333333","3333333333333333","3333333333333333","3333333333333333","3333333333333333","3333333333333333","3333333333333333","3323333333333333","3333333333333333","3333333333333333","3333333333333333","3333333333333323","3333333333333333"],
+    wallTop: ["0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000","0000000000000000"],
+    wallFace: ["1111111111111111","1222122212221222","1222122212221222","1111111111111111","2212221222122212","2212221222122212","1111111111111111","1222122212221222","1222122212221222","1111111111111111","2212221222122212","2212221222122212","1111111111111111","1222122212221222","1222122212221222","0000000000000000"],
+    divider: ["1111111111111111","1222122212221222","1111111111111111","2212221222122212","1111111111111111","1222122212221222","1111111111111111","2212221222122212","1111111111111111","1222122212221222","1111111111111111","2212221222122212","1111111111111111","1222122212221222","1111111111111111","0000000000000000"],
+    deskL: ["................","................","................","................","................","..11111111111111",".1222222222222222",".1222222222222222",".1111111111111111",".1211111111111111",".1211111111111111",".1211111111111111",".121............",".121............",".111............","................"],
+    deskR: ["......0000000...","......0333330...","......0322230...","......0322230...","......0333330...","1111110000000...","2222222222221...","2222222222221...","1111111111111...","1111111111121...","1111111111121...","1111111111121...","............121.","............121.","............111.","................"],
+    chair: ["................","................","................","................","....11111111....","....12222221....","....12222221....","....11111111....","....11111111....","....12222221....","....11111111....","....1......1....","....1......1....","................","................","................"],
+    bedHead: [".11111111111111.","1222222222222221","1233333333333321","1233333333333321","1233333333333321","1222222222222221","1122222222222211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111"],
+    bedFoot: ["1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1121212121212111","1112121212121211","1122222222222211","1222222222222221",".11111111111111.","..1..........1..","..1..........1.."],
+    table: ["1111111111111111","1222222222222221","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1222222222222221","1111111111111111","..1..........1.."],
+    tableTop: ["................","................","................","1111111111111111","1222222222222221","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321"],
+    tableBot: ["1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1233333333333321","1222222222222221","1111111111111111","..1..........1..","..1..........1..","................","................","................"],
+    plant: [".......00.......","......0220......",".....022220.....","....02022020....","...0220220220...","....02222220....","......0220......","......0110......",".....011110.....","....01111110....","....01222210....","....01222210....","....01111110....","....01111110....",".....011110.....","................"],
+    shelf: ["0000000000000000","0111111111111110","0122122122122110","0122122122122110","0122122122122110","0111111111111110","0121221221221210","0121221221221210","0121221221221210","0111111111111110","0122122122122110","0122122122122110","0122122122122110","0111111111111110","0000000000000000","................"],
+    mat: ["................","................","................","................","................","................","................","................","................","................","................","................","..22222222222...","..21212121212...","..22222222222...","................"],
+    door: ["0000000000000000","0111111111111110","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0122222220222210","0122222220222210","0122222222222210","0122222222222210","0122222222222210","0122222222222210","0111111111111110","0000000000000000"],
+  };
+  // ---- 16x16 sprites: base body (facing down / up / left); right is mirrored left. Two walk frames per direction.
+  const SPR = {
+    down: [
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....03333330....","....03030330....","....03333330....",".....033330.....","....01111110....","...0113333110...","...0313333130...","...0011111100...","....011..110....","....000..000....","................","................"],
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....03333330....","....03030330....","....03333330....",".....033330.....","....01111110....","...0113333110...","...0313333130...","...0011111100...","....011.0000....","....000.........","................","................"],
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....03333330....","....03030330....","....03333330....",".....033330.....","....01111110....","...0113333110...","...0313333130...","...0011111100...","....0000.110....","........000.....","................","................"]],
+    up: [
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....01111110....","....01111110....","....01111110....",".....011110.....","....01111110....","...0111111110...","...0311111130...","...0011111100...","....011..110....","....000..000....","................","................"],
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....01111110....","....01111110....","....01111110....",".....011110.....","....01111110....","...0111111110...","...0311111130...","...0011111100...","....011.0000....","....000.........","................","................"],
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....01111110....","....01111110....","....01111110....",".....011110.....","....01111110....","...0111111110...","...0311111130...","...0011111100...","....0000.110....","........000.....","................","................"]],
+    left: [
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....03331110....","....03031110....","....03331110....",".....033110.....","....01111110....","....01111110....","....03111110....","....00111100....","....0111110.....","....0000000.....","................","................"],
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....03331110....","....03031110....","....03331110....",".....033110.....","....01111110....","....01111110....","....03111110....","....00111100....","...0110.0110....","...000..000.....","................","................"],
+      ["......0000......",".....011110.....","....01111110....","....01111110....","....03331110....","....03031110....","....03331110....",".....033110.....","....01111110....","....01111110....","....03111110....","....00111100....","....01111110....","....00000000....","................","................"]],
+  };
+  const SLEEP = ["................","................","................","................","................","................","................","................","....0000000000..","...011111111110.","..01222333333330","..03333303033330","..03333333333330","...033330111110.","....00000000000.","................"];
+  // hat / hair overlays keyed by variant (rows 0-3 replaced)
+  const HATS = [
+    null,
+    ["......0000......",".....000000.....","....00000000....","...0000000000...","....01111110...."],                    // cap
+    [".....00000......","....0111110.....","...011111110....","...011111110....","...011111110...."],                    // big hair
+    ["......0000......",".....022220.....","....02222220....","....02222220....","....01111110...."],                    // light hair
+    ["....00000000....","....01111110....","....01111110....","....01111110....","....03333330...."],                    // flat top
+    ["......0000......",".....011110.....","....00000000....","....00000000....","....03333330...."],                    // headband
+  ];
+  const CROWN = ["....0.0..0.0....","....0303303 0....","....0333333 0....","....00000000...."];
+
+  // ---- map (20x18): walls, two rooms, bunks
+  const DESKS = [[2, 3], [5, 3], [8, 3], [2, 6], [5, 6], [8, 6], [2, 9], [5, 9], [8, 9]];                    // deskL at (x,y), deskR at (x+1,y), chair below deskL
+  const SEATS = [[14, 4], [14, 5], [14, 6], [17, 4], [17, 5], [17, 6], [15, 3], [16, 3], [15, 7], [16, 7], [13, 4], [18, 5]];
+  const BEDS = [[2, 13], [4, 13], [6, 13], [8, 13], [10, 13], [12, 13], [14, 13], [16, 13], [18, 13], [2, 15], [4, 15], [6, 15]];
+  const map = [], solid = [];
+  function buildMap() {
+    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = ["floor"]; solid[y][x] = false; } }
+    const put = (x, y, t, s = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (s) solid[y][x] = true; };
+    for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, 17, "wallTop"); }
+    for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(19, y, "wallTop"); }
+    for (let y = 2; y < 11; y++) if (y !== 5 && y !== 8) put(12, y, "divider");                         // office | conference, with two gaps
+    for (let x = 1; x < 19; x++) if (x !== 4 && x !== 15) put(x, 11, "wallTop");                       // rooms | bunks, with two doors
+    for (let x = 1; x < 19; x++) if (x !== 4 && x !== 15) put(x, 12, "wallFace");
+    put(4, 12, "mat", false); put(15, 12, "mat", false);
+    DESKS.forEach(([x, y]) => { put(x, y, "deskL"); put(x + 1, y, "deskR"); put(x, y + 1, "chair", false); });
+    put(15, 4, "tableTop"); put(16, 4, "tableTop"); put(15, 5, "table"); put(16, 5, "table"); put(15, 6, "tableBot"); put(16, 6, "tableBot");
+    BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
+    put(1, 2, "plant"); put(18, 2, "plant"); put(11, 2, "plant"); put(13, 2, "plant"); put(18, 10, "plant"); put(1, 16, "plant"); put(18, 16, "plant");
+    put(3, 1, "shelf"); put(6, 1, "shelf"); put(16, 1, "shelf"); put(9, 1, "door");
+  }
+  buildMap();
+
+  // ---- pixel helpers at native resolution
+  function blit(rows, x, y, flip, tint) {
+    for (let r = 0; r < rows.length; r++) { const line = rows[r]; for (let c = 0; c < 16; c++) { const ch = line[flip ? 15 - c : c]; if (ch === "." || ch === " ") continue; ctx.fillStyle = PAL[+ch]; ctx.fillRect(x + c, y + r, 1, 1); } }
+  }
+  function renderMap() {
+    off.width = W; off.height = H; ctx = off.getContext("2d");
+    mapImg = document.createElement("canvas"); mapImg.width = W; mapImg.height = H;
+    const save = ctx; ctx = mapImg.getContext("2d");
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) for (const t of map[y][x]) blit(TILES[t], x * T, y * T, false);
+    ctx = save;
+  }
+  const variantOf = (name) => hash(name + "look") % HATS.length;
+  const key = (x, y) => y * MW + x;
+  function path(from, to) {                                                      // BFS over walkable tiles, 4-neighbour
+    if (from[0] === to[0] && from[1] === to[1]) return [];
+    const prev = new Map([[key(from[0], from[1]), null]]); const q = [from];
+    while (q.length) {
+      const [x, y] = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
+        const k = key(nx, ny); if (prev.has(k)) continue;
+        const goal = nx === to[0] && ny === to[1];
+        if (solid[ny][nx] && !goal) continue;
+        prev.set(k, key(x, y)); if (goal) { const out = []; let cur = k; while (cur !== key(from[0], from[1])) { out.unshift([cur % MW, Math.floor(cur / MW)]); cur = prev.get(cur); } return out; }
+        q.push([nx, ny]);
+      }
+    }
+    return [to];
+  }
+
+  // ---- characters
   function ensureChar(a, i) {
-    if (!chars[a.name]) { const p = iso(1 + (i % 6), 1); chars[a.name] = { name: a.name, x: p.x, y: p.y, tx: p.x, ty: p.y, mode: "idle", say: null, sayUntil: 0, step: Math.random() * 100, seat: i }; }
+    if (!chars[a.name]) { const spot = [4 + (i % 8), 12]; chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: 0, steps: [], mode: "idle", moving: false, prog: 0, bang: 0, variant: variantOf(a.name) }; }
     return chars[a.name];
   }
   function modeFor(a, st) {
     const s = (a.live && a.live.status) || a.status || "";
-    const recentPost = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 120000);
-    if (recentPost) return { mode: "talk", post: recentPost };
+    const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 120000);
+    if (post) return { mode: "talk", post };
     if (/^(working|resuming)/.test(s)) return { mode: "work" };
     return { mode: "sleep" };
   }
@@ -677,108 +771,95 @@ const office = (() => {
     lastState = st;
     const team = st.agents.filter(a => a.status !== "retired");
     team.forEach((a, i) => {
-      const c = ensureChar(a, i); c.seat = i; c.title = a.title; c.role = a.role;
-      const m = modeFor(a, st);
-      c.mode = m.mode;
-      if (m.post && c.lastPostId !== m.post.id) { c.lastPostId = m.post.id; c.say = m.post.detail.replace(/^#\d+:?\s*/, "").slice(0, 90); c.sayUntil = Date.now() + 25000; }
-      let target;
-      if (c.mode === "work") target = DESKS[i % DESKS.length].map((v, k) => v + (k ? 0.55 : 0));
-      else if (c.mode === "talk") target = SEATS[i % SEATS.length];
-      else target = BEDS[i % BEDS.length].map((v, k) => v + (k ? 0.25 : 0.3));
-      const p = iso(target[0], target[1]); c.tx = p.x; c.ty = p.y;
+      const c = ensureChar(a, i); c.role = a.role; c.title = a.title;
+      const m = modeFor(a, st); c.mode = m.mode;
+      const postId = m.post ? (m.post.id ?? m.post.created_at) : null;
+      if (m.post && c.lastPostId !== postId) { c.lastPostId = postId; c.bang = Date.now() + 2500; msgQueue.push({ who: a.name, text: m.post.detail.replace(/^#\d+:?\s*/, "") }); if (msgQueue.length > 6) msgQueue.shift(); }
+      let goal;
+      if (c.mode === "work") { const d = DESKS[i % DESKS.length]; goal = [d[0], d[1] + 1]; }
+      else if (c.mode === "talk") goal = SEATS[i % SEATS.length];
+      else { const b = BEDS[i % BEDS.length]; goal = [b[0], b[1]]; }
+      if (goal[0] !== c.tx || goal[1] !== c.ty) { c.goal = goal; if (!c.moving) c.steps = path([c.tx, c.ty], goal); }
     });
     for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
   }
+  function stepChars(dt) {
+    for (const c of Object.values(chars)) {
+      if (!c.moving && c.steps.length) { const [nx, ny] = c.steps.shift(); c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
+      if (c.moving) {
+        c.prog += dt * 3.2;                                                    // ~0.3s per tile, like the overworld
+        const e = Math.min(1, c.prog);
+        c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
+        c.frame = Math.floor(c.prog * 4) % 2 ? 1 + (Math.floor(c.prog * 2) % 2) : 0;
+        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = 0; if (!c.steps.length) { if (c.mode === "work") c.dir = "up"; else if (c.mode === "talk") { const s = SEATS.findIndex(sv => sv[0] === c.tx && sv[1] === c.ty); c.dir = c.tx < 15 ? "right" : c.tx > 16 ? "left" : c.ty < 5 ? "down" : "up"; if (s < 0) c.dir = "down"; } else c.dir = "down"; } }
+      }
+    }
+  }
+  function drawChar(c, t) {
+    const x = c.px, y = c.py - 4;                                              // sprites sit a little "above" their tile like NPCs do
+    const asleep = c.mode === "sleep" && !c.moving && !c.steps.length;
+    if (asleep) { blit(SLEEP, c.px, c.py - 2, false); const z = Math.floor(t * 2) % 3; ctx.fillStyle = PAL[0]; ctx.font = "7px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), c.px + 11, c.py - 2 - z); return; }
+    const dir = c.dir === "right" ? "left" : c.dir, flip = c.dir === "right";
+    const frames = SPR[dir], rows = frames[c.moving ? c.frame : 0].slice();
+    const hat = c.role === "master" ? null : HATS[c.variant];
+    if (hat && dir !== "up") for (let r = 0; r < hat.length; r++) rows[r] = hat[r];
+    blit(rows, x, y, flip);
+    if (c.role === "master") blit(CROWN.map(l => l.replace(/ /g, ".")), x, y - 3, flip);
+    if (c.mode === "work" && !c.moving) { if (Math.floor(t * 4) % 2) { ctx.fillStyle = PAL[3]; ctx.fillRect(x + 7, y - 15, 3, 2); } }
+    if (c.bang > Date.now()) { ctx.fillStyle = PAL[0]; ctx.fillRect(x + 7, y - 9, 2, 5); ctx.fillRect(x + 7, y - 3, 2, 2); }
+  }
+  function drawDialog(t) {
+    if (!msg && msgQueue.length) { const m = msgQueue.shift(); msg = { ...m, start: t, lines: wrapLines(m.who.toUpperCase() + ": " + m.text, 36).slice(0, 3) }; }
+    if (!msg) return;
+    const bx = 8, by = H - 56, bw = W - 16, bh = 48;
+    ctx.fillStyle = PAL[3]; ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = PAL[0]; ctx.fillRect(bx, by, bw, 2); ctx.fillRect(bx, by + bh - 2, bw, 2); ctx.fillRect(bx, by, 2, bh); ctx.fillRect(bx + bw - 2, by, 2, bh);
+    ctx.fillStyle = PAL[1]; ctx.fillRect(bx + 2, by + 2, bw - 4, 1); ctx.fillRect(bx + 2, by + bh - 3, bw - 4, 1); ctx.fillRect(bx + 2, by + 2, 1, bh - 4); ctx.fillRect(bx + bw - 3, by + 2, 1, bh - 4);
+    const shown = Math.floor((t - msg.start) * 28);                             // typewriter
+    let count = 0; ctx.fillStyle = PAL[0]; ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "left";
+    msg.lines.forEach((l, i) => { const take = Math.max(0, Math.min(l.length, shown - count)); ctx.fillText(l.slice(0, take), bx + 8, by + 16 + i * 12); count += l.length; });
+    const total = msg.lines.reduce((n, l) => n + l.length, 0);
+    if (shown >= total) { if (Math.floor(t * 2) % 2) { ctx.fillStyle = PAL[0]; ctx.fillRect(bx + bw - 12, by + bh - 9, 4, 4); } if (t - msg.start > total / 28 + 5) msg = null; }
+  }
+  function wrapLines(text, n) { const words = text.split(/\s+/), out = []; let cur = ""; for (const w of words) { if ((cur + " " + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += " " + w; } if (cur.trim()) out.push(cur.trim()); return out; }
+
+  // ---- lifecycle
   function start() {
     const box = $("#officebox"); if (!box) return;
-    if (!canvas) { box.innerHTML = '<div class="viewbar"><span class="hint">🏢 desks = working · 🛏 bunks = idle or paused · 🗣 conference table = just posted on the board · click a character for details</span></div><canvas id="office"></canvas>'; canvas = $("#office"); ctx = canvas.getContext ? canvas.getContext("2d") : null; canvas.onclick = onClick; }
+    if (!canvas) {
+      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · beds = idle or paused · meeting table = just posted · the text box shows what was posted · click a sprite for details</span></div><canvas id="office"></canvas>';
+      canvas = $("#office"); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
+      if (vctx) renderMap();
+      canvas.onclick = onClick;
+    }
     if (lastState) update(lastState);
-    if (!raf && ctx) raf = requestAnimationFrame(frame);
+    if (!raf && vctx) { last = performance.now(); raf = requestAnimationFrame(frame); }
   }
-  function stop() { if (raf) cancelAnimationFrame(raf); raf = null; canvas = null; ctx = null; }
+  function stop() { if (raf) cancelAnimationFrame(raf); raf = null; canvas = null; vctx = null; ctx = null; }
   function onClick(ev) {
-    const r = canvas.getBoundingClientRect(), sx = canvas.width / (r.width || 1), sy = canvas.height / (r.height || 1), mx = (ev.clientX - r.left) * sx, my = (ev.clientY - r.top) * sy;
-    const off = origin();
-    for (const c of Object.values(chars)) { const x = c.x + off.x, y = c.y + off.y; if (Math.abs(mx - x) < 18 && my < y + 6 && my > y - 44) { if (boardId) openAgent(boardId, c.name); return; } }
+    const r = canvas.getBoundingClientRect(); const mx = (ev.clientX - r.left) * (canvas.width / (r.width || 1)), my = (ev.clientY - r.top) * (canvas.height / (r.height || 1));
+    const gx = (mx - ox) / scale, gy = (my - oy) / scale;
+    for (const c of Object.values(chars)) if (gx >= c.px && gx < c.px + T && gy >= c.py - 6 && gy < c.py + T) { if (boardId) openAgent(boardId, c.name); return; }
   }
-  function origin() { return { x: canvas.width / 2 + TILE_W, y: 60 }; }
+  let last = 0;
   function frame(now) {
-    raf = null; if (!canvas || !ctx) return;
+    raf = null; if (!canvas || !vctx) return;
     const box = $("#officebox"); if (!box) return;
-    const W = Math.max(640, Math.floor(box.clientWidth || 0)), H = Math.max(420, Math.floor((box.clientHeight || 0) - 40));
-    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-    const off = origin(); const t = (now - t0) / 1000;
-    ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H);
-    ctx.save(); ctx.translate(off.x, off.y);
-    for (let gy = 0; gy < ROWS; gy++) for (let gx = 0; gx < COLS; gx++) {
-      const p = iso(gx, gy); const carpet = gy >= 8.5, conf = gx >= 10 && gx <= 15 && gy >= 2 && gy <= 6;
-      ctx.fillStyle = conf ? ((gx + gy) % 2 ? "#243354" : "#1f2c4a") : carpet ? ((gx + gy) % 2 ? "#2a2440" : "#252038") : ((gx + gy) % 2 ? "#1c2238" : "#181d30");
-      diamond(p.x, p.y, TILE_W, TILE_H);
-    }
-    ctx.fillStyle = "#2f3660"; for (let gx = 0; gx < COLS; gx++) { const p = iso(gx, 0); wall(p.x, p.y, true); } for (let gy = 0; gy < ROWS; gy++) { const p = iso(0, gy); wall(p.x, p.y, false); }
-    { const a = iso(CONF.x, CONF.y), b = iso(CONF.x + CONF.w, CONF.y), c = iso(CONF.x + CONF.w, CONF.y + CONF.h), d = iso(CONF.x, CONF.y + CONF.h);
-      ctx.fillStyle = "#6b4a2b"; ctx.beginPath(); ctx.moveTo(a.x, a.y - 14); ctx.lineTo(b.x, b.y - 14); ctx.lineTo(c.x, c.y - 14); ctx.lineTo(d.x, d.y - 14); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#4e351f"; ctx.beginPath(); ctx.moveTo(d.x, d.y - 14); ctx.lineTo(c.x, c.y - 14); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#3e2a18"; ctx.beginPath(); ctx.moveTo(c.x, c.y - 14); ctx.lineTo(b.x, b.y - 14); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.closePath(); ctx.fill();
-      label(iso(CONF.x + 1.5, CONF.y - 1.2), "CONFERENCE"); }
-    const items = [];
-    DESKS.forEach((d, i) => items.push({ y: iso(d[0], d[1]).y, draw: () => desk(d[0], d[1], i) }));
-    BEDS.forEach((b, i) => items.push({ y: iso(b[0], b[1]).y, draw: () => bed(b[0], b[1], i) }));
-    const team = lastState ? lastState.agents.filter(a => a.status !== "retired") : [];
-    for (const c of Object.values(chars)) {
-      const dx = c.tx - c.x, dy = c.ty - c.y, dist = Math.hypot(dx, dy), speed = 1.6;
-      if (dist > 1) { c.x += dx / dist * Math.min(speed, dist); c.y += dy / dist * Math.min(speed, dist); c.walking = true; } else { c.walking = false; }
-      c.step += c.walking ? 0.25 : 0.06;
-      items.push({ y: c.y + 2, draw: () => character(c, t, team.find(a => a.name === c.name)) });
-    }
-    items.sort((p, q) => p.y - q.y).forEach(it => it.draw());
-    label(iso(2, 0.2), "OFFICE"); label(iso(2, 8.7), "BUNKS");
-    ctx.restore();
+    const cw = Math.max(320, Math.floor(box.clientWidth || 0)), chh = Math.max(288, Math.floor((box.clientHeight || 0) - 40));
+    if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
+    scale = Math.max(1, Math.floor(Math.min(cw / W, chh / H))); ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
+    const t = (now - t0) / 1000, dt = Math.min(0.1, (now - last) / 1000); last = now;
+    stepChars(dt);
+    ctx = off.getContext("2d"); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(mapImg, 0, 0);
+    const order = Object.values(chars).sort((a, b) => a.py - b.py);
+    for (const c of order) drawChar(c, t);
+    for (const c of order) { ctx.fillStyle = PAL[0]; ctx.font = "5px 'Press Start 2P', monospace"; ctx.textAlign = "center"; ctx.fillText(c.name.toUpperCase().slice(0, 10), c.px + 8, c.py + 21); }
+    drawDialog(t);
+    vctx.imageSmoothingEnabled = false; vctx.fillStyle = "#0a0c14"; vctx.fillRect(0, 0, cw, chh);
+    vctx.drawImage(off, 0, 0, W, H, ox, oy, W * scale, H * scale);
     raf = requestAnimationFrame(frame);
   }
-  function diamond(x, y, w, h) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w / 2, y + h / 2); ctx.lineTo(x, y + h); ctx.lineTo(x - w / 2, y + h / 2); ctx.closePath(); ctx.fill(); }
-  function wall(x, y, back) { ctx.beginPath(); if (back) { ctx.moveTo(x, y); ctx.lineTo(x + TILE_W / 2, y + TILE_H / 2); ctx.lineTo(x + TILE_W / 2, y + TILE_H / 2 - 40); ctx.lineTo(x, y - 40); } else { ctx.moveTo(x, y); ctx.lineTo(x - TILE_W / 2, y + TILE_H / 2); ctx.lineTo(x - TILE_W / 2, y + TILE_H / 2 - 40); ctx.lineTo(x, y - 40); } ctx.closePath(); ctx.fill(); }
-  function label(p, text) { ctx.font = "8px 'Press Start 2P', monospace"; ctx.fillStyle = "#8f98b8"; ctx.textAlign = "center"; ctx.fillText(text, p.x, p.y); }
-  function desk(gx, gy, i) {
-    const p = iso(gx, gy); const x = p.x, y = p.y;
-    ctx.fillStyle = "#5a3f26"; diamond(x, y - 12, 44, 22); ctx.fillStyle = "#3e2a18"; ctx.fillRect(x - 18, y - 6, 4, 12); ctx.fillRect(x + 14, y - 6, 4, 12);
-    ctx.fillStyle = "#1a1f3a"; ctx.fillRect(x - 8, y - 30, 16, 12); ctx.fillStyle = "#4fe3f0"; ctx.fillRect(x - 6, y - 28, 12, 8); ctx.fillStyle = "#1a1f3a"; ctx.fillRect(x - 2, y - 18, 4, 4);
-  }
-  function bed(gx, gy, i) {
-    const p = iso(gx, gy); const x = p.x, y = p.y;
-    ctx.fillStyle = "#3a3f6a"; diamond(x, y - 8, 46, 23); ctx.fillStyle = "#e9ecf5"; diamond(x - 12, y - 10, 14, 7); ctx.fillStyle = "#7b4fbf"; diamond(x + 6, y - 6, 26, 13);
-  }
-  function character(c, t, a) {
-    const x = Math.round(c.x), y = Math.round(c.y), h = hueOf(c.name), skin = "#f1c9a5", body = colr(h, 60, 45), dark = colr(h, 60, 30);
-    const sleeping = c.mode === "sleep" && !c.walking, working = c.mode === "work" && !c.walking, talking = c.mode === "talk" && !c.walking;
-    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(x, y + 2, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
-    if (sleeping) {
-      ctx.fillStyle = body; ctx.fillRect(x - 12, y - 10, 22, 8); ctx.fillStyle = skin; ctx.fillRect(x - 20, y - 12, 9, 9); ctx.fillStyle = "#0a0c14"; ctx.fillRect(x - 17, y - 9, 2, 1); ctx.fillRect(x - 13, y - 9, 2, 1);
-      const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#8f98b8"; ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x - 8, y - 18 - z * 3);
-    } else {
-      const bob = c.walking ? Math.round(Math.sin(c.step) * 2) : 0, legL = c.walking ? Math.round(Math.sin(c.step) * 3) : 0, legR = -legL;
-      ctx.fillStyle = dark; ctx.fillRect(x - 6, y - 8 + Math.max(0, legL), 5, 8 - Math.max(0, legL)); ctx.fillRect(x + 1, y - 8 + Math.max(0, legR), 5, 8 - Math.max(0, legR));
-      ctx.fillStyle = body; ctx.fillRect(x - 8, y - 24 + bob, 16, 16);
-      if (working) { const arm = Math.floor(t * 8) % 2; ctx.fillStyle = skin; ctx.fillRect(x - 12, y - 16 + bob + arm, 5, 3); ctx.fillRect(x + 7, y - 16 + bob + (1 - arm), 5, 3); }
-      else if (talking) { const arm = Math.floor(t * 3) % 2 ? -2 : 0; ctx.fillStyle = skin; ctx.fillRect(x + 8, y - 20 + bob + arm, 4, 6); }
-      else { ctx.fillStyle = skin; ctx.fillRect(x - 11, y - 20 + bob, 3, 8); ctx.fillRect(x + 8, y - 20 + bob, 3, 8); }
-      ctx.fillStyle = skin; ctx.fillRect(x - 7, y - 38 + bob, 14, 14);
-      ctx.fillStyle = colr(h, 50, 22); ctx.fillRect(x - 7, y - 40 + bob, 14, 5); ctx.fillRect(x - 8, y - 38 + bob, 2, 6); ctx.fillRect(x + 6, y - 38 + bob, 2, 6);
-      ctx.fillStyle = "#0a0c14"; ctx.fillRect(x - 4, y - 32 + bob, 2, 2); ctx.fillRect(x + 2, y - 32 + bob, 2, 2);
-      if (working && Math.floor(t * 6) % 2) { ctx.fillStyle = "#4fe3f0"; ctx.fillRect(x - 2, y - 46 + bob, 4, 2); }
-      if (a && a.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x - 5, y - 44 + bob, 10, 3); ctx.fillRect(x - 5, y - 47 + bob, 2, 3); ctx.fillRect(x - 1, y - 47 + bob, 2, 3); ctx.fillRect(x + 3, y - 47 + bob, 2, 3); }
-    }
-    ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#e9ecf5"; ctx.fillText("@" + c.name, x, y + 14);
-    if (c.say && Date.now() < c.sayUntil) speech(x, y - 50, c.say);
-  }
-  function speech(x, y, text) {
-    ctx.font = "11px Inter, sans-serif"; const lines = wrap(text, 26); const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + 14, h = lines.length * 14 + 10;
-    const bx = Math.round(x - w / 2), by = Math.round(y - h);
-    ctx.fillStyle = "#05070d"; ctx.fillRect(bx - 2, by - 2, w + 4, h + 4); ctx.fillStyle = "#e9ecf5"; ctx.fillRect(bx, by, w, h); ctx.fillRect(x - 3, by + h, 6, 4);
-    ctx.fillStyle = "#05070d"; ctx.textAlign = "left"; lines.forEach((l, i) => ctx.fillText(l, bx + 7, by + 14 + i * 14));
-  }
-  function wrap(text, n) { const words = text.split(/\s+/), out = []; let cur = ""; for (const wd of words) { if ((cur + " " + wd).trim().length > n) { out.push(cur.trim()); cur = wd; } else cur += " " + wd; if (out.length === 3) break; } if (cur.trim() && out.length < 4) out.push(cur.trim()); return out.length ? out : [text.slice(0, n)]; }
   return { start, stop, update };
 })();
 route();
