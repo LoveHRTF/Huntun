@@ -683,15 +683,14 @@ const office = (() => {
                        R(10, 19, 12, 2, "#23262e"); R(11, 18, 10, 1, "#454a58"); R(14, 15, 4, 4, "#2f3340");
                        R(5, 5, 22, 11, "#3a3e4a"); R(6, 6, 20, 9, "#4b5160"); R(7, 7, 18, 2, "#5a6170"); R(9, 10, 14, 1, "#2c3038"); R(9, 12, 14, 1, "#2c3038"); R(14, 14, 4, 1, "#7d8496"); R(5, 5, 22, 1, "#5f6675"); },
     deskR: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
-                   // second monitor, angled toward the seat on the left: narrower panel, slanted right edge
-                   for (let r = 0; r < 13; r++) R(1, 1 + r, 18 - Math.floor(r / 4), 1, "#23262e"); for (let r = 0; r < 11; r++) R(2, 2 + r, 16 - Math.floor(r / 4), 1, "#2f3340"); for (let r = 0; r < 9; r++) R(3, 3 + r, 14 - Math.floor(r / 4), 1, "#101a2e");
-                   R(4, 4, 10, 6, "#1c3358"); R(5, 5, 6, 1, "#3c8fd0"); R(5, 7, 5, 1, "#bcd8f5"); R(5, 9, 7, 1, "#9fb6d6"); R(9, 12, 2, 1, "#5cff8a");
-                   R(8, 14, 4, 3, "#2f3340"); R(5, 17, 10, 2, "#23262e");
+                   // second monitor, narrower and turned toward the seat on the left (thicker bezel on the near right edge); same height, neck and foot as the main one
+                   R(2, 0, 18, 14, "#23262e"); R(3, 1, 15, 12, "#2f3340"); R(4, 2, 13, 10, "#101a2e"); R(5, 3, 11, 6, "#1c3358"); R(6, 4, 5, 3, "#3c8fd0"); R(6, 5, 3, 1, "#e8f2ff"); R(12, 4, 3, 1, "#9fb6d6"); R(12, 6, 3, 1, "#9fb6d6"); R(6, 8, 8, 1, "#bcd8f5"); R(10, 12, 2, 1, "#5cff8a");
+                   R(9, 14, 4, 3, "#2f3340"); R(6, 17, 10, 2, "#23262e"); R(7, 16, 8, 1, "#454a58");
                    R(22, 11, 6, 7, "#ffffff"); R(23, 12, 4, 5, "#e8e8e8"); R(28, 13, 2, 3, "#ffffff"); R(23, 12, 4, 1, "#7a4b2a"); },
     deskRBack: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
-                       // second monitor seen from behind, angled toward the seat above-left
-                       R(5, 17, 10, 2, "#23262e"); R(8, 13, 4, 4, "#2f3340");
-                       for (let r = 0; r < 13; r++) R(1, 1 + r, 18 - Math.floor(r / 4), 1, "#3a3e4a"); for (let r = 0; r < 11; r++) R(2, 2 + r, 16 - Math.floor(r / 4), 1, "#4b5160"); R(3, 3, 14, 2, "#5a6170"); R(4, 7, 10, 1, "#2c3038"); R(4, 9, 10, 1, "#2c3038");
+                       // second monitor seen from behind, narrower and turned toward the seat above-left; same height and foot line as the main one
+                       R(9, 15, 4, 4, "#2f3340"); R(7, 18, 8, 1, "#454a58"); R(6, 19, 10, 2, "#23262e");
+                       R(2, 5, 18, 11, "#3a3e4a"); R(3, 6, 15, 9, "#4b5160"); R(4, 7, 13, 2, "#5a6170"); R(6, 10, 10, 1, "#2c3038"); R(6, 12, 10, 1, "#2c3038"); R(9, 14, 3, 1, "#7d8496"); R(2, 5, 18, 1, "#5f6675");
                        R(22, 11, 6, 7, "#ffffff"); R(23, 12, 4, 5, "#e8e8e8"); R(28, 13, 2, 3, "#ffffff"); R(23, 12, 4, 1, "#7a4b2a"); },
     deskPlain: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
                        // papers, a pen and a mug for the non-developers
