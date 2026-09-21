@@ -985,9 +985,12 @@ const office = (() => {
   function frame(now) {
     raf = null; if (!canvas || !vctx) return;
     const box = $("#officebox"); if (!box) return;
-    const cw = Math.max(320, Math.floor(box.clientWidth || 0)), chh = Math.max(288, Math.floor((box.clientHeight || 0) - 34));
+    // the backing store is sized in device pixels so the pixel art stays sharp on high-DPI screens; the CSS size stays the panel size
+    const dpr = Math.max(1, Math.min(4, (typeof window !== "undefined" && window.devicePixelRatio) || 1));
+    const cw = Math.round(Math.max(320, Math.floor(box.clientWidth || 0)) * dpr), chh = Math.round(Math.max(288, Math.floor((box.clientHeight || 0) - 34)) * dpr);
     if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
-    scale = Math.min(cw / W, chh / H);                                                            // fill the panel's full width or height
+    const fill = Math.min(cw / W, chh / H);                                                       // fill the panel's full width or height
+    scale = Math.floor(fill) >= 0.85 * fill ? Math.floor(fill) : fill;                            // prefer whole device pixels per art pixel when that still nearly fills the panel
     ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
     const t = (now - t0) / 1000, dt = Math.min(1 / 30, (now - last) / 1000); last = now;
     stepChars(dt);
