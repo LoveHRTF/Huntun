@@ -869,10 +869,11 @@ const office = (() => {
   }
   const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
   function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
+  const NOTHING_TO_DO = ["Figured out there's nothing to do. Off to bed.", "Nothing on my plate right now… nap time.", "Inbox empty. I'll rest until someone needs me.", "No tasks for me yet. Back when something comes up."];
   function goalFor(c) {
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
-    return BEDS[c.idx];
+    return c.sleepReady ? BEDS[c.idx] : DESKS[c.idx].chair;                 // idle agents check their desk first, then go to bed
   }
   function stepChars(dt) {
     for (const c of Object.values(chars)) {
@@ -885,7 +886,13 @@ const office = (() => {
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
-      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
+      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
+        if (m !== "sleep") { c.sleepReady = false; c.deskWait = null; }
+        else if (!c.sleepReady && c.tx === DESKS[c.idx].chair[0] && c.ty === DESKS[c.idx].chair[1]) {   // sat down, found nothing to do
+          if (!c.deskWait) { c.deskWait = performance.now() + 2500; c.dir = DESKS[c.idx].dir; }
+          else if (performance.now() > c.deskWait) { c.sleepReady = true; c.deskWait = null; c.say = NOTHING_TO_DO[c.idx % NOTHING_TO_DO.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; }
+        }
+        const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
       if (!c.moving && c.steps.length) {
         const [nx, ny] = c.steps[0];
         if (heldBy(nx, ny, c)) { c.wait = (c.wait || 0) + dt; if (c.wait > 0.8) { c.wait = 0; c.steps = path([c.tx, c.ty], c.goal || [nx, ny], c); } }
@@ -902,7 +909,7 @@ const office = (() => {
   function drawChar(c, t) {
     if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
-    const asleep = c.mode === "sleep" && !c.moving && !c.steps.length;
+    const bed = BEDS[c.idx], asleep = c.mode === "sleep" && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (asleep) {
