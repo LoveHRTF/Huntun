@@ -724,45 +724,42 @@ const office = (() => {
   }
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
-  // islands of four desks (two facing two). One meeting seat and one bunk per agent. Generated from the team size.
-  let DESKS = [], SEATS = [], BEDS = [], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
+  // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
+  let DESKS = [], BEDS = [], FRONT = [3, 5], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
   function layout(n, masterIdx) {
     n = Math.max(1, n); MASTER_IDX = masterIdx;
     const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0));
-    const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(3, islands), islandRows = Math.ceil(islands / islandsPerRow);
-    const officeW = 2 + islandsPerRow * 6, officeH = 4 + islandRows * 6;                // master row (2 tiles) + gap, then islands of 4 rows + 2 gap
-    const perSide = Math.ceil(n / 2), tableH = Math.max(2, perSide), roomW = 10, roomH = tableH + 5;
-    const dividerX = 1 + officeW; MW = dividerX + 1 + roomW + 1;
-    const yMid = 2 + Math.max(officeH, roomH);
+    const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
+    const officeW = Math.max(14, 2 + islandsPerRow * 6), officeH = 4 + islandRows * 6;
+    MW = officeW + 2;
+    const yMid = 2 + officeH;
     const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(n / bedsPerRow);
     MH = yMid + 2 + 1 + bedRows * 3 + 1; W = MW * T; H = MH * T;
-    DESKS = new Array(n); SEATS = []; BEDS = []; map = []; solid = [];
-    const mx = 1 + Math.floor(officeW / 2) - 1;                                          // master desk (2 wide) centred at the front
+    DESKS = new Array(n); BEDS = []; map = []; solid = [];
+    const mx = 1 + Math.floor(officeW / 2) - 1;
+    FRONT = [mx, 5];
     if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 3], chair: [mx, 2], dir: "down" };
     let j = 0;
+    const islandX0 = 1 + Math.floor((officeW - islandsPerRow * 6 + 2) / 2);
     for (let i = 0; i < n; i++) {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
-      const ix = 2 + col * 6 + (pos % 2) * 2, iy = 7 + row * 6;
+      const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 7 + row * 6;
       DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down" } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up" };
       j++;
     }
-    const tx = dividerX + 5, ty = 4;
-    for (let i = 0; i < n; i++) SEATS.push(i % 2 ? [tx + 2, ty + Math.floor(i / 2)] : [tx - 1, ty + Math.floor(i / 2)]);
     for (let i = 0; i < n; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 3 + Math.floor(i / bedsPerRow) * 3]);
-    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [x > dividerX && x < MW - 1 && y >= 2 && y < yMid ? "carpet" : y > yMid + 1 ? "floor2" : "office"]; solid[y][x] = false; } }
+    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [y > yMid + 1 ? "floor2" : "office"]; solid[y][x] = false; } }
     const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
     for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
-    for (let y = 2; y < yMid; y++) if ((y - 2) % 4 !== 3) put(dividerX, y, "wallTop");
-    const doors = [Math.floor(officeW / 2), dividerX + Math.floor(roomW / 2) + 1];
+    const doors = [Math.floor(MW / 3), Math.floor(MW * 2 / 3)];
     for (let x = 1; x < MW - 1; x++) if (!doors.includes(x)) { put(x, yMid, "wallTop"); put(x, yMid + 1, "wallFace"); }
     doors.forEach(x => put(x, yMid + 1, "mat", false));
     DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], "deskL"); put(d.desk[0] + 1, d.desk[1], d.dir === "down" ? "deskRBack" : "deskR"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); });
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
-    for (let r = 0; r < tableH; r++) { put(tx, ty + r, r === 0 ? "tableTL" : r === tableH - 1 ? "tableBL" : "tableML"); put(tx + 1, ty + r, r === 0 ? "tableTR" : r === tableH - 1 ? "tableBR" : "tableMR"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
-    [[1, 2], [dividerX - 1, 2], [dividerX + 1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, MH - 2], [MW - 2, MH - 2], [dividerX - 1, yMid - 1], [1, yMid - 1]].forEach(([x, y]) => { if (!solid[y]?.[x] && !map[y][x].includes("chair")) put(x, y, "plant"); });
+    [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x] && !map[y][x].includes("chair")) put(x, y, "plant"); });
     for (let x = 3; x < MW - 3; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, x % 2 ? "shelf" : "door");
     builtFor = n;
   }
@@ -800,48 +797,67 @@ const office = (() => {
     if (!chars[a.name]) { const spot = [Math.min(MW - 2, 2 + (i % (MW - 3))), 2]; const look = palFor(a.name, a.role); chars[a.name] = { name: a.name, tx: spot[0], ty: spot[1], px: spot[0] * T, py: spot[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, ...look }; }
     return chars[a.name];
   }
-  function modeFor(a, c, st) {
-    const s = (a.live && a.live.status) || a.status || "";
+  const tagsIn = (text) => { const out = []; for (const m of text.matchAll(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi)) { const n = m[2].toLowerCase(); if (!out.includes(n)) out.push(n); } return out; };
+  const freeNeighbour = (x, y) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !map[ny][nx].some(t => t.startsWith("chair"))) return [nx, ny]; } return [x, y]; };
+  function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
+  function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
     const postId = post ? (post.id ?? post.created_at) : null;
-    if (post && c.lastPostId !== postId) { c.lastPostId = postId; c.talkUntil = Date.now() + 30000; c.bang = Date.now() + 2500; c.say = post.detail.replace(/^#\d+:?\s*/, "").slice(0, 140); c.sayStart = performance.now(); c.sayUntil = Date.now() + 14000; }
-    if (c.talkUntil && Date.now() < c.talkUntil) return "talk";
-    if (/^(working|resuming)/.test(s)) return "work";
-    return "sleep";
+    if (!post || c.lastPostId === postId) return;
+    c.lastPostId = postId;
+    const text = post.detail.replace(/^#\d+:?\s*/, "");
+    const team = st.agents.filter(x => x.status !== "retired").map(x => x.name);
+    const tags = tagsIn(text), targets = tags.filter(n => team.includes(n) && n !== a.name);
+    const announce = tags.includes("all") || tags.includes("human") || targets.length > 1;
+    c.bang = Date.now() + 2500; c.say = text.slice(0, 140); c.sayStart = performance.now(); c.sayUntil = Date.now() + 14000;
+    const until = Date.now() + 26000;
+    if (announce) c.talk = { kind: "announce", until, spot: [FRONT[0] + (Object.values(chars).filter(o => o.talk && o.talk.kind === "announce" && o !== c).length % 3) * 2, FRONT[1]], face: "down" };
+    else if (targets.length === 1 && chars[targets[0]]) c.talk = { kind: "visit", until, target: targets[0] };
+    else c.talk = { kind: "here", until };
+  }
+  function modeFor(a, c, st) {
+    noticePosts(a, c, st);
+    if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
+    if (c.talk && c.talk.kind !== "here") return "talk";
+    return baseMode(a);
   }
   function update(st) {
     lastState = st;
     const team = st.agents.filter(a => a.status !== "retired");
     ensureLayout(team);
+    team.forEach((a, i) => { const c = ensureChar(a, i); c.role = a.role; c.title = a.title; c.idx = i; });   // everyone exists before anyone looks for a teammate
     team.forEach((a, i) => {
-      const c = ensureChar(a, i); c.role = a.role; c.title = a.title; c.idx = i;
+      const c = chars[a.name];
       c.mode = modeFor(a, c, st);
       c.goal = goalFor(c);
       if (!c.moving && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal);
     });
     for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
   }
+  const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
+  function visitSpot(c, tc) { return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty); }
   function goalFor(c) {
+    if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
-    if (c.mode === "talk") return SEATS[c.idx];
     return BEDS[c.idx];
   }
   function stepChars(dt) {
     for (const c of Object.values(chars)) {
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
-      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); if (m !== c.mode) { c.mode = m; c.goal = goalFor(c); c.steps = path([c.tx, c.ty], c.goal); } } }
+      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g); } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
       if (!c.moving && c.steps.length) { const [nx, ny] = c.steps.shift(); c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
       if (c.moving) {
         c.prog += dt * 3.4; const e = Math.min(1, c.prog);
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
         c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
-        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "work") c.dir = DESKS[c.idx].dir; else if (c.mode === "talk") { const s = SEATS.findIndex(sv => sv[0] === c.tx && sv[1] === c.ty); c.dir = s >= 0 && s % 2 === 0 ? "right" : "left"; } else c.dir = "down"; } }
+        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { const tc = c.talk.target && chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } else c.dir = c.talk.face || "down"; } else if (c.mode === "work") c.dir = DESKS[c.idx].dir; else c.dir = "down"; } }
       }
     }
   }
   function drawChar(c, t) {
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
     const asleep = c.mode === "sleep" && !c.moving && !c.steps.length;
+    if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (asleep) {
       // head on the pillow, the blanket covers the rest
@@ -852,7 +868,7 @@ const office = (() => {
     const flip = c.dir === "right";
     drawSprite(sprite(c.dir, c.frame), x, y, flip, c.pal, c.cap);
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
-    if (c.mode === "work" && !c.moving && Math.floor(t * 4) % 2) { ctx.fillStyle = C.screenHi; ctx.fillRect(x + 12, c.dir === "down" ? c.py + 34 : y - 12, 8, 3); }
+    if (c.mode === "work" && !c.moving && !c.faceOverride && Math.floor(t * 4) % 2) { ctx.fillStyle = C.screenHi; ctx.fillRect(x + 12, c.dir === "down" ? c.py + 34 : y - 12, 8, 3); }
     if (c.bang > Date.now()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
   }
   function drawBubble(c) {
@@ -874,7 +890,7 @@ const office = (() => {
   function start() {
     const box = $("#officebox"); if (!box) return;
     if (!canvas) {
-      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · meeting table = just posted (their post appears in a speech bubble) · the master sits at the front · click a sprite for details</span></div><canvas id="office"></canvas>';
+      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · a post with several tags is announced from the front, a post tagging one agent is said beside that agent, anything else is said in place · click a sprite for details</span></div><canvas id="office"></canvas>';
       canvas = $("#office"); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
       ensureLayout(lastState ? lastState.agents.filter(a => a.status !== "retired") : [{ role: "master" }, {}, {}, {}]);
       if (vctx) renderMap();
