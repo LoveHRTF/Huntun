@@ -681,8 +681,9 @@ const office = (() => {
     deskRBack: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
                        // keyboard and mouse on the occupant's side (top edge), monitor seen from behind: back panel, vents, logo, neck and foot
                        R(4, 9, 14, 4, C.keys); R(4, 9, 14, 1, "#d5d8e0"); for (let x = 5; x < 17; x += 2) R(x, 11, 1, 1, C.key); R(21, 9, 4, 5, "#e6e8ee");
-                       R(5, 15, 22, 14, "#3a3e4a"); R(6, 16, 20, 12, "#4b5160"); R(7, 17, 18, 3, "#5a6170"); R(9, 21, 14, 1, "#2c3038"); R(9, 23, 14, 1, "#2c3038"); R(14, 25, 4, 2, "#7d8496"); R(5, 15, 22, 1, "#5f6675");
-                       R(14, 29, 4, 2, "#2f3340"); R(10, 30, 12, 2, "#23262e"); },
+                       // the monitor stands on the near part of the desktop; its back panel rises up the screen from the foot
+                       R(10, 17, 12, 2, "#23262e"); R(11, 16, 10, 1, "#454a58"); R(14, 13, 4, 4, "#2f3340");
+                       R(5, 1, 22, 13, "#3a3e4a"); R(6, 2, 20, 11, "#4b5160"); R(7, 3, 18, 3, "#5a6170"); R(9, 7, 14, 1, "#2c3038"); R(9, 9, 14, 1, "#2c3038"); R(14, 11, 4, 1, "#7d8496"); R(5, 1, 22, 1, "#5f6675"); },
     chairUp: () => { R(8, 8, 16, 9, C.chair); R(8, 8, 16, 2, "#4d80e8"); R(9, 17, 14, 11, C.chairDark); R(10, 18, 12, 8, C.chair); R(14, 4, 4, 5, C.chairLeg); R(9, 28, 14, 2, C.chairLeg); },
     chair: () => { R(9, 2, 14, 10, C.chairDark); R(10, 3, 12, 8, C.chair); R(8, 12, 16, 9, C.chair); R(8, 12, 16, 2, "#4d80e8"); R(8, 21, 16, 2, C.chairDark); R(14, 23, 4, 5, C.chairLeg); R(9, 27, 14, 2, C.chairLeg); },
     bedHead: () => { R(2, 0, 28, 32, C.bedFrame); R(4, 2, 24, 30, C.mattress); R(6, 4, 20, 8, C.pillowSh); R(6, 4, 20, 6, C.pillow); R(4, 16, 24, 16, C.blanket); for (let y = 18; y < 32; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 16, 24, 2, "#ffffff"); },
