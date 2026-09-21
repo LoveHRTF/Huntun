@@ -37,6 +37,11 @@ w.fetch = async (url, opts) => {
 w.confirm = () => true; w.alert = (m) => errors.push("alert: " + m);
 if (process.env.HUNTUN_RENDER_OFFICE) { try { w.localStorage.setItem("huntun.office", "1"); } catch (e) {} }
 w.requestAnimationFrame = (fn) => setTimeout(() => fn(performance.now()), 16); w.cancelAnimationFrame = (id) => clearTimeout(id);
+// jsdom has no canvas: give the office view a no-op 2D context so its drawing code still runs.
+w.HTMLCanvasElement.prototype.getContext = function () {
+  const noop = () => {};
+  return new Proxy({ measureText: (t) => ({ width: (t || "").length * 6 }), canvas: this }, { get: (o, k) => (k in o ? o[k] : (typeof k === "string" && /^[a-z]/.test(k) ? noop : undefined)), set: () => true });
+};
 if (!w.HTMLDialogElement.prototype.showModal) { w.HTMLDialogElement.prototype.showModal = function () { this.open = true; }; w.HTMLDialogElement.prototype.close = function () { this.open = false; }; }
 w.addEventListener("error", (e) => errors.push("window.error: " + (e.error?.stack || e.message)));
 w.addEventListener("unhandledrejection", (e) => errors.push("unhandledrejection: " + (e.reason?.stack || e.reason)));
