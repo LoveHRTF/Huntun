@@ -674,9 +674,15 @@ const office = (() => {
     wallFace: () => { R(0, 0, 32, 32, C.wall); R(0, 0, 32, 4, C.wallTrim); R(0, 4, 32, 1, "#b89a6e"); R(15, 5, 2, 22, C.wallPanel); R(0, 27, 32, 5, C.base); R(0, 27, 32, 1, C.baseLine); },
     deskL: () => { R(2, 8, 30, 14, C.deskTop); R(2, 8, 30, 2, C.deskHi); R(2, 21, 30, 2, C.deskEdge); R(4, 23, 3, 8, C.leg); R(2, 8, 2, 15, C.deskEdge); },
     deskR: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
-                   R(6, 0, 18, 13, C.pcDark); R(7, 1, 16, 11, C.pc); R(9, 3, 12, 7, C.screen); R(10, 4, 5, 2, C.screenHi); R(13, 13, 4, 2, C.pcDark); R(10, 15, 10, 1, C.pcDark); R(3, 12, 12, 5, C.keys); for (let x = 4; x < 14; x += 2) R(x, 13, 1, 1, C.key); },
+                   // monitor seen from the front: bezel, dark screen with a window and text lines, power LED, neck and foot
+                   R(5, 0, 22, 14, "#23262e"); R(6, 1, 20, 12, "#2f3340"); R(7, 2, 18, 10, "#101a2e"); R(8, 3, 16, 8, "#1c3358"); R(9, 4, 8, 5, "#3c8fd0"); R(10, 5, 5, 1, "#e8f2ff"); R(10, 7, 4, 1, "#bcd8f5"); R(18, 4, 5, 1, "#9fb6d6"); R(18, 6, 5, 1, "#9fb6d6"); R(18, 8, 4, 1, "#9fb6d6"); R(15, 12, 2, 1, "#5cff8a");
+                   R(14, 14, 4, 3, "#2f3340"); R(10, 17, 12, 2, "#23262e"); R(11, 16, 10, 1, "#454a58");
+                   R(4, 20, 14, 5, C.keys); R(4, 20, 14, 1, "#d5d8e0"); for (let x = 5; x < 17; x += 2) { R(x, 22, 1, 1, C.key); R(x, 24, 1, 1, C.key); } R(21, 20, 4, 6, "#e6e8ee"); R(22, 21, 2, 2, "#b0b4c0"); },
     deskRBack: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
-                       R(4, 10, 12, 4, C.keys); for (let x = 5; x < 15; x += 2) R(x, 11, 1, 1, C.key); R(13, 12, 4, 5, C.pcDark); R(6, 16, 18, 13, "#7f8594"); R(7, 17, 16, 11, C.pcDark); R(8, 18, 14, 2, "#aeb3c1"); },
+                       // keyboard and mouse on the occupant's side (top edge), monitor seen from behind: back panel, vents, logo, neck and foot
+                       R(4, 9, 14, 4, C.keys); R(4, 9, 14, 1, "#d5d8e0"); for (let x = 5; x < 17; x += 2) R(x, 11, 1, 1, C.key); R(21, 9, 4, 5, "#e6e8ee");
+                       R(5, 15, 22, 14, "#3a3e4a"); R(6, 16, 20, 12, "#4b5160"); R(7, 17, 18, 3, "#5a6170"); R(9, 21, 14, 1, "#2c3038"); R(9, 23, 14, 1, "#2c3038"); R(14, 25, 4, 2, "#7d8496"); R(5, 15, 22, 1, "#5f6675");
+                       R(14, 29, 4, 2, "#2f3340"); R(10, 30, 12, 2, "#23262e"); },
     chairUp: () => { R(8, 8, 16, 9, C.chair); R(8, 8, 16, 2, "#4d80e8"); R(9, 17, 14, 11, C.chairDark); R(10, 18, 12, 8, C.chair); R(14, 4, 4, 5, C.chairLeg); R(9, 28, 14, 2, C.chairLeg); },
     chair: () => { R(9, 2, 14, 10, C.chairDark); R(10, 3, 12, 8, C.chair); R(8, 12, 16, 9, C.chair); R(8, 12, 16, 2, "#4d80e8"); R(8, 21, 16, 2, C.chairDark); R(14, 23, 4, 5, C.chairLeg); R(9, 27, 14, 2, C.chairLeg); },
     bedHead: () => { R(2, 0, 28, 32, C.bedFrame); R(4, 2, 24, 30, C.mattress); R(6, 4, 20, 8, C.pillowSh); R(6, 4, 20, 6, C.pillow); R(4, 16, 24, 16, C.blanket); for (let y = 18; y < 32; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 16, 24, 2, "#ffffff"); },
@@ -772,7 +778,8 @@ const office = (() => {
     ctx = off.getContext("2d");
   }
   const key = (x, y) => y * MW + x;
-  function path(from, to) {
+  function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
+  function path(from, to, self) {
     if (from[0] === to[0] && from[1] === to[1]) return [];
     const prev = new Map([[key(from[0], from[1]), null]]); const q = [from];
     while (q.length) {
@@ -781,6 +788,7 @@ const office = (() => {
         const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
         const k = key(nx, ny); if (prev.has(k)) continue;
         const goal = nx === to[0] && ny === to[1]; if (solid[ny][nx] && !goal) continue;
+        if (self && !goal && heldBy(nx, ny, self)) continue;
         prev.set(k, key(x, y)); if (goal) { const out = []; let cur = k; while (cur !== key(from[0], from[1])) { out.unshift([cur % MW, Math.floor(cur / MW)]); cur = prev.get(cur); } return out; }
         q.push([nx, ny]);
       }
@@ -798,7 +806,7 @@ const office = (() => {
     return chars[a.name];
   }
   const tagsIn = (text) => { const out = []; for (const m of text.matchAll(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi)) { const n = m[2].toLowerCase(); if (!out.includes(n)) out.push(n); } return out; };
-  const freeNeighbour = (x, y) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !map[ny][nx].some(t => t.startsWith("chair"))) return [nx, ny]; } return [x, y]; };
+  const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
   function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
   function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
@@ -811,7 +819,7 @@ const office = (() => {
     const announce = tags.includes("all") || tags.includes("human") || targets.length > 1;
     c.bang = Date.now() + 2500; c.say = text.slice(0, 140); c.sayStart = performance.now(); c.sayUntil = Date.now() + 14000;
     const until = Date.now() + 26000;
-    if (announce) c.talk = { kind: "announce", until, spot: [FRONT[0] + (Object.values(chars).filter(o => o.talk && o.talk.kind === "announce" && o !== c).length % 3) * 2, FRONT[1]], face: "down" };
+    if (announce) { let k = 0; while (k < 6 && Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "announce" && o.talk.spot[0] === FRONT[0] + k * 2)) k++; c.talk = { kind: "announce", until, spot: [FRONT[0] + k * 2, FRONT[1]], face: "down" }; }
     else if (targets.length === 1 && chars[targets[0]]) c.talk = { kind: "visit", until, target: targets[0] };
     else c.talk = { kind: "here", until };
   }
@@ -830,12 +838,12 @@ const office = (() => {
       const c = chars[a.name];
       c.mode = modeFor(a, c, st);
       c.goal = goalFor(c);
-      if (!c.moving && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal);
+      if (!c.moving && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);
     });
     for (const n of Object.keys(chars)) if (!team.some(a => a.name === n)) delete chars[n];
   }
   const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
-  function visitSpot(c, tc) { return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty); }
+  function visitSpot(c, tc) { return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
   function goalFor(c) {
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
@@ -844,8 +852,12 @@ const office = (() => {
   function stepChars(dt) {
     for (const c of Object.values(chars)) {
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
-      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g); } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
-      if (!c.moving && c.steps.length) { const [nx, ny] = c.steps.shift(); c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
+      if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState); const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
+      if (!c.moving && c.steps.length) {
+        const [nx, ny] = c.steps[0];
+        if (heldBy(nx, ny, c)) { c.wait = (c.wait || 0) + dt; if (c.wait > 0.8) { c.wait = 0; c.steps = path([c.tx, c.ty], c.goal || [nx, ny], c); } }
+        else { c.steps.shift(); c.wait = 0; c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
+      }
       if (c.moving) {
         c.prog += dt * 3.4; const e = Math.min(1, c.prog);
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
@@ -868,7 +880,16 @@ const office = (() => {
     const flip = c.dir === "right";
     drawSprite(sprite(c.dir, c.frame), x, y, flip, c.pal, c.cap);
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
-    if (c.mode === "work" && !c.moving && !c.faceOverride && Math.floor(t * 4) % 2) { ctx.fillStyle = C.screenHi; ctx.fillRect(x + 12, c.dir === "down" ? c.py + 34 : y - 12, 8, 3); }
+    if (c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride) {
+      const tick = Math.floor(t * 7 + c.idx) % 2, skin = c.pal.s;
+      if (c.dir === "down") {                                                      // hands on the keyboard below, alternating
+        ctx.fillStyle = skin; ctx.fillRect(x + 6, c.py + 36 + tick * 2, 6, 4); ctx.fillRect(x + 20, c.py + 36 + (1 - tick) * 2, 6, 4);
+        if (Math.floor(t * 9 + c.idx) % 5 === 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 12 + (tick ? 6 : 0), c.py + 38, 2, 2); }
+      } else {                                                                   // back to the camera: elbows and shoulders work, the screen lights the desk
+        ctx.fillStyle = skin; ctx.fillRect(x + 1, y + 26 + tick * 2, 4, 3); ctx.fillRect(x + 27, y + 26 + (1 - tick) * 2, 4, 3);
+        ctx.fillStyle = Math.floor(t * 5 + c.idx) % 3 ? "rgba(120,200,255,.35)" : "rgba(120,200,255,.15)"; ctx.fillRect(x + 6, y - 14, 20, 6);
+      }
+    }
     if (c.bang > Date.now()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
   }
   function drawBubble(c) {
@@ -926,7 +947,7 @@ const office = (() => {
     vctx.drawImage(off, 0, 0, W, H, ox, oy, Math.round(W * scale), Math.round(H * scale));
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update };
+  return { start, stop, update, _debug: () => ({ chars, DESKS, BEDS, FRONT, MW, MH }) };
 })();
 route();
 </script>
