@@ -675,6 +675,9 @@ const office = (() => {
     deskL: () => { R(2, 8, 30, 14, C.deskTop); R(2, 8, 30, 2, C.deskHi); R(2, 21, 30, 2, C.deskEdge); R(4, 23, 3, 8, C.leg); R(2, 8, 2, 15, C.deskEdge); },
     deskR: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
                    R(6, 0, 18, 13, C.pcDark); R(7, 1, 16, 11, C.pc); R(9, 3, 12, 7, C.screen); R(10, 4, 5, 2, C.screenHi); R(13, 13, 4, 2, C.pcDark); R(10, 15, 10, 1, C.pcDark); R(3, 12, 12, 5, C.keys); for (let x = 4; x < 14; x += 2) R(x, 13, 1, 1, C.key); },
+    deskRBack: () => { R(0, 8, 30, 14, C.deskTop); R(0, 8, 30, 2, C.deskHi); R(0, 21, 30, 2, C.deskEdge); R(25, 23, 3, 8, C.leg); R(28, 8, 2, 15, C.deskEdge);
+                       R(4, 10, 12, 4, C.keys); for (let x = 5; x < 15; x += 2) R(x, 11, 1, 1, C.key); R(13, 12, 4, 5, C.pcDark); R(6, 16, 18, 13, "#7f8594"); R(7, 17, 16, 11, C.pcDark); R(8, 18, 14, 2, "#aeb3c1"); },
+    chairUp: () => { R(8, 8, 16, 9, C.chair); R(8, 8, 16, 2, "#4d80e8"); R(9, 17, 14, 11, C.chairDark); R(10, 18, 12, 8, C.chair); R(14, 4, 4, 5, C.chairLeg); R(9, 28, 14, 2, C.chairLeg); },
     chair: () => { R(9, 2, 14, 10, C.chairDark); R(10, 3, 12, 8, C.chair); R(8, 12, 16, 9, C.chair); R(8, 12, 16, 2, "#4d80e8"); R(8, 21, 16, 2, C.chairDark); R(14, 23, 4, 5, C.chairLeg); R(9, 27, 14, 2, C.chairLeg); },
     bedHead: () => { R(2, 0, 28, 32, C.bedFrame); R(4, 2, 24, 30, C.mattress); R(6, 4, 20, 8, C.pillowSh); R(6, 4, 20, 6, C.pillow); R(4, 16, 24, 16, C.blanket); for (let y = 18; y < 32; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 16, 24, 2, "#ffffff"); },
     bedFoot: () => { R(2, 0, 28, 30, C.bedFrame); R(4, 0, 24, 24, C.blanket); for (let y = 0; y < 24; y += 6) R(4, y, 24, 2, C.blanketHi); R(4, 24, 24, 4, C.mattress); R(2, 28, 28, 4, "#6f4520"); R(4, 30, 4, 2, C.leg); R(24, 30, 4, 2, C.leg); },
@@ -755,7 +758,7 @@ const office = (() => {
     const doors = [Math.floor(officeW / 2), dividerX + Math.floor(roomW / 2) + 1];
     for (let x = 1; x < MW - 1; x++) if (!doors.includes(x)) { put(x, yMid, "wallTop"); put(x, yMid + 1, "wallFace"); }
     doors.forEach(x => put(x, yMid + 1, "mat", false));
-    DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], "deskL"); put(d.desk[0] + 1, d.desk[1], "deskR"); put(d.chair[0], d.chair[1], "chair", false); });
+    DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], "deskL"); put(d.desk[0] + 1, d.desk[1], d.dir === "down" ? "deskRBack" : "deskR"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); });
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     for (let r = 0; r < tableH; r++) { put(tx, ty + r, r === 0 ? "tableTL" : r === tableH - 1 ? "tableBL" : "tableML"); put(tx + 1, ty + r, r === 0 ? "tableTR" : r === tableH - 1 ? "tableBR" : "tableMR"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
@@ -899,6 +902,7 @@ const office = (() => {
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
+    for (const c of order) { const d = DESKS[c.idx]; if (d && d.dir === "down" && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1]) { TX = d.desk[0] * T; TY = d.desk[1] * T; TILES.deskL(); TX += T; TILES.deskRBack(); } }
     ctx.font = "8px 'Press Start 2P', monospace"; ctx.textAlign = "center";
     for (const c of order) { const label = c.name.toUpperCase().slice(0, 12); ctx.fillStyle = "#ffffff"; ctx.fillText(label, c.px + 17, c.py + 41); ctx.fillStyle = "#3b2a1e"; ctx.fillText(label, c.px + 16, c.py + 40); }
     for (const c of order) drawBubble(c);
