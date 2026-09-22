@@ -1136,15 +1136,15 @@ const office = (() => {
     let ms = performance.now() - c.sayStart; if (c.sayLoop) ms %= cycleMs; else ms = Math.min(ms, cycleMs - 1);
     let pi = 0; while (pi < pages.length - 1 && ms >= pageMs(pages[pi])) { ms -= pageMs(pages[pi]); pi++; }
     const lines = pages[pi], shown = Math.floor(ms / 1000 * 40);
-    ctx.font = "500 " + cssPx(8.5) + "px " + SANS; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-    const lh = cssPx(11), pad = cssPx(6), lw = Math.max(...lines.map(l => ctx.measureText(l).width)), bw = Math.min(W - 16, Math.ceil(lw + pad * 2)), bh = Math.ceil(lines.length * lh + pad * 1.6);
+    ctx.font = "500 " + cssPx(12.75) + "px " + SANS; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    const lh = cssPx(16.5), pad = cssPx(8), lw = Math.max(...lines.map(l => ctx.measureText(l).width)), bw = Math.min(W - 16, Math.ceil(lw + pad * 2)), bh = Math.ceil(lines.length * lh + pad * 1.6);
     let bx = Math.round(c.px + 16 - bw / 2); bx = Math.max(4, Math.min(W - bw - 4, bx));
     const by = Math.max(4, c.py - 24 - bh - 8);
     ctx.fillStyle = "#3b2a1e"; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4); ctx.fillStyle = "#ffffff"; ctx.fillRect(bx, by, bw, bh);
     ctx.fillStyle = "#3b2a1e"; ctx.fillRect(c.px + 12, by + bh + 2, 8, 2); ctx.fillRect(c.px + 14, by + bh + 4, 4, 2); ctx.fillStyle = "#ffffff"; ctx.fillRect(c.px + 12, by + bh, 8, 2);
     let count = 0; ctx.fillStyle = "#333333";
     lines.forEach((l, i) => { const take = Math.max(0, Math.min(l.length, shown - count)); ctx.fillText(l.slice(0, take), bx + pad, by + pad * 0.5 + lh * (i + 0.85)); count += l.length; });
-    if (pages.length > 1) { ctx.fillStyle = "#9aa3bd"; ctx.font = "500 " + cssPx(6.5) + "px " + SANS; ctx.textAlign = "right"; ctx.fillText((pi + 1) + "/" + pages.length, bx + bw - cssPx(3), by + bh - cssPx(2.5)); }
+    if (pages.length > 1) { ctx.fillStyle = "#9aa3bd"; ctx.font = "500 " + cssPx(9.75) + "px " + SANS; ctx.textAlign = "right"; ctx.fillText((pi + 1) + "/" + pages.length, bx + bw - cssPx(3), by + bh - cssPx(2.5)); }
   }
   function wrapLines(text, n) { const words = text.split(/\s+/), out = []; let cur = ""; for (const w of words) { if ((cur + " " + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += " " + w; } if (cur.trim()) out.push(cur.trim()); return out; }
 
@@ -1200,8 +1200,8 @@ const office = (() => {
     vctx.drawImage(off, 0, 0, W * P, H * P, ox, oy, Math.round(W * scale), Math.round(H * scale));
     // text goes straight onto the visible canvas under the display transform, so it is rasterised at device resolution at a fixed on-screen size
     vctx.setTransform(scale, 0, 0, scale, ox, oy); ctx = vctx; const cssPx = (n) => n * dpr / scale;
-    ctx.font = "600 " + cssPx(7) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(2.5); ctx.strokeStyle = "rgba(10,7,4,.9)";
-    for (const c of order) { if (c.hidden) continue; let txt = c.name; while (ctx.measureText(txt).width > 60 && txt.length > 3) txt = txt.slice(0, -2) + "…"; ctx.strokeText(txt, c.px + 16, c.py + 39); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, c.px + 16, c.py + 39); }
+    ctx.font = "600 " + cssPx(10.5) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(3); ctx.strokeStyle = "rgba(10,7,4,.9)";
+    for (const c of order) { if (c.hidden) continue; let txt = c.name; while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…"; ctx.strokeText(txt, c.px + 16, c.py + 40); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, c.px + 16, c.py + 40); }
     for (const c of order) if (!c.hidden) drawBubble(c, cssPx);
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
