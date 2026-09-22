@@ -967,6 +967,7 @@ const office = (() => {
     DOOR = [MW - 4, 1];
     for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
+    FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y)) FLOOR.push([x, y]);
     builtFor = n;
   }
   let seats = [];                                   // stable seating: first come, first seated; a leaver's desk stays empty for the next hire
@@ -1037,6 +1038,32 @@ const office = (() => {
   const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !isDoor(nx, ny) && !isEntry(nx, ny) && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
   function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
   const fainted = (a) => /^(error|crashed)/.test((a.live && a.live.status) || a.status || "");
+  const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
+  // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
+  // switching at random with an average of about two minutes per action
+  const TUNE = { strikeMean: 120000 };
+  const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!", "Let us cook!", "One more cycle, please?"];
+  const TANTRUMS = ["Waaaah! I want my tokens!", "I can't take it anymore!", "Nooooo…", "Why us?!"];
+  let FLOOR = [];                                                             // open tiles someone can wander to
+  const randomSpot = (c) => { const open = FLOOR.filter(([x, y]) => !heldBy(x, y, c)); return open.length ? open[Math.floor(Math.random() * open.length)] : [c.tx, c.ty]; };
+  const expo = (mean) => Math.max(mean * 0.25, Math.min(mean * 2.5, -Math.log(1 - Math.random()) * mean));
+  const shout = (c, lines, until) => { c.say = lines[Math.floor(Math.random() * lines.length)]; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = true; };
+  function strikeTick(c) {
+    const now = Date.now();
+    if (!c.strike || now > c.strike.until) {
+      const acts = ["sleep", "wander", "protest", "roll"], last = c.strike && c.strike.act;
+      const act = acts.filter(a => a !== last)[Math.floor(Math.random() * 3)], until = now + expo(TUNE.strikeMean);
+      c.strike = { act, until, spot: act === "wander" || act === "protest" ? randomSpot(c) : [c.tx, c.ty], pauseUntil: null, start: now };
+      c.sayUntil = 0; c.sayLoop = false; c.steps = [];
+      if (act === "protest") shout(c, SLOGANS, until); else if (act === "roll") shout(c, TANTRUMS, until);
+    }
+    const s = c.strike;
+    if ((s.act === "wander" || s.act === "protest") && !c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) {   // arrived: stop for a moment, then pick somewhere else
+      if (!s.pauseUntil) s.pauseUntil = now + 1500 + Math.random() * 5000;
+      else if (now > s.pauseUntil) { s.spot = randomSpot(c); s.pauseUntil = null; if (s.act === "protest") shout(c, SLOGANS, s.until); }
+    }
+  }
+  const endStrike = (c) => { if (c.strike) { c.strike = null; c.sayUntil = 0; c.sayLoop = false; } };
   function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
     const postId = post ? (post.id ?? post.created_at) : null;
@@ -1057,7 +1084,8 @@ const office = (() => {
   function modeFor(a, c, st) {
     noticePosts(a, c, st);
     if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
-    if (fainted(a)) { c.talk = null; return "faint"; }                      // an API error knocks them out where they stand
+    if (fainted(a)) { c.talk = null; endStrike(c); return "faint"; }        // an API error knocks them out where they stand
+    if (limited(a, st) && !c.hidden) { c.talk = null; strikeTick(c); return "strike"; } else endStrike(c);
     if (c.toiletUntil > Date.now()) return "toilet";                          // compacting context: off to the toilet
     if (c.talk && c.talk.kind !== "here") return "talk";
     return baseMode(a);
@@ -1088,6 +1116,7 @@ const office = (() => {
   const NOTHING_TO_DO = ["Figured out there's nothing to do. Off to bed.", "Nothing on my plate right now… nap time.", "Inbox empty. I'll rest until someone needs me.", "No tasks for me yet. Back when something comes up."];
   function goalFor(c) {
     if (c.mode === "faint") return [c.tx, c.ty];
+    if (c.mode === "strike" && c.strike) return c.strike.act === "sleep" ? BEDS[c.idx] : c.strike.spot;
     if (c.mode === "toilet") { if (c.toilet != null) return TOILETS[c.toilet]; const k = toiletQueue.filter(n => chars[n] && chars[n].toilet == null).indexOf(c.name); return k >= 0 && k < QUEUE.length ? QUEUE[k] : [c.tx, c.ty]; }
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
@@ -1144,9 +1173,17 @@ const office = (() => {
   function drawChar(c, t) {
     if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
-    const bed = BEDS[c.idx], asleep = c.mode === "sleep" && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
+    const bed = BEDS[c.idx], napping = c.mode === "sleep" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+    if (c.mode === "strike" && c.strike && c.strike.act === "roll") {         // tantrum: rolling back and forth on the floor
+      const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), ph = (Date.now() - c.strike.start) / 1000;
+      const wob = Math.round(Math.sin(ph * 2.2) * 8), ang = Math.round(ph * 4) * (Math.PI / 4);
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16 + wob, c.py + 26, 20, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(x + 16 + wob, c.py + 14); ctx.rotate(ang); ctx.drawImage(img, -16, -24 - c.top); ctx.restore();
+      if (Math.floor(ph * 3) % 2) { ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 2 + wob, c.py - 6, 2, 4); ctx.fillRect(x + 28 + wob, c.py - 4, 2, 4); }    // tears flying
+      return;
+    }
     if (c.mode === "faint") {                                                  // out cold on the floor where they stood, stars circling
       const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), twitch = Math.floor(t * 2 + c.idx) % 7 === 0 ? 1 : 0;
       ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 26, 24, 5, 0, 0, Math.PI * 2); ctx.fill();
@@ -1172,7 +1209,7 @@ const office = (() => {
     }
     const flip = c.dir === "right";
     const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
-    const talking = c.talk && !c.moving && !c.steps.length && c.mode === "talk";
+    const talking = (c.talk && !c.moving && !c.steps.length && c.mode === "talk") || (c.mode === "strike" && c.strike && c.strike.act === "protest");   // marchers wave their fist as they go
     const tick = Math.floor(t * 7 + c.idx) % 2, bobY = working && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
     drawSprite(sprite(c, c.dir, c.frame), x, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
     if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
@@ -1267,7 +1304,7 @@ const office = (() => {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES }) };
+  return { start, stop, update, headshot, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 })();
 route();
 </script>
