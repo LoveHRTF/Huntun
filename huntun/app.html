@@ -748,7 +748,17 @@ const office = (() => {
   const rowSet = (row, edits) => { const a = [...row]; for (const [i, ch] of edits) a[i] = ch; return a.join(""); };
   // ---- species: anthropomorphic zoo animals share the human body and get their own head (ears, muzzle, markings). Colours: s fur, n light muzzle/face, a accent (inner ear, patches, beak), m nose
   const ANIMALS = {
-    cat:      { ears: "point", fur: ["#f2a65a", "#8c8c8c", "#2b2b2b", "#f5f5f5"], a: "#f4a7b9", n: "#fff1e0", m: "#e88aa0", face: ["muzzle"] },
+    cat:      { ears: "point", fur: ["#f2a65a"], a: "#f4a7b9", n: "#fff1e0", m: "#e88aa0", face: ["muzzle"], variants: {                    // coats: x and z are marking colours
+                ginger:       { fur: ["#f2a65a"], x: "#d9822b", n: "#fff1e0", e: "#c8792a", face: ["muzzle", "tabby"] },
+                british_blue: { fur: ["#8d97a6"], a: "#d9a3ad", n: "#8d97a6", m: "#6e7683", e: "#d38b2a", face: ["nose"] },
+                blue_white:   { fur: ["#8d97a6"], a: "#d9a3ad", n: "#ffffff", m: "#e88aa0", e: "#d38b2a", face: ["blaze", "muzzle"] },
+                tuxedo:       { fur: ["#2b2b2b"], a: "#d9a3ad", n: "#ffffff", m: "#e88aa0", e: "#5cb85c", face: ["blaze", "muzzle"] },
+                calico:       { fur: ["#f7f7f7"], x: "#f2a65a", z: "#2b2b2b", n: "#ffffff", e: "#d38b2a", face: ["muzzle", "calico"] },
+                brown_tabby:  { fur: ["#a8763e"], x: "#5a3a1e", n: "#e8d2b0", e: "#c8792a", face: ["muzzle", "tabby"] },
+                grey_tabby:   { fur: ["#9a9a9a"], x: "#4a4a4a", n: "#f0f0f0", e: "#5cb85c", face: ["muzzle", "tabby"] },
+                siamese:      { fur: ["#f1e4d0"], x: "#4a3728", n: "#4a3728", m: "#3a2a1e", e: "#3a8fd8", face: ["points", "muzzle"] },
+                black:        { fur: ["#2b2b2b"], a: "#6b4a55", n: "#2b2b2b", m: "#555555", e: "#e6c15a", face: ["nose"] },
+                white:        { fur: ["#f7f7f7"], n: "#f7f7f7", m: "#e88aa0", e: "#3a8fd8", face: ["nose"] } } },
     fox:      { ears: "point", fur: ["#e8792b"], a: "#2b2b2b", n: "#fff6ea", m: "#2b2b2b", face: ["muzzle", "cheeks"] },
     tiger:    { ears: "point", fur: ["#f28c28"], a: "#2b2b2b", n: "#fff6ea", m: "#e88aa0", face: ["muzzle", "stripes"] },
     lion:     { ears: "point", fur: ["#e0a94a"], a: "#a5561f", n: "#fff1d0", m: "#6b3e1e", face: ["muzzle", "mane"] },
@@ -763,7 +773,7 @@ const office = (() => {
     penguin:  { ears: "none", fur: ["#2b2b2b"], a: "#f2a33a", n: "#f7f7f7", m: "#f2a33a", face: ["facepatch", "beak"] },
     elephant: { ears: "big", fur: ["#9aa0a8"], a: "#c9b0b8", n: "#9aa0a8", m: "#7d838b", face: ["trunk"] },
   };
-  const ANIMAL_NAMES = Object.keys(ANIMALS);
+  const ANIMAL_NAMES = Object.keys(ANIMALS), ANIMAL_PICK = ["cat", "cat", "cat"].concat(ANIMAL_NAMES);   // cats are the office favourite
   const EARS = {                                                             // extra rows above the head, then the head's top two rows
     point:  { top: ["...o........o...", "..oso......oso..", "..osao....oaso.."], r0: "..osaaooooaaso..", r1: "..oossssssssoo.." },
     round:  { top: ["..oooo....oooo..", ".osaaso..osaaso."], r0: ".ossssoooosssso.", r1: "..oossssssssoo.." },
@@ -774,12 +784,13 @@ const office = (() => {
   };
   const range = (a, b) => { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; };
   function animalHead(c, dir) {
-    const sp = ANIMALS[c.species], ear = EARS[sp.ears] || EARS.none, side = dir === "left";
+    const base = ANIMALS[c.species], sp = c.variant ? { ...base, ...base.variants[c.variant] } : base, ear = EARS[sp.ears] || EARS.none, side = dir === "left";
     let rows = HEAD[dir].map(r => r.replace(/h/g, "s"));
     rows[0] = ear.r0; rows[1] = ear.r1; rows[2] = "..osssssssssso..";
     rows = ear.top.concat(rows);
     const t = ear.top.length;
     if (sp.earFur) rows = rows.map((r, i) => i <= t ? r.replace(/[sa]/g, "a") : r);
+    if (sp.face.includes("points")) rows = rows.map((r, i) => i <= t ? r.replace(/[sa]/g, "x") : r);
     const E = (r, edits) => { rows[t + r] = rowSet(rows[t + r], edits); };
     const mirror = (edits) => side ? edits.filter(([i]) => i >= 8) : edits;                     // in profile only the ear at the back of the head shows
     const both = (cols, ch) => cols.flatMap(i => [[i, ch], [15 - i, ch]]);
@@ -796,6 +807,8 @@ const office = (() => {
       if (has("snout")) { E(8, range(6, 9).map(i => [i, "a"])); E(9, [[6, "a"], [7, "m"], [8, "m"], [9, "a"]]); }
       if (has("beak")) { E(8, range(6, 9).map(i => [i, "a"])); E(9, [[7, "a"], [8, "a"]]); }
       if (has("frog")) { E(7, [[5, "s"], [10, "s"]]); E(8, range(4, 11).map(i => [i, "m"])); }
+      if (has("blaze")) { E(6, [[7, "n"], [8, "n"]]); E(7, range(6, 9).filter(i => rows[t + 7][i] === "s").map(i => [i, "n"])); E(8, range(4, 11).filter(i => rows[t + 8][i] === "s").map(i => [i, "n"])); E(9, range(4, 11).filter(i => rows[t + 9][i] === "s").map(i => [i, "n"])); }
+      if (has("points")) { for (let r = 5; r <= 9; r++) E(r, range(4, 11).filter(i => rows[t + r][i] === "s" && (r > 5 || i > 5 && i < 10)).map(i => [i, "x"])); }
       if (c.glasses && !has("frog")) E(7, [[4, "g"], [6, "g"], [7, "g"], [8, "g"], [9, "g"], [11, "g"]]);
     } else if (side) {
       if (has("facepatch")) for (let r = 5; r <= 9; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
@@ -807,9 +820,13 @@ const office = (() => {
       if (has("snout")) { E(8, [[1, "o"], [2, "a"], [3, "a"], [4, "a"]]); E(9, [[2, "o"], [3, "a"], [4, "m"]]); }
       if (has("beak")) E(8, [[1, "a"], [2, "a"], [3, "a"]]);
       if (has("frog")) { E(7, [[3, "s"]]); E(8, range(3, 8).map(i => [i, "m"])); }
+      if (has("blaze")) for (let r = 7; r <= 9; r++) E(r, range(3, 6).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
+      if (has("points")) for (let r = 5; r <= 9; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "x"]));
       if (c.glasses && !has("frog")) E(7, [[4, "g"], [5, "g"]]);
     }
     if (has("stripes")) { if (side) { E(2, [[6, "a"], [9, "a"]]); E(3, [[4, "a"], [8, "a"], [12, "a"]]); E(4, [[6, "a"], [10, "a"]]); } else { E(2, [[5, "a"], [10, "a"]]); E(3, [[3, "a"], [7, "a"], [8, "a"], [12, "a"]]); E(4, [[5, "a"], [10, "a"]]); } }
+    if (has("tabby")) { if (side) { E(1, [[6, "x"], [9, "x"]]); E(2, [[5, "x"], [8, "x"], [11, "x"]]); E(3, [[7, "x"], [10, "x"]]); E(4, [[5, "x"], [9, "x"], [12, "x"]]); } else { E(1, [[6, "x"], [9, "x"]]); E(2, [[4, "x"], [7, "x"], [8, "x"], [11, "x"]]); E(3, [[5, "x"], [10, "x"]]); E(4, [[3, "x"], [7, "x"], [8, "x"], [12, "x"]]); } }
+    if (has("calico")) { for (let r = 1; r <= 4; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "x"])); for (let r = 2; r <= 5; r++) E(r, range(9, 12).filter(i => rows[t + r][i] === "s").map(i => [i, "z"])); if (!side) E(5, [[3, "x"], [4, "x"]]); }
     if (has("mane")) for (let r = 1; r <= 9; r++) E(r, range(2, 13).filter(i => rows[t + r][i] === "s" && (i <= 3 || i >= 12 || r === 1 || (r === 9 && !side))).map(i => [i, "a"]));
     return rows;
   }
@@ -834,7 +851,7 @@ const office = (() => {
     return rows;
   }
   function sprite(c, dir, frame) {
-    const hd = dir === "right" ? "left" : dir, key = c.pal.key + "|" + c.species + c.hair + c.beard + c.glasses + c.shirt + "|" + hd + "|" + frame;
+    const hd = dir === "right" ? "left" : dir, key = c.pal.key + "|" + c.species + c.variant + c.hair + c.beard + c.glasses + c.shirt + "|" + hd + "|" + frame;
     let rows = ROWS.get(key); if (rows) return rows;
     rows = headRows(c, hd).concat(bodyRows(c, hd), (hd === "left" ? SIDE_LEGS : LEGS)[frame]); ROWS.set(key, rows); return rows;
   }
@@ -963,9 +980,10 @@ const office = (() => {
     const hair = master ? ["bowl", "short"][u % 2] : HAIR_STYLES[(v >>> 10) % HAIR_STYLES.length];
     const pal = { o: "#3b2a1e", h: master ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >>> 3) % CAP_COLORS.length], s: SKIN[(v >>> 20) % SKIN.length], e: "#2b2b2b", c: shirt, p: master ? "#2b2b2b" : PANTS[(v >>> 5) % PANTS.length], b: SHOES[(v >>> 23) % SHOES.length], g: GLASSES[(v >>> 27) % GLASSES.length], l: (u >>> 5) % 2 ? "#ffffff" : "#ffd23f" };
     pal.d = (v >>> 25) % 2 ? "#f4f4f4" : tint(shirt, -0.45); pal.key = JSON.stringify(pal);
-    const w = hash(name + "species"), species = master || w % 5 < 2 ? "human" : ANIMAL_NAMES[(w >>> 3) % ANIMAL_NAMES.length], sp = ANIMALS[species];
-    if (sp) { pal.s = sp.fur[(w >>> 8) % sp.fur.length]; pal.n = sp.n; pal.a = sp.a; pal.m = sp.m; pal.key = JSON.stringify(pal); }
-    return { pal, species, top: sp ? (EARS[sp.ears] || EARS.none).top.length : 0, hair: sp ? "bald" : hair, cap: master || sp || hair === "bald" ? null : CAPS[(v >>> 7) % CAPS.length], glasses: (v >>> 13) % 3 === 0, beard: !master && !sp && (v >>> 15) % 4 === 0, shirt: master ? "plain" : SHIRTS[(v >>> 17) % SHIRTS.length] };
+    const w = hash(name + "species"), species = master || w % 5 < 2 ? "human" : ANIMAL_PICK[(w >>> 3) % ANIMAL_PICK.length], base = ANIMALS[species];
+    const variant = base && base.variants ? Object.keys(base.variants)[(w >>> 12) % Object.keys(base.variants).length] : null, sp = variant ? { ...base, ...base.variants[variant] } : base;
+    if (sp) { pal.s = sp.fur[(w >>> 8) % sp.fur.length]; pal.n = sp.n; pal.a = sp.a || pal.s; pal.m = sp.m; pal.x = sp.x || pal.s; pal.z = sp.z || pal.s; if (sp.e) pal.e = sp.e; pal.key = JSON.stringify(pal); }
+    return { pal, species, variant, top: sp ? (EARS[sp.ears] || EARS.none).top.length : 0, hair: sp ? "bald" : hair, cap: master || sp || hair === "bald" ? null : CAPS[(v >>> 7) % CAPS.length], glasses: (v >>> 13) % 3 === 0, beard: !master && !sp && (v >>> 15) % 4 === 0, shirt: master ? "plain" : SHIRTS[(v >>> 17) % SHIRTS.length] };
   }
   function ensureChar(a) {
     if (!chars[a.name]) {
