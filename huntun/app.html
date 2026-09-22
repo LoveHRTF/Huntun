@@ -1047,7 +1047,7 @@ const office = (() => {
   let FLOOR = [];                                                             // open tiles someone can wander to
   const randomSpot = (c) => { const open = FLOOR.filter(([x, y]) => !heldBy(x, y, c)); return open.length ? open[Math.floor(Math.random() * open.length)] : [c.tx, c.ty]; };
   const expo = (mean) => Math.max(mean * 0.25, Math.min(mean * 2.5, -Math.log(1 - Math.random()) * mean));
-  const shout = (c, lines, until) => { c.say = lines[Math.floor(Math.random() * lines.length)]; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = true; };
+  const shout = (c, lines, until) => { c.say = lines[Math.floor(Math.random() * lines.length)]; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = false; };
   function strikeTick(c) {
     const now = Date.now();
     if (!c.strike || now > c.strike.until) {
@@ -1074,12 +1074,12 @@ const office = (() => {
     const tags = tagsIn(text), targets = tags.filter(n => team.includes(n) && n !== a.name);
     const announce = tags.includes("all") || tags.includes("human") || targets.length > 1;
     const full = text.slice(0, 700), pages = pageLines(full);
-    const sayMs = pages.reduce((n, pg) => n + pageMs(pg), 0);
-    const until = Date.now() + Math.max(26000, sayMs + 4000);
-    c.bang = Date.now() + 2500; c.say = full; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = true;
-    if (announce) { let k = 0; while (k < 6 && Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "announce" && o.talk.spot[0] === FRONT[0] + k * 2)) k++; c.talk = { kind: "announce", until, spot: [FRONT[0] + k * 2, FRONT[1]], face: "down" }; }
-    else if (targets.length === 1 && chars[targets[0]] && !chars[targets[0]].hidden) c.talk = { kind: "visit", until, target: targets[0] };
-    else c.talk = { kind: "here", until };
+    // the conversation lasts until the post has been said once in place, or the cap, whichever comes first; the walk there counts against the cap only
+    const cap = Date.now() + MAX_TALK_MS, here = !announce && !(targets.length === 1 && chars[targets[0]] && !chars[targets[0]].hidden), until = here ? Math.min(cap, Date.now() + talkMs(full)) : cap;
+    c.bang = Date.now() + 2500; c.say = full; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = false;
+    if (announce) { let k = 0; while (k < 6 && Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "announce" && o.talk.spot[0] === FRONT[0] + k * 2)) k++; c.talk = { kind: "announce", until, cap, spot: [FRONT[0] + k * 2, FRONT[1]], face: "down" }; }
+    else if (!here) c.talk = { kind: "visit", until, cap, target: targets[0] };
+    else c.talk = { kind: "here", until, cap, arrived: true };
   }
   function modeFor(a, c, st) {
     noticePosts(a, c, st);
@@ -1166,7 +1166,8 @@ const office = (() => {
         c.prog += dt * 2.8; const e = Math.min(1, c.prog);                   // ~0.36 s per tile, the same for everyone
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
         c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
-        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { const tc = c.talk.target && chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } else c.dir = c.talk.face || "down"; } else if (c.mode === "work") c.dir = DESKS[c.idx].dir; else c.dir = "down"; } }
+        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { if (!c.talk.arrived) { c.talk.arrived = true; c.sayStart = performance.now(); c.talk.until = c.sayUntil = Math.min(c.talk.cap, Date.now() + talkMs(c.say)); }   // start saying it once in place; the cap still applies
+              const tc = c.talk.target && chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } else c.dir = c.talk.face || "down"; } else if (c.mode === "work") c.dir = DESKS[c.idx].dir; else c.dir = "down"; } }
       }
     }
   }
@@ -1226,12 +1227,14 @@ const office = (() => {
     }
     if (c.bang > Date.now()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
   }
+  const MAX_TALK_MS = 45000;                                                 // nobody talks longer than this before going back to work
+  const talkMs = (text) => pageLines(text).reduce((n, pg) => n + pageMs(pg), 0) + 1500;   // time to say a post once, page by page, plus a beat
   const pageLines = (text) => { const all = wrapLines(text, 22), pages = []; for (let i = 0; i < all.length; i += 3) pages.push(all.slice(i, i + 3)); return pages.length ? pages : [[""]]; };
   const pageMs = (pg) => (pg.reduce((n, l) => n + l.length, 0) / 40 + 2.5) * 1000;
   function drawBubble(c, cssPx) {
     if (!c.say || Date.now() > c.sayUntil) return;
     const pages = pageLines(c.say), cycleMs = pages.reduce((n, pg) => n + pageMs(pg), 0);
-    let ms = performance.now() - c.sayStart; if (c.sayLoop) ms %= cycleMs; else ms = Math.min(ms, cycleMs - 1);
+    let ms = Math.min(performance.now() - c.sayStart, cycleMs - 1);           // pages advance once through the whole post and stop on the last one; never loop back
     let pi = 0; while (pi < pages.length - 1 && ms >= pageMs(pages[pi])) { ms -= pageMs(pages[pi]); pi++; }
     const lines = pages[pi], shown = Math.floor(ms / 1000 * 40);
     ctx.font = "500 " + cssPx(12.75) + "px " + SANS; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
