@@ -40,6 +40,19 @@ class Backend(Protocol):
 LIMIT_RE = __import__("re").compile(r"usage limit|rate limit|rate_limit|too many requests|limit reached|limit exceeded|resets? at|\b429\b|out of (?:extra )?usage", __import__("re").IGNORECASE)
 
 
+def continue_session(state: Any, max_cycles: int) -> bool:
+    """Whether the next cycle should continue the agent's existing conversation (Claude Code session / Codex thread).
+
+    Sessions carry over between cycles so the context and its compactions behave like one long conversation; after
+    `max_cycles` cycles (0 = never) the agent starts fresh so a stale context does not build up forever.
+    """
+    if not state.session_id:
+        return False
+    if state.resume_pending:
+        return True
+    return max_cycles <= 0 or state.session_cycles < max_cycles
+
+
 def looks_like_limit(text: str | None) -> bool:
     return bool(text) and bool(LIMIT_RE.search(text or ""))
 

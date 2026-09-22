@@ -132,6 +132,18 @@ class CodexBackendTests(unittest.TestCase):
         self.assertEqual((res.outcome, res.summary), ("finished", "done via resume"), res.error)
         self.assertFalse(ctx2.memory.state.resume_pending)
 
+    def test_next_cycle_continues_the_same_thread(self) -> None:
+        ctx = self.ctx()
+        res = self.run_cycle(ctx)
+        self.assertEqual((res.outcome, ctx.memory.state.session_id, ctx.memory.state.session_cycles), ("finished", "thread-123", 1), res.error)
+        ctx2 = ToolContext(agent=self.team[1], team=lambda: self.team, workspace=self.ws, store=self.store, memory=ctx.memory, config=self.config, cycle=CycleState())
+        res = self.run_cycle(ctx2)  # a normal next cycle resumes the thread rather than starting a new one
+        self.assertEqual((res.outcome, res.summary, ctx.memory.state.session_cycles), ("finished", "done via resume", 2), res.error)
+        self.config.session_max_cycles = 2
+        ctx3 = ToolContext(agent=self.team[1], team=lambda: self.team, workspace=self.ws, store=self.store, memory=ctx.memory, config=self.config, cycle=CycleState())
+        res = self.run_cycle(ctx3)  # the cap reached: fresh thread, counter restarts
+        self.assertEqual((res.outcome, res.summary, ctx.memory.state.session_cycles), ("finished", "done via exec", 1), res.error)
+
     def test_limit_is_reported(self) -> None:
         os.environ["FAKE_CODEX_LIMIT"] = "1"
         res = self.run_cycle(self.ctx())

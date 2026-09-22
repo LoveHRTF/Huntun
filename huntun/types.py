@@ -59,6 +59,8 @@ class HuntunConfig:
     estimate: dict[str, Any] = field(default_factory=dict)
     # Maximum number of agents besides the master (0 = no limit).
     max_agents: int = 0
+    # Claude Code / Codex: how many cycles an agent keeps one continuous session before starting a fresh one (0 = never reset).
+    session_max_cycles: int = 25
     backend: str = "auto"
     model: str = ""  # empty = backend default (claude-opus-5 for api, Claude Code's configured model for claude-code)
     lead_effort: str = "xhigh"
@@ -95,6 +97,8 @@ class AgentState:
     # Claude Code backend: session to resume after a pause / restart.
     session_id: str | None = None
     resume_pending: bool = False
+    # Cycles run on the current session (Claude Code / Codex keep one conversation across cycles).
+    session_cycles: int = 0
     # Cumulative usage across cycles: input/output/cache_read tokens (api) or cost_usd/turns (claude-code).
     usage_totals: dict[str, float] = field(default_factory=dict)
     # Context window occupancy of the current / last model call.

@@ -32,13 +32,19 @@ from claude_agent_sdk import (
 from ..models import context_limit
 from ..tools import ToolContext, ToolSpec, available_tools, execute, rel_path
 from ..types import CycleResult, HuntunConfig
-from . import looks_like_limit
+from . import continue_session, looks_like_limit
 
 BUILTIN_TOOLS = ["Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Grep", "Glob", "WebSearch", "WebFetch", "TodoWrite"]
 RESUME_PROMPT = (
     "You were paused mid-cycle by the orchestrator and are now resumed. Re-check the repository state (git status), "
     "continue exactly where you left off, and finish the cycle with finish_cycle."
 )
+CONTINUE_NOTE = "(New cycle in the same conversation. Your earlier cycles above are context only; the board, the repository and your notes are the truth now.)\n\n"
+
+
+def _session_gone(text: str) -> bool:
+    t = text.lower()
+    return "no conversation found" in t or ("session" in t and ("not found" in t or "does not exist" in t or "unknown" in t))
 
 
 def _sdk_tool(spec: ToolSpec, ctx: ToolContext):
@@ -192,10 +198,14 @@ class ClaudeCodeBackend:
         mcp_tools = [_sdk_tool(s, ctx) for s in specs]
         builtin = [t for t in BUILTIN_TOOLS if not (ctx.agent.role == "master" and t in ("Write", "Edit", "MultiEdit", "NotebookEdit"))]
         allowed = builtin + [f"mcp__huntun__{s.name}" for s in specs]
-        resuming = bool(state.resume_pending and state.session_id)
+        resuming = bool(state.resume_pending and state.session_id)                       # paused mid-cycle: pick up where it stopped
+        continuing = continue_session(state, self.config.session_max_cycles)             # otherwise keep the same conversation going across cycles
+        if not continuing and state.session_id:
+            log(f"starting a fresh session after {state.session_cycles} cycles")
+            state.session_id, state.session_cycles = None, 0
         options = self._options(
             workspace=ctx.workspace, system=system, mcp_tools=mcp_tools, allowed=allowed, model=model, effort=effort,
-            max_turns=self.config.max_tool_calls_per_cycle + 10, resume=state.session_id if resuming else None,
+            max_turns=self.config.max_tool_calls_per_cycle + 10, resume=state.session_id if continuing else None,
             on_touch=memory.touch, on_activity=memory.activity,
         )
         text_parts: list[str] = []
@@ -225,7 +235,7 @@ class ClaudeCodeBackend:
 
         try:
             async with ClaudeSDKClient(options=options) as client:
-                await client.query(RESUME_PROMPT if resuming else prompt)
+                await client.query(RESUME_PROMPT if resuming else (CONTINUE_NOTE + prompt if continuing else prompt))
                 watcher = asyncio.create_task(watch_stop(client))
                 try:
                     async for msg in client.receive_response():
@@ -276,7 +286,11 @@ class ClaudeCodeBackend:
                                 memory.save_state()
                                 return result("limit", limit_hit["reason"])
                             if msg.is_error and not interrupted:
-                                state.session_id = session_id
+                                if continuing and not resuming and _session_gone(msg.result or msg.subtype or ""):
+                                    log("the saved session is gone; starting fresh next cycle")
+                                    state.session_id, state.session_cycles = None, 0
+                                else:
+                                    state.session_id = session_id
                                 state.resume_pending = False
                                 memory.save_state()
                                 return result("error", f"Claude Code session error: {msg.result or msg.subtype}")
@@ -286,6 +300,7 @@ class ClaudeCodeBackend:
             return result("error", f"{type(e).__name__}: {e}")
 
         if session_id:
+            state.session_cycles = state.session_cycles + 1 if session_id == state.session_id else 1
             state.session_id = session_id
         if limit_hit and not cycle.finished:
             state.resume_pending = bool(session_id)

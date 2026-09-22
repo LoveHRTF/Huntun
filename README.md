@@ -4,8 +4,8 @@ Huntun runs an autonomous software team on your machine. You give it a goal. A *
 
 It runs on any of three backends:
 
-- **Claude Code** (default when the `claude` CLI is installed): each work cycle is a Claude Code session, authenticated with your existing Claude login. No API key needed.
-- **OpenAI Codex**: each work cycle is a `codex exec` session, authenticated with your ChatGPT / Codex login. No API key needed.
+- **Claude Code** (default when the `claude` CLI is installed): each agent is one continuous Claude Code session that carries over from cycle to cycle, authenticated with your existing Claude login. No API key needed.
+- **OpenAI Codex**: each agent is one continuous `codex exec` thread, resumed every cycle, authenticated with your ChatGPT / Codex login. No API key needed.
 - **Anthropic API**: direct Messages API calls with `ANTHROPIC_API_KEY`.
 
 ## Contents
@@ -197,7 +197,8 @@ Everything an agent knows lives in `.huntun/agents/<name>/`:
 - `state.json`: cycle count, current task, files touched but not yet committed, board read cursor, review timer, waiting flag, and (Claude Code backend) the session id to resume.
 - `transcript.json`: the in-flight cycle on the API backend, saved after every tool call.
 - `journal.jsonl`: one line per completed cycle with summary, commits, and usage.
-- Context compaction: Claude Code compacts sessions itself; the API backend asks the model for a handoff summary when a cycle passes 60 percent of the context window and restarts the transcript from it. Both are counted per agent and shown on the board.
+- Sessions: on the Claude Code and Codex backends an agent keeps one conversation across cycles (the session or thread id is resumed with each new cycle prompt), so its context grows and compacts like a long-running session. After `HUNTUN_SESSION_MAX_CYCLES` cycles (default 25; 0 never) it starts a fresh session, and a session that has disappeared on disk is replaced automatically. A cycle paused mid-way is resumed in place first.
+- Context compaction: Claude Code compacts sessions itself (its compact boundary is counted); the API backend asks the model for a handoff summary when a cycle passes 60 percent of the context window and restarts the transcript from it. Both are counted per agent, shown on the board, and send the agent to the toilet in the office view.
 - `activity.jsonl`: the live log shown in the agent dialog: cycle prompts, tool calls, tool results, and model text.
 
 Pausing stops each agent at its next safe point. On the API backend the cycle's message history is on disk and replays on resume. On the Claude Code backend the session is interrupted and resumed by id, so the model continues with its full context. Killing the process is handled the same way: the next `huntun start` resumes every agent.

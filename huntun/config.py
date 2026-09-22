@@ -56,6 +56,7 @@ def default_config(goal: str) -> HuntunConfig:
         port=int(_env("HUNTUN_PORT", "4747")),
         fallbacks=_env("HUNTUN_FALLBACKS", "on") != "off",
         max_agents=int(_env("HUNTUN_MAX_AGENTS", "0")),
+        session_max_cycles=int(_env("HUNTUN_SESSION_MAX_CYCLES", "25")),
         created_at=now_iso(),
     )
 

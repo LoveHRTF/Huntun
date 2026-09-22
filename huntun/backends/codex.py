@@ -21,8 +21,9 @@ from typing import Any
 
 from ..tools import ToolContext, ToolSpec, available_tools, execute
 from ..types import CycleResult, HuntunConfig
-from . import looks_like_limit
+from . import continue_session, looks_like_limit
 
+CONTINUE_NOTE = "(New cycle in the same conversation. Your earlier cycles above are context only; the board, the repository and your notes are the truth now.)\n\n"
 RESUME_PROMPT = (
     "You were paused mid-cycle by the orchestrator and are now resumed. Re-check the repository state (git status), "
     "continue exactly where you left off, and finish the cycle with the huntun finish_cycle tool."
@@ -282,19 +283,33 @@ class CodexBackend:
 
         specs = available_tools(ctx, "codex")
         sandbox = "read-only" if ctx.agent.role == "master" else "workspace-write"
-        resuming = bool(state.resume_pending and state.session_id)
+        resuming = bool(state.resume_pending and state.session_id)                       # paused mid-cycle: pick up where it stopped
+        continuing = continue_session(state, self.config.session_max_cycles)             # otherwise keep the same thread going across cycles
+        if not continuing and state.session_id:
+            log(f"starting a fresh thread after {state.session_cycles} cycles")
+            state.session_id, state.session_cycles = None, 0
+        thread_before = state.session_id
         try:
             async with McpBridge(specs, ctx) as bridge:
                 base = self._base_args(ctx.workspace, model, effort, sandbox, bridge.url)
                 if resuming:
                     args = [base[0], "exec", "resume", state.session_id, *base[2:]]
                     text = RESUME_PROMPT
+                elif continuing:
+                    # the system prompt was given when the thread started; repeat it so roster, goal, or brief changes reach the agent
+                    args = [base[0], "exec", "resume", state.session_id, *base[2:]]
+                    text = f"{CONTINUE_NOTE}{system}\n\n---\n\n{prompt}"
                 else:
                     args = base
                     text = f"{system}\n\n---\n\n{prompt}"
                 code, interrupted = await self._run(args, text, ctx.workspace, on_event, should_stop=should_stop)
         except Exception as e:
             return result("error", f"{type(e).__name__}: {e}")
+        if state.session_id:
+            state.session_cycles = state.session_cycles + 1 if state.session_id == thread_before else 1
+        if continuing and not resuming and code not in (0, None) and not cycle.finished and any("thread" in e.lower() and ("not found" in e.lower() or "no such" in e.lower()) for e in errors):
+            log("the saved thread is gone; starting fresh next cycle")
+            state.session_id, state.session_cycles = None, 0
 
         if limit_hit:
             state.resume_pending = bool(state.session_id)
