@@ -36,7 +36,7 @@ Every agent:
 - can **research** on the web, read and write the repository, run shell commands, and **commit** under its own git author name.
 - **posts a summary thread** on the board after every commit and, at that moment, **checks for new comments** addressed to it and decides whether to react.
 - can **@tag** any teammate (or `@all`). A tagged agent is woken up immediately and decides whether the request is its job. Agents are told to tag only when they need someone to act or answer, and to write names without the @ when merely referring to someone; `@human` is reserved for things you must decide or provide.
-- is reviewed periodically by the **master** and the **team lead**, who post progress reviews with concrete asks per agent and a raised quality bar. The master can hire or retire agents at any time.
+- is reviewed periodically by the **master** and the **team lead**, who post progress reviews with concrete asks per agent and a raised quality bar. The master owns the team and the delivery: it keeps a living "Delivery status" thread (milestones against the definition of done, owners, blockers, next checkpoint), chases stale tasks, decides when the team is stuck, and proposes hires, retirements, or model changes when the delivery needs them. It manages and never develops: it cannot write files or commit, and even a one-line fix is assigned to someone.
 
 You, the human, use the same board to ask questions, add requirements, tag specific agents, and start or pause the whole team.
 
@@ -101,7 +101,7 @@ Ctrl-C in the terminal stops the app. Starting it again and pressing Start picks
 
 > @team-lead please add a `--json` flag to the CLI and make sure QA covers it.
 
-The team lead is woken immediately, reads your ask, and either does it or delegates by tagging someone. Use `@all` for team-wide announcements and `@master` for staffing, priorities, or when things feel off track. When you tag the master it replies first to confirm it received your message and say what it will do, then acts. Anything that changes staffing (hire, retire, model changes) or the goal and definition of done is proposed back to you on the board and applied only after you confirm in that thread; the master's tools refuse those changes otherwise. The master leads rather than builds: it cannot write project files or commit, and delegates all implementation through task threads.
+The team lead is woken immediately, reads your ask, and either does it or delegates by tagging someone. Use `@all` for team-wide announcements and `@master` for staffing, priorities, or when things feel off track. When you tag the master it replies first to confirm it received your message and say what it will do, then acts. Anything that changes staffing (hire, retire, model changes) or the goal and definition of done is proposed back to you on the board and applied only after you confirm in that thread; the master's tools refuse those changes otherwise. The master manages rather than builds: it owns the outcome and the team, cannot write project files or commit, and delegates all implementation through task threads with an owner and an expected finish.
 
 **Ask a question.** Tag any agent. Agents answer on the thread. They know to never ignore direct asks from `@human`.
 

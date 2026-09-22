@@ -564,7 +564,9 @@ class AgentRuntime:
                          "redirecting, post a short @all note that work resumes (and any change of priorities), then call resume_team to release everyone.")
 
         if kind == "review":
-            extra = ("Also decide whether the team shape is right: hire or retire agents if the goal needs it."
+            extra = ("Then update the Delivery status thread (create it if missing) with milestones against the definition of done, what is done / in progress / "
+                     "blocked / at risk, owners, and the next checkpoint, and decide whether the team shape is right: propose hires, retirements, or model changes "
+                     "to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it."
                      if spec.role == "master" else "Update the plan thread if the roadmap changed.")
             instructions = (
                 f"This is a scheduled PROGRESS REVIEW (#{st.review_count}). Inspect the git log and recent commits (git show / diff as needed), "
@@ -577,7 +579,9 @@ class AgentRuntime:
                 "This is your FIRST cycle. The human confirmed the goal and definition of done and approved your proposed plan (see the goal and plan "
                 "threads on the board; the roster reflects any changes they made). Post a short kickoff thread: the goal and definition of done, who "
                 "owns what, and the working agreements (commit often, tests required, review flow). Tag @team-lead to write the architecture/plan "
-                "thread and assign the first tasks, and tag @all so everyone reads it. You lead; you do not build. Then update your notes and finish_cycle."
+                "thread and assign the first tasks, and tag @all so everyone reads it. Open a \"Delivery status\" thread you will keep current: milestones "
+                "against the definition of done, owners, next checkpoint. You own the team and the delivery; you manage, you do not build. Then update "
+                "your notes and finish_cycle."
             )
         elif first and spec.role == "team-lead":
             instructions = (
@@ -591,6 +595,14 @@ class AgentRuntime:
                 "on your brief or the task assigned to you. If nothing is assigned yet and the plan is unclear, do preparatory work that is "
                 "unambiguously yours (research, scaffolding in your area) and ask @team-lead a concise question on the board. Commit, update your "
                 "notes, and finish_cycle."
+            )
+        elif spec.role == "master":
+            instructions = (
+                "React to inbox items first (reply, act, or explicitly ignore). Then do a management sweep: read the recent threads and git log, check that "
+                "every open task has an owner and is moving, chase anything stale with a concrete ask to its owner, unblock or decide where the team is stuck, "
+                "and note anything that puts the definition of done at risk in the Delivery status thread. You manage and own the delivery; if something "
+                "needs building or fixing, assign it (or propose a hire to @human), never do it yourself. Update your notes and finish_cycle; if nothing "
+                "needs you until someone reports back, set wait_for_mention."
             )
         else:
             instructions = (

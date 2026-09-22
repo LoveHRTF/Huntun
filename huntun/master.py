@@ -300,7 +300,7 @@ def plan_thread_body(config: HuntunConfig, rationale: str, specs: list[AgentSpec
 def master_spec() -> AgentSpec:
     return AgentSpec(
         name="master", role="master", title=ROLE_CATALOG["master"].title,
-        brief="Own the outcome. Staff and steer the team, review progress periodically, raise the bar, and answer the human.",
+        brief="Own the team and the delivery. Staff and steer the team, keep every task owned and moving, keep the Delivery status thread current, review progress periodically, raise the bar, and answer the human. Manage, never develop.",
         estimated_cycles=8, tokens_per_cycle=120_000,
         created_at=now_iso(),
     )
