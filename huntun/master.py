@@ -208,6 +208,9 @@ def plan_prompt(config: HuntunConfig, extra_context: str = "") -> str:
 # Available roles
 {catalog}
 
+# Role coverage (a hard rule)
+Every kind of work the goal and the definition of done require must be owned by a role on the team whose remit covers it: each agent will do the work of its role and only that, and will refuse anything else. Work with no owning role is a planning mistake of yours. Walk through what the project needs (design, implementation by area, tests, documentation, research, operations, security, coordination) and make sure every kind has a role whose brief names it; write each brief so its lane is unambiguous and the lanes do not overlap.
+
 # Models and effort (be cost-effective without giving up quality)
 Pick a model and effort for every agent from its role and the difficulty of its tasks. The team is billed per token, so use the strongest model only where judgment matters, and cheaper models for routine work.
 {catalog_text(config.backend)}

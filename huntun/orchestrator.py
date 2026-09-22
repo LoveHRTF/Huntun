@@ -568,8 +568,10 @@ class AgentRuntime:
 
         if kind == "review":
             extra = ("Then update the Delivery status thread (create it if missing) with milestones against the definition of done, what is done / in progress / "
-                     "blocked / at risk, owners, and the next checkpoint, and decide whether the team shape is right: propose hires, retirements, or model changes "
-                     "to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it."
+                     "blocked / at risk, owners, and the next checkpoint. Audit role discipline: compare who did what (commits, threads) against each agent's role "
+                     "and brief; anyone working outside their role, or work that no role on the team owns, is a planning mistake of yours to correct now (propose "
+                     "a hire or a brief change to @human, or reassign to the right owner, and say so on the board). Then decide whether the team shape is right: "
+                     "propose hires, retirements, or model changes to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it."
                      if spec.role == "master" else "Update the plan thread if the roadmap changed.")
             instructions = (
                 f"This is a scheduled PROGRESS REVIEW (#{st.review_count}). Inspect the git log and recent commits (git show / diff as needed), "
