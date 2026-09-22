@@ -554,9 +554,12 @@ class AgentRuntime:
         first = st.cycles == 0
         ack_note = ""
         if spec.role == "master" and any(i.author == "human" for i in items):
-            ack_note = ("\n\n@human tagged you. Before anything else, reply on that thread to confirm you received the message and say what you will do about it. "
-                        "Then act. If it implies a staffing change or a change of goal or definition of done, propose the change on the board and wait for "
-                        "@human to confirm in that thread before applying it (hire_agent, retire_agent, set_agent_model, and set_goal require the confirmation thread id).")
+            ack_note = ("\n\n@human tagged you. Before anything else, reply on that thread to confirm you received the message and say what you will do about it and by when. "
+                        "Then act: anything technical (architecture, design, stack, code, technical questions or estimates) goes to @team-lead on that thread or a task "
+                        "thread, with the context and the ask, asking them to tag you when done; staffing and goal matters are yours. If it implies a staffing change "
+                        "or a change of goal or definition of done, propose the change on the board and wait for @human to confirm in that thread before applying it "
+                        "(hire_agent, retire_agent, set_agent_model, and set_goal require the confirmation thread id). Finally get back to @human on the same thread "
+                        "with the outcome; if you are waiting on the team, say so and set wait_for_mention so you return to close the loop when they report back.")
         gate_note = ""
         if spec.role == "master" and orch.store.get_control("resume_gate", "") == "master":
             gate_note = (f"\n\nNOTE: the team (on your vendor) was paused automatically when the provider's usage limit was hit (at {orch.store.get_control('resume_gate_since', '?')}) "
