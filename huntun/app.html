@@ -203,12 +203,13 @@ const EFFORTS = ["low", "medium", "high", "xhigh", "max"], BLABEL = { api: "Anth
 const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) (groups[m.backend] = groups[m.backend] || []).push(m); const known = MODELS.some(m => m.id === selected);
   return Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
 
-// ---------------------------------------------------------------- pixel avatars: a 5x5 mirrored sprite from the name
+// ---------------------------------------------------------------- avatars: agents get the same face as their office sprite; the human keeps a generic 5x5 badge
 const ROLE_ICON = { master: "👑", "team-lead": "🧭", "scrum-master": "📋", backend: "⚙️", frontend: "🖼️", fullstack: "🧩", "ux-researcher": "🔍", "ui-designer": "🎨", qa: "🧪", "ml-engineer": "🧠", "data-scientist": "📊", devops: "🚀", "tech-writer": "✍️", security: "🛡️", "product-manager": "🎯", human: "🙂" };
 const roleOf = {};
 function hash(name) { let h = 2166136261; for (const c of name) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h; }
 const spriteCache = {};
 function sprite(name) {
+  if (name !== "human") return office.headshot(name, roleOf[name] || "");
   if (spriteCache[name]) return spriteCache[name];
   let h = hash(name), bits = [];
   for (let i = 0; i < 15; i++) { bits.push((h >> (i % 31)) & 1); h = Math.imul(h ^ (h >>> 13), 0x5bd1e995) >>> 0; }
@@ -899,6 +900,17 @@ const office = (() => {
     SPR.set(key, cv); return cv;
   }
   function drawSprite(rows, x, y, flip, pal, cap, dir, top) { ctx.drawImage(spriteImage(rows, cap, dir, flip, pal, top || 0), x, y); }
+  // ---- headshot: the same face as in the office (head and shoulders, facing the camera) as an SVG for the board avatars
+  const HEADSHOTS = new Map();
+  function headshot(name, role) {
+    const key = name + "|" + role; if (HEADSHOTS.has(key)) return HEADSHOTS.get(key);
+    const c = { name, ...palFor(name, role) }, rows = headRows(c, "down").concat(bodyRows(c, "down").slice(0, 4));
+    const art = hires(rows, c.cap, "down", c.top).rows, d = fullPal(c.pal);
+    let rects = "";
+    art.forEach((row, r) => { let x = 0; while (x < 32) { const ch = row[x]; if (ch === "." || !d[ch]) { x++; continue; } let w = 1; while (x + w < 32 && row[x + w] === ch) w++; rects += '<rect x="' + x + '" y="' + r + '" width="' + w + '" height="1" fill="' + d[ch] + '"/>'; x += w; } });
+    const svg = '<svg viewBox="0 -1 32 ' + (art.length + 2) + '" preserveAspectRatio="xMidYMid meet">' + rects + '</svg>';
+    HEADSHOTS.set(key, svg); return svg;
+  }
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
@@ -1206,7 +1218,7 @@ const office = (() => {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES }) };
+  return { start, stop, update, headshot, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES }) };
 })();
 route();
 </script>
