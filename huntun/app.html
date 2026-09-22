@@ -696,8 +696,8 @@ const office = (() => {
   const laptopBack = (x, w) => {                                           // occupant beyond it: a sliver of the base shows above the closed side of the lid
     Q(x - 2, 4, w + 4, 5, "#6d7484"); Q(x - 2, 4, w + 4, 1, "#8a92a3"); Q(x + 2, 5, w - 4, 2, "#4b5160");
     Q(x, 8, w, 24, "#4b5160"); Q(x + 1, 8, w - 2, 1, "#5f6675"); Q(x, 31, w, 1, "#3a3e4a"); Q(x + 2, 10, w - 4, 20, "#525a6a"); Q(x + w / 2 - 3, 18, 6, 5, "#9aa3b5"); Q(x + w / 2 - 1, 19, 2, 3, "#525a6a"); };
-  const toiletFront = () => { Q(18, 44, 28, 4, "#ffffff"); Q(20, 47, 24, 2, "#dde1e6"); Q(24, 49, 16, 8, "#e6e9ee"); Q(24, 56, 16, 1, "#c9ced6"); };                                   // the rim and base, drawn over a seated occupant's legs
-  const toiletBowl = () => { Q(20, 24, 24, 28, "#ffffff"); Q(18, 26, 28, 22, "#ffffff"); Q(20, 26, 24, 20, "#eef0f3"); Q(22, 28, 20, 14, "#f7f8fa"); Q(24, 30, 16, 10, "#8fb8e0"); Q(26, 31, 12, 2, "#b6d3ee"); toiletFront(); };
+  const toiletFront = () => { Q(16, 42, 32, 4, "#ffffff"); Q(18, 45, 28, 2, "#dde1e6"); Q(22, 47, 22, 8, "#e6e9ee"); Q(22, 54, 22, 1, "#c9ced6"); };                                   // the near rim and base, drawn over a seated occupant's legs
+  const toiletBowl = () => { Q(18, 20, 30, 24, "#ffffff"); Q(16, 22, 34, 20, "#ffffff"); Q(18, 22, 30, 20, "#eef0f3"); Q(20, 24, 26, 16, "#f7f8fa"); Q(24, 27, 18, 10, "#8fb8e0"); Q(26, 28, 14, 2, "#b6d3ee"); toiletFront(); };   // bowl facing the room, tank side on the right
   const keyboard = (x, y) => { Q(x, y, 28, 8, C.keys); Q(x, y, 28, 1, "#d5d8e0"); Q(x, y + 7, 28, 1, "#8f95a3"); for (const yy of [y + 2, y + 5]) for (let xx = x + 2; xx < x + 26; xx += 3) Q(xx, yy, 2, 2, C.key); Q(x + 9, y + 5, 10, 2, "#a3a8b6"); };
   const mouse = (x, y) => { Q(x + 1, y, 6, 10, "#e6e8ee"); Q(x, y + 1, 8, 8, "#e6e8ee"); Q(x + 4, y + 1, 1, 4, "#b0b4c0"); Q(x + 3, y + 2, 2, 2, "#8f95a3"); Q(x + 1, y + 9, 6, 1, "#c4c7cf"); };
   const mug = (x, y) => { Q(x + 1, y, 10, 14, "#ffffff"); Q(x, y + 1, 12, 12, "#ffffff"); Q(x + 11, y + 4, 4, 6, "#ffffff"); Q(x + 12, y + 5, 2, 4, C.deskTop); Q(x + 2, y + 1, 8, 2, "#7a4b2a"); Q(x + 3, y + 1, 2, 1, "#a06a3f"); Q(x + 1, y + 4, 1, 8, "#f5f5f5"); Q(x + 1, y + 12, 10, 1, "#dcdcdc"); Q(x + 4, y + 6, 4, 4, "#d84c4c"); };
@@ -740,8 +740,8 @@ const office = (() => {
     toilet: () => { Q(0, 0, 64, 64, "#dfe3e8"); for (let i = 16; i < 64; i += 16) { Q(i, 0, 1, 64, "#c9ced6"); Q(0, i, 64, 1, "#c9ced6"); } Q(1, 1, 1, 1, "#eef1f4");
                     Q(0, 0, 64, 8, "#5f6878"); Q(0, 0, 64, 2, "#8e97a6"); Q(0, 7, 64, 1, "#3f4652"); Q(0, 56, 64, 8, "#5f6878"); Q(0, 56, 64, 2, "#8e97a6"); Q(0, 63, 64, 1, "#3f4652");   // stall partitions above and below
                     Q(0, 8, 2, 48, "#f4f6f8");
-                    Q(6, 24, 8, 8, "#ffffff"); Q(7, 23, 6, 1, "#f0f0f0"); Q(9, 27, 2, 2, "#c8ccd4"); Q(6, 32, 8, 6, "#f4f4f4");                                                     // paper roll on the wall
-                    Q(20, 8, 26, 14, "#f4f6f8"); Q(18, 6, 30, 4, "#e6e9ee"); Q(18, 6, 30, 1, "#ffffff"); Q(20, 21, 26, 1, "#c9ced6"); Q(40, 8, 4, 2, "#9aa3b5");                       // tank and lid
+                    Q(14, 9, 8, 8, "#ffffff"); Q(15, 8, 6, 1, "#f0f0f0"); Q(17, 12, 2, 2, "#c8ccd4"); Q(14, 17, 8, 6, "#f4f4f4");                                                    // paper roll hanging from the partition
+                    Q(48, 14, 12, 34, "#f4f6f8"); Q(46, 12, 14, 4, "#e6e9ee"); Q(46, 12, 14, 1, "#ffffff"); Q(47, 16, 1, 32, "#c9ced6"); Q(50, 20, 3, 5, "#9aa3b5");                     // tank against the wall, lid on top
                     toiletBowl(); },
     door: () => { Q(0, 0, 64, 64, "#4a2f16"); Q(4, 0, 56, 64, C.door); Q(4, 0, 56, 1, "#9a6a3a"); Q(4, 0, 1, 64, "#9a6a3a"); Q(59, 0, 1, 64, "#4a2f16"); Q(10, 6, 44, 22, "#6a4327"); Q(12, 8, 40, 18, C.doorPanel); Q(12, 8, 40, 1, "#c3946a"); Q(10, 34, 44, 24, "#6a4327"); Q(12, 36, 40, 20, C.doorPanel); Q(12, 36, 40, 1, "#c3946a"); Q(46, 30, 8, 4, "#5c3a1c"); Q(47, 29, 6, 5, C.knob); Q(48, 30, 2, 1, "#fff0a0"); Q(4, 12, 3, 5, "#3a3a3a"); Q(4, 46, 3, 5, "#3a3a3a"); },
     mat: () => { Q(8, 40, 48, 24, C.matEdge); Q(12, 44, 40, 16, C.mat); for (let x = 16; x < 52; x += 8) Q(x, 48, 4, 8, "#7fa0e8"); Q(12, 44, 40, 1, "#7d9ce0"); Q(8, 62, 48, 2, "#4a6cae"); },
@@ -1102,7 +1102,7 @@ const office = (() => {
     }
     const waiting = toiletQueue.filter(n => chars[n].toilet == null);
     if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
-    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "down"; c.say = "Compacting my context…"; c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
+    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = "Compacting my context…"; c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
     for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
     for (const c of Object.values(chars)) {
       if (c.hidden) {
@@ -1157,11 +1157,11 @@ const office = (() => {
     }
     if (c.mode === "toilet" && c.satAt) {                                      // seated, straining: flushed face, sweat, the odd puff
       const jit = Math.floor(t * 12 + c.idx) % 2, strain = Math.floor(t * 1.5 + c.idx) % 2;
-      const rows = headRows(c, "down").concat(bodyRows(c, "down")); drawSprite(rows, x + (strain ? jit : 0), c.py - 20 - c.top * 2 + 6, false, c.pal, c.cap, "down", c.top);
-      ctx.fillStyle = c.pal.p; ctx.fillRect(x + 9, c.py + 21, 6, 9); ctx.fillRect(x + 17, c.py + 21, 6, 9); ctx.fillStyle = c.pal.b; ctx.fillRect(x + 8, c.py + 29, 7, 3); ctx.fillRect(x + 17, c.py + 29, 7, 3);
+      const rows = headRows(c, "left").concat(bodyRows(c, "left")); drawSprite(rows, x + 2 + (strain ? jit : 0), c.py - 18 - c.top * 2 + (strain ? 0 : 1), false, c.pal, c.cap, "left", c.top);   // facing the room, seated on the bowl
+      ctx.fillStyle = c.pal.p; ctx.fillRect(x + 8, c.py + 18, 6, 9); ctx.fillStyle = c.pal.b; ctx.fillRect(x + 4, c.py + 26, 9, 3);
       TX = c.tx * T; TY = c.ty * T; toiletFront();
-      if (strain) { ctx.fillStyle = "rgba(255,80,80,.28)"; ctx.fillRect(x + 8, c.py - 2, 16, 8); const dy = Math.floor(t * 8) % 4; ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 27, c.py - 6 + dy, 2, 3); ctx.fillRect(x + 3, c.py - 3 + dy, 2, 3); }
-      if (Math.floor(t * 2 + c.idx) % 5 === 4) { const py = Math.floor((t * 2) % 1 * 8); ctx.fillStyle = "rgba(235,235,225,.85)"; ctx.fillRect(x + 28, c.py + 20 - py, 5, 3); ctx.fillRect(x + 30, c.py + 17 - py, 4, 3); }
+      if (strain) { ctx.fillStyle = "rgba(255,80,80,.28)"; ctx.fillRect(x + 6, c.py - 4, 12, 8); const dy = Math.floor(t * 8) % 4; ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 4, c.py - 8 + dy, 2, 3); ctx.fillRect(x + 24, c.py - 5 + dy, 2, 3); }
+      if (Math.floor(t * 2 + c.idx) % 5 === 4) { const py = Math.floor((t * 2) % 1 * 8); ctx.fillStyle = "rgba(235,235,225,.85)"; ctx.fillRect(x + 25, c.py + 22 - py, 5, 3); ctx.fillRect(x + 27, c.py + 19 - py, 4, 3); }
       return;
     }
     if (asleep) {
