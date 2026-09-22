@@ -56,9 +56,9 @@
   .browser div { padding:5px 10px; border-bottom:1px solid var(--line); cursor:pointer; font-family:var(--mono); font-size:12.5px; }
   .browser div:hover { background:var(--panel2); color:var(--accent); } .browser .up { color:var(--muted); }
   /* pixel avatars */
-  .av { display:inline-block; width:32px; height:32px; flex:none; position:relative; image-rendering: pixelated; border:2px solid var(--ink); background:#070a12; }
+  .av { display:inline-block; width:40px; height:40px; flex:none; position:relative; image-rendering: pixelated; border:2px solid var(--ink); background:#ece7da; }
   .av svg { width:100%; height:100%; display:block; shape-rendering: crispEdges; }
-  .av.sm { width:22px; height:22px; } .av.lg { width:64px; height:64px; border-width:3px; }
+  .av.sm { width:26px; height:26px; } .av.lg { width:80px; height:80px; border-width:3px; }
   .av .badge { position:absolute; right:-6px; bottom:-6px; font-size:11px; line-height:1; background:var(--panel); border:2px solid var(--ink); padding:1px; }
   .av.lg .badge { font-size:16px; }
   .av.working { animation: bob .6s steps(2, end) infinite; box-shadow: 0 0 0 2px var(--ok); }
@@ -696,6 +696,8 @@ const office = (() => {
   const laptopBack = (x, w) => {                                           // occupant beyond it: a sliver of the base shows above the closed side of the lid
     Q(x - 2, 4, w + 4, 5, "#6d7484"); Q(x - 2, 4, w + 4, 1, "#8a92a3"); Q(x + 2, 5, w - 4, 2, "#4b5160");
     Q(x, 8, w, 24, "#4b5160"); Q(x + 1, 8, w - 2, 1, "#5f6675"); Q(x, 31, w, 1, "#3a3e4a"); Q(x + 2, 10, w - 4, 20, "#525a6a"); Q(x + w / 2 - 3, 18, 6, 5, "#9aa3b5"); Q(x + w / 2 - 1, 19, 2, 3, "#525a6a"); };
+  const toiletFront = () => { Q(18, 44, 28, 4, "#ffffff"); Q(20, 47, 24, 2, "#dde1e6"); Q(24, 49, 16, 8, "#e6e9ee"); Q(24, 56, 16, 1, "#c9ced6"); };                                   // the rim and base, drawn over a seated occupant's legs
+  const toiletBowl = () => { Q(20, 24, 24, 28, "#ffffff"); Q(18, 26, 28, 22, "#ffffff"); Q(20, 26, 24, 20, "#eef0f3"); Q(22, 28, 20, 14, "#f7f8fa"); Q(24, 30, 16, 10, "#8fb8e0"); Q(26, 31, 12, 2, "#b6d3ee"); toiletFront(); };
   const keyboard = (x, y) => { Q(x, y, 28, 8, C.keys); Q(x, y, 28, 1, "#d5d8e0"); Q(x, y + 7, 28, 1, "#8f95a3"); for (const yy of [y + 2, y + 5]) for (let xx = x + 2; xx < x + 26; xx += 3) Q(xx, yy, 2, 2, C.key); Q(x + 9, y + 5, 10, 2, "#a3a8b6"); };
   const mouse = (x, y) => { Q(x + 1, y, 6, 10, "#e6e8ee"); Q(x, y + 1, 8, 8, "#e6e8ee"); Q(x + 4, y + 1, 1, 4, "#b0b4c0"); Q(x + 3, y + 2, 2, 2, "#8f95a3"); Q(x + 1, y + 9, 6, 1, "#c4c7cf"); };
   const mug = (x, y) => { Q(x + 1, y, 10, 14, "#ffffff"); Q(x, y + 1, 12, 12, "#ffffff"); Q(x + 11, y + 4, 4, 6, "#ffffff"); Q(x + 12, y + 5, 2, 4, C.deskTop); Q(x + 2, y + 1, 8, 2, "#7a4b2a"); Q(x + 3, y + 1, 2, 1, "#a06a3f"); Q(x + 1, y + 4, 1, 8, "#f5f5f5"); Q(x + 1, y + 12, 10, 1, "#dcdcdc"); Q(x + 4, y + 6, 4, 4, "#d84c4c"); };
@@ -735,6 +737,12 @@ const office = (() => {
     shelf: () => { Q(4, 0, 56, 60, C.bedFrame); Q(4, 0, 56, 2, "#a97a4e"); Q(8, 4, 48, 24, "#8a5c33"); Q(8, 32, 48, 24, "#8a5c33"); Q(8, 28, 48, 4, "#c58a4a"); Q(8, 56, 48, 4, "#c58a4a"); Q(8, 28, 48, 1, "#d9a262"); Q(8, 56, 48, 1, "#d9a262");
                    [[["#d84c4c", 6, 20], ["#3a6fd8", 5, 22], ["#e6c15a", 7, 18], ["#3aa35b", 5, 21], ["#f0f0f0", 6, 19], ["#8e44ad", 6, 22], ["#e67e22", 5, 20]], [["#3a6fd8", 6, 21], ["#f0f0f0", 5, 19], ["#d84c4c", 7, 22], ["#e6c15a", 5, 18], ["#3aa35b", 6, 21], ["#e67e22", 5, 20], ["#8e44ad", 4, 17]]].forEach((books, i) => {
                      const base = i ? 56 : 28; let x = 10; books.forEach(([col, w, h]) => { Q(x, base - h, w, h, col); Q(x + w - 1, base - h, 1, h, tint(col, -0.3)); Q(x + 1, base - h + 3, w - 2, 1, "#f7f7f7"); Q(x + 1, base - h + 6, w - 2, 1, "#f7f7f7"); x += w + 1; }); }); },
+    toilet: () => { Q(0, 0, 64, 64, "#dfe3e8"); for (let i = 16; i < 64; i += 16) { Q(i, 0, 1, 64, "#c9ced6"); Q(0, i, 64, 1, "#c9ced6"); } Q(1, 1, 1, 1, "#eef1f4");
+                    Q(0, 0, 64, 8, "#5f6878"); Q(0, 0, 64, 2, "#8e97a6"); Q(0, 7, 64, 1, "#3f4652"); Q(0, 56, 64, 8, "#5f6878"); Q(0, 56, 64, 2, "#8e97a6"); Q(0, 63, 64, 1, "#3f4652");   // stall partitions above and below
+                    Q(0, 8, 2, 48, "#f4f6f8");
+                    Q(6, 24, 8, 8, "#ffffff"); Q(7, 23, 6, 1, "#f0f0f0"); Q(9, 27, 2, 2, "#c8ccd4"); Q(6, 32, 8, 6, "#f4f4f4");                                                     // paper roll on the wall
+                    Q(20, 8, 26, 14, "#f4f6f8"); Q(18, 6, 30, 4, "#e6e9ee"); Q(18, 6, 30, 1, "#ffffff"); Q(20, 21, 26, 1, "#c9ced6"); Q(40, 8, 4, 2, "#9aa3b5");                       // tank and lid
+                    toiletBowl(); },
     door: () => { Q(0, 0, 64, 64, "#4a2f16"); Q(4, 0, 56, 64, C.door); Q(4, 0, 56, 1, "#9a6a3a"); Q(4, 0, 1, 64, "#9a6a3a"); Q(59, 0, 1, 64, "#4a2f16"); Q(10, 6, 44, 22, "#6a4327"); Q(12, 8, 40, 18, C.doorPanel); Q(12, 8, 40, 1, "#c3946a"); Q(10, 34, 44, 24, "#6a4327"); Q(12, 36, 40, 20, C.doorPanel); Q(12, 36, 40, 1, "#c3946a"); Q(46, 30, 8, 4, "#5c3a1c"); Q(47, 29, 6, 5, C.knob); Q(48, 30, 2, 1, "#fff0a0"); Q(4, 12, 3, 5, "#3a3a3a"); Q(4, 46, 3, 5, "#3a3a3a"); },
     mat: () => { Q(8, 40, 48, 24, C.matEdge); Q(12, 44, 40, 16, C.mat); for (let x = 16; x < 52; x += 8) Q(x, 48, 4, 8, "#7fa0e8"); Q(12, 44, 40, 1, "#7d9ce0"); Q(8, 62, 48, 2, "#4a6cae"); },
   };
@@ -869,16 +877,20 @@ const office = (() => {
   }
   // ---- 16x24 source art, upscaled to 32x48 with Scale2x (rounds the corners) and then shaded and detailed; drawn at 1 unit per art pixel
   const HIRES = new Map(), SPR = new Map(), DERIVED = new WeakMap(), LIGHT = { c: "1", p: "2", h: "3", k: "4" };
-  function hires(rows, cap, dir, top) {
-    const key = dir + "|" + cap + "|" + top + "|" + rows.join("|"); if (HIRES.has(key)) return HIRES.get(key);
-    const h = rows.length, src = rows.map((line, r) => [...line].map(ch => { if (cap && r <= 4 && ch === "h") ch = "k"; if (cap === "beanie" && r === 4 && ch === "k") ch = "o"; return ch; }));
-    const at = (r, c) => r < 0 || c < 0 || r >= h || c >= 16 ? "." : src[r][c];
-    const out = []; for (let r = 0; r < h * 2; r++) out.push(new Array(32).fill("."));
-    for (let r = 0; r < h; r++) for (let c = 0; c < 16; c++) {
+  function scale2xRows(src, w) {                                              // Scale2x: doubles a character grid and rounds the corners
+    const h = src.length, at = (r, c) => r < 0 || c < 0 || r >= h || c >= w ? "." : src[r][c];
+    const out = []; for (let r = 0; r < h * 2; r++) out.push(new Array(w * 2).fill("."));
+    for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
       const p = at(r, c), a = at(r - 1, c), b = at(r, c + 1), l = at(r, c - 1), d = at(r + 1, c);
       out[r * 2][c * 2] = l === a && l !== d && a !== b ? a : p; out[r * 2][c * 2 + 1] = a === b && a !== l && b !== d ? b : p;
       out[r * 2 + 1][c * 2] = d === l && d !== a && l !== b ? l : p; out[r * 2 + 1][c * 2 + 1] = b === d && b !== a && d !== l ? d : p;
     }
+    return out;
+  }
+  function hires(rows, cap, dir, top) {
+    const key = dir + "|" + cap + "|" + top + "|" + rows.join("|"); if (HIRES.has(key)) return HIRES.get(key);
+    const h = rows.length, src = rows.map((line, r) => [...line].map(ch => { if (cap && r <= 4 && ch === "h") ch = "k"; if (cap === "beanie" && r === 4 && ch === "k") ch = "o"; return ch; }));
+    const out = scale2xRows(src, 16);
     const g = (r, c) => r < 0 || c < 0 || r >= h * 2 || c >= 32 ? "." : out[r][c], art = out.map(row => row.slice());
     for (let r = 0; r < h * 2; r++) for (let c = 0; c < 32; c++) {                       // light from the top left: rims lighter, undersides darker
       const ch = out[r][c]; if (!"cphks".includes(ch)) continue;
@@ -904,24 +916,25 @@ const office = (() => {
   const HEADSHOTS = new Map();
   function headshot(name, role) {
     const key = name + "|" + role; if (HEADSHOTS.has(key)) return HEADSHOTS.get(key);
-    const c = { name, ...palFor(name, role) }, rows = headRows(c, "down").concat(bodyRows(c, "down").slice(0, 4));
-    const art = hires(rows, c.cap, "down", c.top).rows, d = fullPal(c.pal);
-    let rects = "";
-    art.forEach((row, r) => { let x = 0; while (x < 32) { const ch = row[x]; if (ch === "." || !d[ch]) { x++; continue; } let w = 1; while (x + w < 32 && row[x + w] === ch) w++; rects += '<rect x="' + x + '" y="' + r + '" width="' + w + '" height="1" fill="' + d[ch] + '"/>'; x += w; } });
-    const svg = '<svg viewBox="0 -1 32 ' + (art.length + 2) + '" preserveAspectRatio="xMidYMid meet">' + rects + '</svg>';
+    const c = { name, ...palFor(name, role) }, rows = headRows(c, "down").concat(bodyRows(c, "down").slice(0, 6));
+    const art = scale2xRows(hires(rows, c.cap, "down", c.top).rows, 32), d = fullPal(c.pal), W64 = 64;
+    let rects = "", x0 = W64, x1 = 0;
+    art.forEach((row, r) => { let x = 0; while (x < W64) { const ch = row[x]; if (ch === "." || !d[ch]) { x++; continue; } let w = 1; while (x + w < W64 && row[x + w] === ch) w++; rects += '<rect x="' + x + '" y="' + r + '" width="' + w + '" height="1" fill="' + d[ch] + '"/>'; x0 = Math.min(x0, x); x1 = Math.max(x1, x + w); x += w; } });
+    const hue = (c.pal.c.match(/hsl\((\d+)/) || [0, 40])[1], headH = headRows(c, "down").length * 4, vh = headH + 12, vw = Math.max(vh, x1 - x0 + 8), vx = Math.round((x0 + x1) / 2 - vw / 2), vy = -4;   // square, the whole head plus the shoulders
+    const svg = '<svg viewBox="' + vx + ' ' + vy + ' ' + vw + ' ' + vh + '" preserveAspectRatio="xMidYMid meet"><rect x="' + (vx - 2) + '" y="' + (vy - 2) + '" width="' + (vw + 4) + '" height="' + (vh + 4) + '" fill="hsl(' + hue + ',42%,86%)"/><circle cx="32" cy="' + Math.round(headH * 0.6) + '" r="' + Math.round(vw * 0.44) + '" fill="hsl(' + hue + ',50%,93%)"/>' + rects + '</svg>';
     HEADSHOTS.set(key, svg); return svg;
   }
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
-  let DESKS = [], BEDS = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
+  let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
   const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
   let teamRoles = [];
   function layout(n, masterIdx) {
     n = Math.max(1, n); MASTER_IDX = masterIdx; const team = teamRoles;
     const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0));
     const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
-    const officeW = Math.max(14, 2 + islandsPerRow * 6), officeH = 5 + islandRows * 6;
+    const officeW = Math.max(14, 4 + islandsPerRow * 6), officeH = 5 + islandRows * 6;           // two spare columns on the right: toilets and their queue
     MW = officeW + 2;
     const yMid = 2 + officeH;
     const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(n / bedsPerRow);
@@ -931,7 +944,7 @@ const office = (() => {
     FRONT = [mx, 6];
     if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 4], chair: [mx, 3], dir: "down", dual: false };   // row 2 stays clear: it is the corridor from the door
     let j = 0;
-    const islandX0 = 1 + Math.floor((officeW - islandsPerRow * 6 + 2) / 2);
+    const islandX0 = 1 + Math.floor((officeW - 2 - islandsPerRow * 6) / 2);
     for (let i = 0; i < n; i++) {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
@@ -949,6 +962,8 @@ const office = (() => {
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
     [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x] && !map[y][x].includes("chair")) put(x, y, "plant"); });
+    TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
+    QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
     for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
@@ -1021,6 +1036,7 @@ const office = (() => {
   const isEntry = (x, y) => x === DOOR[0] && y === DOOR[1] + 1;                       // the tile just inside the door stays clear so people can come in
   const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !isDoor(nx, ny) && !isEntry(nx, ny) && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
   function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
+  const fainted = (a) => /^(error|crashed)/.test((a.live && a.live.status) || a.status || "");
   function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
     const postId = post ? (post.id ?? post.created_at) : null;
@@ -1041,6 +1057,8 @@ const office = (() => {
   function modeFor(a, c, st) {
     noticePosts(a, c, st);
     if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
+    if (fainted(a)) { c.talk = null; return "faint"; }                      // an API error knocks them out where they stand
+    if (c.toiletUntil > Date.now()) return "toilet";                          // compacting context: off to the toilet
     if (c.talk && c.talk.kind !== "here") return "talk";
     return baseMode(a);
   }
@@ -1048,7 +1066,10 @@ const office = (() => {
     lastState = st;
     const team = st.agents.filter(a => a.status !== "retired");
     ensureLayout(seatsFor(st));
-    team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name); });   // everyone exists before anyone looks for a teammate
+    team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name);   // everyone exists before anyone looks for a teammate
+      const inf = a.info || {}, n = inf.compactions || 0;                                                                                       // a compaction (live, or one just counted) sends them to the toilet
+      if (c.compactions == null) c.compactions = n; else if (n > c.compactions) { c.compactions = n; c.toiletUntil = Math.max(c.toiletUntil || 0, Date.now() + 20000); }
+      if (inf.compacting) c.toiletUntil = Math.max(c.toiletUntil || 0, Date.now() + 6000); });          // refreshed on every poll while the compaction runs
     team.forEach(a => {
       const c = chars[a.name];
       c.mode = modeFor(a, c, st);
@@ -1066,11 +1087,22 @@ const office = (() => {
   function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
   const NOTHING_TO_DO = ["Figured out there's nothing to do. Off to bed.", "Nothing on my plate right now… nap time.", "Inbox empty. I'll rest until someone needs me.", "No tasks for me yet. Back when something comes up."];
   function goalFor(c) {
+    if (c.mode === "faint") return [c.tx, c.ty];
+    if (c.mode === "toilet") { if (c.toilet != null) return TOILETS[c.toilet]; const k = toiletQueue.filter(n => chars[n] && chars[n].toilet == null).indexOf(c.name); return k >= 0 && k < QUEUE.length ? QUEUE[k] : [c.tx, c.ty]; }
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
     return c.sleepReady ? BEDS[c.idx] : DESKS[c.idx].chair;                 // idle agents check their desk first, then go to bed
   }
   function stepChars(dt) {
+    // the toilet queue: first come, first served; the head of the line takes the first free stall
+    toiletQueue = toiletQueue.filter(n => chars[n] && chars[n].mode === "toilet");
+    for (const c of Object.values(chars)) {
+      if (c.mode === "toilet" && !c.hidden) { if (!toiletQueue.includes(c.name)) toiletQueue.push(c.name); }
+      else if (c.toilet != null || c.satAt) { c.toilet = null; c.satAt = null; }
+    }
+    const waiting = toiletQueue.filter(n => chars[n].toilet == null);
+    if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
+    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "down"; c.say = "Compacting my context…"; c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
     for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
     for (const c of Object.values(chars)) {
       if (c.hidden) {
@@ -1115,6 +1147,23 @@ const office = (() => {
     const bed = BEDS[c.idx], asleep = c.mode === "sleep" && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+    if (c.mode === "faint") {                                                  // out cold on the floor where they stood, stars circling
+      const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), twitch = Math.floor(t * 2 + c.idx) % 7 === 0 ? 1 : 0;
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 26, 24, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(x + 16, c.py + 18); ctx.rotate((c.idx % 2 ? 1 : -1) * Math.PI / 2); ctx.drawImage(img, -16, -24 - c.top + twitch); ctx.restore();
+      const hx = x + 16 + (c.idx % 2 ? -1 : 1) * 24, hy = c.py + 8;                                                    // the head end
+      for (let k = 0; k < 3; k++) { const a = t * 3 + k * Math.PI * 2 / 3, sx = Math.round(hx + Math.cos(a) * 9), sy = Math.round(hy - 6 + Math.sin(a) * 3); ctx.fillStyle = k === 1 ? "#ffd23f" : "#ffe98a"; ctx.fillRect(sx - 1, sy - 3, 2, 6); ctx.fillRect(sx - 3, sy - 1, 6, 2); }
+      return;
+    }
+    if (c.mode === "toilet" && c.satAt) {                                      // seated, straining: flushed face, sweat, the odd puff
+      const jit = Math.floor(t * 12 + c.idx) % 2, strain = Math.floor(t * 1.5 + c.idx) % 2;
+      const rows = headRows(c, "down").concat(bodyRows(c, "down")); drawSprite(rows, x + (strain ? jit : 0), c.py - 20 - c.top * 2 + 6, false, c.pal, c.cap, "down", c.top);
+      ctx.fillStyle = c.pal.p; ctx.fillRect(x + 9, c.py + 21, 6, 9); ctx.fillRect(x + 17, c.py + 21, 6, 9); ctx.fillStyle = c.pal.b; ctx.fillRect(x + 8, c.py + 29, 7, 3); ctx.fillRect(x + 17, c.py + 29, 7, 3);
+      TX = c.tx * T; TY = c.ty * T; toiletFront();
+      if (strain) { ctx.fillStyle = "rgba(255,80,80,.28)"; ctx.fillRect(x + 8, c.py - 2, 16, 8); const dy = Math.floor(t * 8) % 4; ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 27, c.py - 6 + dy, 2, 3); ctx.fillRect(x + 3, c.py - 3 + dy, 2, 3); }
+      if (Math.floor(t * 2 + c.idx) % 5 === 4) { const py = Math.floor((t * 2) % 1 * 8); ctx.fillStyle = "rgba(235,235,225,.85)"; ctx.fillRect(x + 28, c.py + 20 - py, 5, 3); ctx.fillRect(x + 30, c.py + 17 - py, 4, 3); }
+      return;
+    }
     if (asleep) {
       // head on the pillow, the blanket covers the rest
       const head = headRows(c, "down").slice(0, 10 + c.top); drawSprite(head, x, c.py - 2 - c.top * 2, false, c.pal, c.cap, "down", c.top);

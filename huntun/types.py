@@ -102,6 +102,8 @@ class AgentState:
     context_limit: int = 0
     # How many times the working context was compacted (server-side in Claude Code, client-side on the API backend).
     compactions: int = 0
+    # True while a client-side compaction call is in flight (the office view sends the agent to the toilet).
+    compacting: bool = False
 
 
 @dataclass

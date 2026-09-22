@@ -362,6 +362,7 @@ class AgentRuntime:
             "context_tokens": st.context_tokens,
             "context_limit": st.context_limit,
             "compactions": st.compactions,
+            "compacting": st.compacting,
         }
 
     @property

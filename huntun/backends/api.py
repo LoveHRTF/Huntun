@@ -241,15 +241,19 @@ class ApiBackend:
                 memory.clear_transcript()
                 return result("finished")
             if needs_compaction:
+                memory.state.compacting = True
+                memory.save_state()
                 try:
                     messages = await self._compact(params, messages, prompt, log)
                     memory.state.compactions += 1
                     memory.state.context_tokens = 0
-                    memory.save_state()
                     memory.save_transcript(messages)
                     memory.activity("cycle", f"Context compacted (#{memory.state.compactions})")
                 except anthropic.APIError as e:
                     log(f"compaction failed: {e}")
+                finally:
+                    memory.state.compacting = False
+                    memory.save_state()
             if cycle.tool_calls >= self.config.max_tool_calls_per_cycle + 6:
                 cycle.finished = True
                 cycle.summary = "Cycle force-ended after exceeding the tool-call budget."
