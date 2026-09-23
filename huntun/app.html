@@ -655,7 +655,7 @@ async function openAgent(id, name) {
 const office = (() => {
   const T = 32, P = 2; let MW = 20, MH = 18, W = MW * T, H = MH * T;               // native size follows the team size; the scene is scaled to fill the panel
   let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
-  let scale = 1, ox = 0, oy = 0, last = 0;
+  let scale = 1, ox = 0, oy = 0, last = 0, night = 0;
   const SANS = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
   const C = { wood: "#d8b26b", woodLine: "#c39a55", woodHi: "#e8c98a", wood2: "#c9a26a", wood2Line: "#b58b52", wallTop: "#3b2f22", wallTopHi: "#54432f", wall: "#f2e4c8", wallTrim: "#cdb38a", wallPanel: "#e6d5b3", base: "#8b6b43", baseLine: "#6e4f2e",
               carpet: "#5e7ac9", carpet2: "#566fb8", carpetDot: "#7d98e2", deskTop: "#c58a4a", deskHi: "#d9a262", deskEdge: "#8f5e2f", leg: "#6e4726", pc: "#cfd3df", pcDark: "#9ea3b3", screen: "#3c8fd0", screenHi: "#6fc3f0", keys: "#b8bcc8", key: "#8f95a3",
@@ -702,14 +702,17 @@ const office = (() => {
   const mouse = (x, y) => { Q(x + 1, y, 6, 10, "#e6e8ee"); Q(x, y + 1, 8, 8, "#e6e8ee"); Q(x + 4, y + 1, 1, 4, "#b0b4c0"); Q(x + 3, y + 2, 2, 2, "#8f95a3"); Q(x + 1, y + 9, 6, 1, "#c4c7cf"); };
   const mug = (x, y) => { Q(x + 1, y, 10, 14, "#ffffff"); Q(x, y + 1, 12, 12, "#ffffff"); Q(x + 11, y + 4, 4, 6, "#ffffff"); Q(x + 12, y + 5, 2, 4, C.deskTop); Q(x + 2, y + 1, 8, 2, "#7a4b2a"); Q(x + 3, y + 1, 2, 1, "#a06a3f"); Q(x + 1, y + 4, 1, 8, "#f5f5f5"); Q(x + 1, y + 12, 10, 1, "#dcdcdc"); Q(x + 4, y + 6, 4, 4, "#d84c4c"); };
   const papers = () => { Q(10, 22, 26, 18, "#e9e9e3"); Q(8, 20, 26, 18, "#f7f7f2"); Q(8, 20, 26, 1, "#ffffff"); for (let i = 0; i < 4; i++) Q(11, 24 + i * 3, 12 + (i * 5) % 8, 1, "#b8bcc8"); Q(11, 36, 8, 1, "#3a6fd8"); Q(36, 24, 3, 14, "#3a6fd8"); Q(36, 24, 1, 14, "#5a8cf0"); Q(36, 38, 3, 2, "#f3c9a0"); Q(37, 40, 1, 1, "#2b2b2b"); Q(36, 22, 3, 2, "#2b3f7a"); };
-  const TILES = {
-    floor: () => wood(C.wood, C.woodLine, C.woodHi, "#cfa65f"),
+  const BASE_TILES = {
     floor2: () => wood(C.wood2, C.wood2Line, C.woodHi, "#bf965a"),
     office: () => { Q(0, 0, 64, 64, "#b9bcc4"); Q(0, 0, 64, 1, "#a6a9b2"); Q(0, 0, 1, 64, "#a6a9b2"); Q(1, 1, 63, 1, "#c6c9d0"); Q(1, 1, 1, 63, "#c6c9d0"); Q(32, 1, 1, 63, "#b1b4bc"); Q(1, 32, 63, 1, "#b1b4bc"); for (const y of [16, 48]) for (const x of [16, 48]) { Q(x, y, 2, 2, "#c9ccd3"); Q(x, y, 1, 1, "#d3d6dc"); } },
+  };
+  const TILES = {
+    floor: () => wood(C.wood, C.woodLine, C.woodHi, "#cfa65f"),
+    office: () => themed("office")(), floor2: () => themed("floor2")(), wallTop: () => themed("wallTop")(), wallFace: () => themed("wallFace")(), board: () => themed("board")(), shelf: () => themed("shelf")(),
     carpet: () => { Q(0, 0, 64, 64, C.carpet); for (let y = 0; y < 64; y += 16) for (let x = 0; x < 64; x += 16) if ((x + y) / 16 % 2) Q(x, y, 16, 16, C.carpet2); for (let y = 0; y < 64; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 64; x += 4) Q(x, y, 1, 1, "#6480cf"); for (let y = 6; y < 64; y += 16) for (let x = 6; x < 64; x += 16) { Q(x, y, 4, 4, C.carpetDot); Q(x + 1, y + 1, 2, 2, "#93aaec"); } },
-    wallTop: () => { Q(0, 0, 64, 64, C.wallTop); Q(0, 0, 64, 4, C.wallTopHi); Q(0, 4, 64, 1, "#493b2a"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#33291d"); },
-    wallFace: () => { wallBase(); Q(30, 12, 4, 40, C.wallPanel); Q(30, 12, 1, 40, "#d9c6a0"); },
-    board: () => { wallBase(); Q(2, 12, 60, 38, "#8d949f"); Q(4, 14, 56, 34, "#f7f9fb"); Q(4, 14, 56, 1, "#ffffff"); Q(2, 49, 60, 1, "#6d747e"); Q(8, 50, 48, 3, "#7d848f"); Q(10, 51, 6, 1, "#d84c4c"); Q(18, 51, 6, 1, "#3a6fd8");
+    _wallTop: () => { Q(0, 0, 64, 64, C.wallTop); Q(0, 0, 64, 4, C.wallTopHi); Q(0, 4, 64, 1, "#493b2a"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#33291d"); },
+    _wallFace: () => { wallBase(); Q(30, 12, 4, 40, C.wallPanel); Q(30, 12, 1, 40, "#d9c6a0"); },
+    _board: () => { wallBase(); Q(2, 12, 60, 38, "#8d949f"); Q(4, 14, 56, 34, "#f7f9fb"); Q(4, 14, 56, 1, "#ffffff"); Q(2, 49, 60, 1, "#6d747e"); Q(8, 50, 48, 3, "#7d848f"); Q(10, 51, 6, 1, "#d84c4c"); Q(18, 51, 6, 1, "#3a6fd8");
                   Q(12, 20, 24, 2, "#3a6fd8"); Q(12, 26, 36, 2, "#d84c4c"); Q(12, 32, 18, 2, "#3aa35b"); Q(12, 38, 28, 2, "#3a6fd8"); Q(12, 44, 10, 2, "#d84c4c");
                   Q(44, 18, 12, 9, "#ffe27a"); Q(44, 18, 12, 1, "#e8c94f"); Q(46, 21, 8, 1, "#c9a83a"); Q(46, 24, 6, 1, "#c9a83a"); Q(42, 32, 14, 12, "#a7d8f5"); Q(44, 36, 2, 6, "#3a6fd8"); Q(47, 34, 2, 8, "#3a6fd8"); Q(50, 38, 2, 4, "#3a6fd8"); Q(53, 35, 2, 7, "#3a6fd8"); },
     deskL: () => { deskBase(true); monitorFront(10, 44, false); keyboard(18, 34); mouse(50, 34); },
@@ -734,7 +737,7 @@ const office = (() => {
     plant: () => { Q(22, 40, 20, 20, C.pot); Q(20, 38, 24, 5, C.potRim); Q(20, 38, 24, 1, "#e69572"); Q(24, 44, 2, 12, "#d0785a"); Q(22, 58, 20, 2, "#8f4426"); Q(24, 34, 16, 6, "#5a3a1f"); Q(31, 20, 2, 16, "#2c7a39");
                    Q(26, 6, 12, 12, C.leaf); Q(24, 8, 16, 8, C.leaf); Q(14, 16, 16, 12, C.leaf); Q(12, 18, 20, 8, C.leaf); Q(34, 14, 18, 12, C.leafDark); Q(32, 16, 22, 8, C.leafDark); Q(20, 26, 24, 10, C.leaf); Q(18, 28, 28, 6, C.leaf); Q(10, 24, 12, 8, C.leafDark); Q(42, 26, 12, 8, C.leafDark);
                    Q(30, 8, 1, 8, "#6dc47a"); Q(18, 20, 8, 1, "#6dc47a"); Q(24, 30, 10, 1, "#6dc47a"); Q(40, 18, 8, 1, "#3d9a4c"); Q(28, 6, 4, 2, "#7fd68a"); Q(16, 16, 4, 2, "#7fd68a"); },
-    shelf: () => { Q(4, 0, 56, 60, C.bedFrame); Q(4, 0, 56, 2, "#a97a4e"); Q(8, 4, 48, 24, "#8a5c33"); Q(8, 32, 48, 24, "#8a5c33"); Q(8, 28, 48, 4, "#c58a4a"); Q(8, 56, 48, 4, "#c58a4a"); Q(8, 28, 48, 1, "#d9a262"); Q(8, 56, 48, 1, "#d9a262");
+    _shelf: () => { Q(4, 0, 56, 60, C.bedFrame); Q(4, 0, 56, 2, "#a97a4e"); Q(8, 4, 48, 24, "#8a5c33"); Q(8, 32, 48, 24, "#8a5c33"); Q(8, 28, 48, 4, "#c58a4a"); Q(8, 56, 48, 4, "#c58a4a"); Q(8, 28, 48, 1, "#d9a262"); Q(8, 56, 48, 1, "#d9a262");
                    [[["#d84c4c", 6, 20], ["#3a6fd8", 5, 22], ["#e6c15a", 7, 18], ["#3aa35b", 5, 21], ["#f0f0f0", 6, 19], ["#8e44ad", 6, 22], ["#e67e22", 5, 20]], [["#3a6fd8", 6, 21], ["#f0f0f0", 5, 19], ["#d84c4c", 7, 22], ["#e6c15a", 5, 18], ["#3aa35b", 6, 21], ["#e67e22", 5, 20], ["#8e44ad", 4, 17]]].forEach((books, i) => {
                      const base = i ? 56 : 28; let x = 10; books.forEach(([col, w, h]) => { Q(x, base - h, w, h, col); Q(x + w - 1, base - h, 1, h, tint(col, -0.3)); Q(x + 1, base - h + 3, w - 2, 1, "#f7f7f7"); Q(x + 1, base - h + 6, w - 2, 1, "#f7f7f7"); x += w + 1; }); }); },
     toilet: () => { Q(0, 0, 64, 64, "#dfe3e8"); for (let i = 16; i < 64; i += 16) { Q(i, 0, 1, 64, "#c9ced6"); Q(0, i, 64, 1, "#c9ced6"); } Q(1, 1, 1, 1, "#eef1f4");
@@ -746,6 +749,75 @@ const office = (() => {
     door: () => { Q(0, 0, 64, 64, "#4a2f16"); Q(4, 0, 56, 64, C.door); Q(4, 0, 56, 1, "#9a6a3a"); Q(4, 0, 1, 64, "#9a6a3a"); Q(59, 0, 1, 64, "#4a2f16"); Q(10, 6, 44, 22, "#6a4327"); Q(12, 8, 40, 18, C.doorPanel); Q(12, 8, 40, 1, "#c3946a"); Q(10, 34, 44, 24, "#6a4327"); Q(12, 36, 40, 20, C.doorPanel); Q(12, 36, 40, 1, "#c3946a"); Q(46, 30, 8, 4, "#5c3a1c"); Q(47, 29, 6, 5, C.knob); Q(48, 30, 2, 1, "#fff0a0"); Q(4, 12, 3, 5, "#3a3a3a"); Q(4, 46, 3, 5, "#3a3a3a"); },
     mat: () => { Q(8, 40, 48, 24, C.matEdge); Q(12, 44, 40, 16, C.mat); for (let x = 16; x < 52; x += 8) Q(x, 48, 4, 8, "#7fa0e8"); Q(12, 44, 40, 1, "#7d9ce0"); Q(8, 62, 48, 2, "#4a6cae"); },
   };
+  Object.assign(BASE_TILES, { wallTop: TILES._wallTop, wallFace: TILES._wallFace, board: TILES._board, shelf: TILES._shelf });
+  // ---- office themes: the same desks, chairs, bunks, toilets and door everywhere; floors, walls, colours and the props on the back wall change
+  const BASE_C = { ...C };
+  let TILE_X = 0, TILE_Y = 0, Y_MID = 0;                                  // tile coordinates while painting, so a theme can draw court lines or parking bays across tiles
+  const lines = (col, w = 3) => { const L = TILE_X === 1, R = TILE_X === MW - 2, Tp = TILE_Y === 2, B = TILE_Y === Y_MID - 1; if (L) Q(0, 0, w, 64, col); if (R) Q(64 - w, 0, w, 64, col); if (Tp) Q(0, 0, 64, w, col); if (B) Q(0, 64 - w, 64, w, col); };
+  const speckle = (col, n, seed) => { let h = (TILE_X * 73 + TILE_Y * 151 + seed) >>> 0; for (let i = 0; i < n; i++) { h = Math.imul(h ^ (h >>> 13), 0x5bd1e995) >>> 0; Q(h % 62, (h >>> 8) % 62, 1 + (h >>> 16) % 2, 1, col); } };
+  const brick = (a, b, mortar) => { Q(0, 0, 64, 64, a); for (let y = 0; y < 64; y += 8) { const o = (y / 8) % 2 ? 8 : 0; for (let x = -8; x < 64; x += 16) Q(x + o + 1, y + 1, 14, 6, (x + y) % 32 ? a : b); Q(0, y, 64, 1, mortar); for (let x = o; x < 64; x += 16) Q(x, y, 1, 8, mortar); } };
+  const glowBoard = (bg, fg, digits) => { Q(2, 10, 60, 40, "#1b1d22"); Q(4, 12, 56, 36, bg); Q(4, 12, 56, 1, "#3a3d44"); digits.forEach(([x, y, w, col]) => Q(x, y, w, 2, col)); Q(6, 40, 52, 1, fg); };
+  const THEMES = {
+    regular: { label: "Regular office" },
+    tech: { label: "Tech", colors: { deskTop: "#e9ebf0", deskHi: "#f7f8fb", deskEdge: "#b3b8c4", leg: "#8a8f9c", wall: "#1c2130", wallTrim: "#2b3345", wallPanel: "#27304a", base: "#141826", baseLine: "#0e1118", wallTop: "#0d1020", wallTopHi: "#1d2338", door: "#2b3345", doorPanel: "#3a465f", knob: "#3fd2e6", bedFrame: "#3a3f4c", pot: "#3a3f4c", potRim: "#4a5062" },
+      office: () => { Q(0, 0, 64, 64, "#232838"); Q(0, 0, 64, 1, "#2f3650"); Q(0, 0, 1, 64, "#2f3650"); Q(32, 0, 1, 64, "#2a3048"); Q(0, 32, 64, 1, "#2a3048"); for (const y of [0, 32]) for (const x of [0, 32]) Q(x, y, 1, 1, "#3fd2e6"); },
+      floor2: () => { Q(0, 0, 64, 64, "#1c2030"); Q(0, 0, 64, 1, "#262b3e"); Q(0, 0, 1, 64, "#262b3e"); Q(31, 31, 2, 2, "#2c3348"); },
+      wallTop: () => { Q(0, 0, 64, 64, "#0d1020"); Q(0, 0, 64, 4, "#1d2338"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#151a2c"); },
+      wallFace: () => { wallBase(); Q(6, 12, 52, 40, "#27304a"); Q(8, 14, 48, 36, "#2f3b5c"); Q(8, 14, 48, 1, "#4a5a86"); Q(10, 16, 20, 1, "#3fd2e6"); Q(10, 20, 30, 1, "#3fd2e6"); Q(10, 24, 14, 1, "#3fd2e6"); },
+      shelf: () => { Q(6, 0, 52, 60, "#2b3040"); Q(8, 2, 48, 56, "#1b1f2a"); for (let y = 6; y < 56; y += 8) { Q(10, y, 44, 6, "#2f3546"); Q(12, y + 2, 2, 2, (y / 8) % 3 ? "#3fd2e6" : "#5cff8a"); Q(16, y + 2, 2, 2, "#5cff8a"); Q(48, y + 1, 4, 4, "#0f1218"); } },
+      board: () => { wallBase(); glowBoard("#0f1626", "#3fd2e6", [[8, 18, 20, "#3fd2e6"], [8, 24, 32, "#5cff8a"], [8, 30, 14, "#3fd2e6"], [30, 18, 24, "#ff5cab"]]); } },
+    finance: { label: "Finance", colors: { deskTop: "#6b3a2a", deskHi: "#83493a", deskEdge: "#4a251a", leg: "#3a1d14", wall: "#243a5e", wallTrim: "#c9a24a", wallPanel: "#2d4670", base: "#1a2a45", baseLine: "#c9a24a", wallTop: "#141f33", wallTopHi: "#243a5e", door: "#4a251a", doorPanel: "#6b3a2a", knob: "#e6c15a", pot: "#c9a24a", potRim: "#e6c15a", bedFrame: "#4a251a", blanket: "#2f4a8a", blanketHi: "#3f5fa8" },
+      office: () => { Q(0, 0, 64, 64, "#e9e4d8"); Q(0, 0, 64, 1, "#c9c2b2"); Q(0, 0, 1, 64, "#c9c2b2"); Q(10, 4, 30, 1, "#d4cdbd"); Q(38, 6, 20, 1, "#d4cdbd"); Q(4, 40, 22, 1, "#d4cdbd"); Q(24, 42, 34, 1, "#d4cdbd"); Q(50, 20, 1, 16, "#d4cdbd"); },
+      floor2: () => { Q(0, 0, 64, 64, "#6a2e3a"); for (let y = 4; y < 64; y += 16) for (let x = 4; x < 64; x += 16) { Q(x, y, 8, 8, "#5f2733"); Q(x + 3, y + 3, 2, 2, "#c9a24a"); } },
+      wallTop: () => { Q(0, 0, 64, 64, "#141f33"); Q(0, 0, 64, 4, "#243a5e"); Q(0, 4, 64, 1, "#c9a24a"); },
+      wallFace: () => { wallBase(); Q(12, 14, 40, 34, "#2d4670"); Q(12, 14, 40, 1, "#c9a24a"); Q(12, 47, 40, 1, "#c9a24a"); Q(12, 14, 1, 34, "#c9a24a"); Q(51, 14, 1, 34, "#c9a24a"); },
+      shelf: () => { Q(4, 4, 56, 52, "#0e1218"); Q(6, 6, 52, 48, "#141a22"); [["#5cff8a", 10], ["#ff5c5c", 18], ["#5cff8a", 26], ["#5cff8a", 34], ["#ff5c5c", 42]].forEach(([c, y]) => { Q(10, y, 14, 3, "#e6e6e6"); Q(30, y, 8, 3, c); Q(42, y, 12, 3, c); }); },
+      board: () => { wallBase(); glowBoard("#0e1218", "#c9a24a", [[8, 34, 6, "#5cff8a"], [14, 30, 6, "#5cff8a"], [20, 32, 6, "#ff5c5c"], [26, 26, 6, "#5cff8a"], [32, 22, 6, "#5cff8a"], [38, 24, 6, "#ff5c5c"], [44, 18, 8, "#5cff8a"]]); } },
+    factory: { label: "Factory", colors: { deskTop: "#8f96a0", deskHi: "#a9b0ba", deskEdge: "#5f666f", leg: "#4a4f57", wall: "#8f4a3a", wallTrim: "#e0b73a", wallPanel: "#7a3e30", base: "#5a4a44", baseLine: "#3a302c", wallTop: "#3a2a26", wallTopHi: "#5a3e36", door: "#5f666f", doorPanel: "#8f96a0", knob: "#e0b73a", bedFrame: "#5f666f", pot: "#5f666f", potRim: "#8f96a0" },
+      office: () => { Q(0, 0, 64, 64, "#9a9b9a"); Q(0, 0, 64, 1, "#8a8b8a"); Q(0, 0, 1, 64, "#8a8b8a"); speckle("#8c8d8c", 14, 3); if (TILE_Y === 2 || TILE_Y === Y_MID - 1) for (let x = 0; x < 64; x += 16) { Q(x, TILE_Y === 2 ? 0 : 58, 8, 6, "#e0b73a"); Q(x + 8, TILE_Y === 2 ? 0 : 58, 8, 6, "#2b2b2b"); } },
+      floor2: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(0, 0, 64, 1, "#6f706f"); Q(0, 0, 1, 64, "#6f706f"); speckle("#717271", 12, 9); },
+      wallTop: () => { Q(0, 0, 64, 64, "#3a2a26"); Q(0, 0, 64, 4, "#5a3e36"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#2e2220"); },
+      wallFace: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); },
+      shelf: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); Q(8, 20, 20, 34, "#d9a22a"); Q(8, 20, 20, 3, "#f0c04a"); Q(8, 30, 20, 3, "#b8861e"); Q(8, 42, 20, 3, "#b8861e"); Q(34, 24, 22, 30, "#2f6fb8"); Q(34, 24, 22, 3, "#4a8fd8"); Q(34, 36, 22, 3, "#255a96"); },
+      board: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); Q(6, 10, 52, 36, "#e0b73a"); Q(8, 12, 48, 32, "#f0c95a"); Q(12, 16, 40, 4, "#2b2b2b"); Q(12, 24, 28, 3, "#2b2b2b"); Q(12, 31, 34, 3, "#2b2b2b"); Q(12, 38, 20, 3, "#2b2b2b"); } },
+    basketball: { label: "Basketball court", colors: { deskTop: "#e2c48f", deskHi: "#efd7a8", deskEdge: "#b3925e", leg: "#8a6d42", wall: "#a8332f", wallTrim: "#f2f2f2", wallPanel: "#8e2a27", base: "#7a2320", baseLine: "#5a1a18", wallTop: "#4a1a18", wallTopHi: "#6a2622", door: "#8a6d42", doorPanel: "#b3925e", knob: "#f2f2f2", pot: "#e8792b", potRim: "#f28c28" },
+      office: () => { wood("#d99a4a", "#c4863c", "#e8b060", "#cf9040"); lines("#f7f7f7"); if (TILE_X === Math.floor(MW / 2) && TILE_Y > 2 && TILE_Y < Y_MID - 1) Q(0, 0, 3, 64, "#f7f7f7"); },
+      floor2: () => { Q(0, 0, 64, 64, "#9fc3d8"); for (let i = 0; i < 64; i += 16) { Q(i, 0, 1, 64, "#8bb1c8"); Q(0, i, 64, 1, "#8bb1c8"); } },
+      wallTop: () => { Q(0, 0, 64, 64, "#4a1a18"); Q(0, 0, 64, 4, "#6a2622"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 30, 64, 4, "#f2f2f2"); for (let x = 0; x < 64; x += 16) Q(x, 14, 1, 40, "#8e2a27"); Q(0, 54, 64, 10, "#7a2320"); Q(0, 54, 64, 2, "#5a1a18"); },
+      shelf: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 54, 64, 10, "#7a2320"); Q(14, 16, 36, 24, "#f7f7f7"); Q(16, 18, 32, 20, "#e8e8e8"); Q(24, 26, 16, 10, "#d84c4c"); Q(22, 36, 20, 3, "#f28c28"); Q(24, 39, 16, 10, "#f2f2f2"); for (let x = 26; x < 40; x += 4) Q(x, 39, 1, 10, "#c8c8c8"); },
+      board: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 54, 64, 10, "#7a2320"); glowBoard("#111111", "#ff5c5c", [[10, 20, 6, "#ff5c5c"], [18, 20, 6, "#ff5c5c"], [30, 20, 3, "#f2f2f2"], [38, 20, 6, "#ff5c5c"], [46, 20, 6, "#ff5c5c"], [12, 30, 40, "#5cff8a"]]); } },
+    tennis: { label: "Tennis court", colors: { deskTop: "#e6e0d0", deskHi: "#f4efe3", deskEdge: "#b8b09c", leg: "#8f8878", wall: "#2f5e3a", wallTrim: "#3f7a4a", wallPanel: "#27502f", base: "#1f4026", baseLine: "#163019", wallTop: "#163019", wallTopHi: "#27502f", door: "#8f8878", doorPanel: "#b8b09c", knob: "#e6e0d0", pot: "#c0603a", potRim: "#d9805a", blanket: "#3aa35b", blanketHi: "#4fbf6f" },
+      office: () => { Q(0, 0, 64, 64, "#3b6fb0"); Q(0, 0, 64, 1, "#3565a2"); Q(0, 0, 1, 64, "#3565a2"); lines("#f7f7f7"); if (TILE_Y === Math.floor((2 + Y_MID) / 2) && TILE_X > 1 && TILE_X < MW - 2) { Q(0, 30, 64, 4, "#f7f7f7"); for (let x = 0; x < 64; x += 4) Q(x, 26, 1, 8, "#e3e3e3"); } },
+      floor2: () => { Q(0, 0, 64, 64, "#4d9c56"); speckle("#438a4b", 16, 5); speckle("#5aac63", 10, 11); },
+      wallTop: () => { Q(0, 0, 64, 64, "#163019"); Q(0, 0, 64, 4, "#27502f"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#2f5e3a"); for (let y = 8; y < 54; y += 6) for (let x = (y / 6) % 2 ? 3 : 0; x < 64; x += 6) Q(x, y, 1, 1, "#4a8a56"); Q(0, 54, 64, 10, "#1f4026"); Q(0, 54, 64, 2, "#163019"); },
+      shelf: () => { Q(0, 0, 64, 64, "#2f5e3a"); Q(0, 54, 64, 10, "#1f4026"); Q(10, 10, 44, 36, "#1b1b1b"); Q(12, 12, 40, 32, "#f7f7f7"); Q(14, 14, 36, 28, "#d8ecff"); Q(18, 18, 28, 1, "#ff5c5c"); Q(18, 24, 28, 1, "#ff5c5c"); Q(18, 30, 12, 1, "#ff5c5c"); Q(46, 20, 12, 12, "#d5ff5c"); Q(48, 22, 8, 8, "#c4ee4b"); },
+      board: () => { Q(0, 0, 64, 64, "#2f5e3a"); Q(0, 54, 64, 10, "#1f4026"); glowBoard("#111111", "#f2f2f2", [[10, 20, 6, "#e6c15a"], [18, 20, 6, "#e6c15a"], [30, 20, 3, "#f2f2f2"], [38, 20, 6, "#e6c15a"], [46, 20, 6, "#e6c15a"], [12, 30, 40, "#5cff8a"]]); } },
+    parking: { label: "Parking lot", colors: { deskTop: "#7d838c", deskHi: "#959ba4", deskEdge: "#565b63", leg: "#3f434a", wall: "#8f9298", wallTrim: "#e0b73a", wallPanel: "#7f8288", base: "#e0b73a", baseLine: "#b8931e", wallTop: "#5a5d63", wallTopHi: "#6f7278", door: "#565b63", doorPanel: "#7d838c", knob: "#e0b73a", bedFrame: "#565b63", pot: "#f28c28", potRim: "#ff9f3f" },
+      office: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 7); if (TILE_Y >= 6 && TILE_Y < Y_MID - 2 && TILE_X % 2 === 0) Q(0, 0, 3, 64, "#f2f2f2"); if (TILE_Y === Y_MID - 2) Q(0, 60, 64, 4, "#e0b73a"); },
+      floor2: () => { Q(0, 0, 64, 64, "#3f4247"); speckle("#484b51", 14, 13); for (let i = -64; i < 64; i += 16) { for (let k = 0; k < 64; k++) if (i + k >= 0 && i + k < 64) Q(i + k, k, 3, 1, "#e0b73a"); } },
+      wallTop: () => { Q(0, 0, 64, 64, "#5a5d63"); Q(0, 0, 64, 4, "#6f7278"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(0, 44, 64, 2, "#b8931e"); for (let x = 0; x < 64; x += 16) Q(x, 46, 8, 18, "#2b2b2b"); },
+      shelf: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(18, 14, 6, 40, "#5a5d63"); Q(14, 6, 14, 14, "#3a6fd8"); Q(16, 8, 10, 6, "#e6e6e6"); Q(18, 10, 6, 2, "#ff5c5c"); Q(36, 24, 16, 30, "#f28c28"); Q(38, 34, 12, 4, "#f7f7f7"); Q(32, 52, 24, 4, "#2b2b2b"); },
+      board: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(14, 8, 36, 36, "#2f4a8a"); Q(16, 10, 32, 32, "#3a5fd8"); Q(24, 14, 16, 24, "#f7f7f7"); Q(28, 18, 8, 8, "#3a5fd8"); Q(28, 26, 4, 12, "#3a5fd8"); } },
+    garage: { label: "Garage", colors: { deskTop: "#a9a39a", deskHi: "#c2bcb2", deskEdge: "#6f6a62", leg: "#4f4b45", wall: "#a5a9b0", wallTrim: "#8e929a", wallPanel: "#9a9ea6", base: "#6f737a", baseLine: "#4f5359", wallTop: "#4f5359", wallTopHi: "#6f737a", door: "#8e929a", doorPanel: "#a5a9b0", knob: "#d84c4c", bedFrame: "#6f6a62", pot: "#d84c4c", potRim: "#e86060" },
+      office: () => { Q(0, 0, 64, 64, "#7f8288"); Q(0, 0, 64, 1, "#6f7278"); Q(0, 0, 1, 64, "#6f7278"); speckle("#767980", 12, 17); if ((TILE_X * 7 + TILE_Y * 3) % 5 === 0) { Q(20, 24, 24, 12, "#5f6268"); Q(26, 20, 12, 20, "#5f6268"); Q(30, 28, 6, 4, "#55585e"); } },
+      floor2: () => { Q(0, 0, 64, 64, "#6c6f75"); speckle("#63666c", 12, 19); },
+      wallTop: () => { Q(0, 0, 64, 64, "#4f5359"); Q(0, 0, 64, 4, "#6f737a"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) { Q(x, 0, 2, 54, "#8e929a"); Q(x + 5, 0, 1, 54, "#b8bcc3"); } Q(0, 54, 64, 10, "#6f737a"); Q(0, 54, 64, 2, "#4f5359"); },
+      shelf: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) Q(x, 0, 2, 54, "#8e929a"); Q(0, 54, 64, 10, "#6f737a"); Q(6, 8, 52, 40, "#c9a26a"); for (let y = 12; y < 46; y += 6) for (let x = 10; x < 56; x += 6) Q(x, y, 1, 1, "#8a6a3a"); Q(12, 14, 4, 20, "#5f6268"); Q(10, 30, 8, 4, "#5f6268"); Q(24, 14, 14, 3, "#5f6268"); Q(30, 17, 3, 16, "#5f6268"); Q(44, 14, 8, 22, "#d84c4c"); Q(46, 10, 4, 5, "#2b2b2b"); },
+      board: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) Q(x, 0, 2, 54, "#8e929a"); Q(0, 54, 64, 10, "#6f737a"); Q(6, 8, 52, 40, "#f7f7f7"); Q(8, 10, 48, 36, "#e9e9e9"); Q(12, 14, 40, 3, "#3a6fd8"); Q(12, 22, 28, 3, "#d84c4c"); Q(12, 30, 34, 3, "#3aa35b"); Q(12, 38, 18, 3, "#3a6fd8"); } },
+  };
+  let THEME = "regular";
+  function themed(name) { return () => ((THEMES[THEME] && THEMES[THEME][name]) || BASE_TILES[name])(); }   // hoisted: TILES is built before this section runs
+  function setTheme(name) {
+    THEME = THEMES[name] ? name : "regular";
+    Object.assign(C, BASE_C, THEMES[THEME].colors || {});
+    try { localStorage.setItem("huntun.officeTheme", THEME); } catch (e) { /* no storage: fine */ }
+    if (off) renderMap();
+    const sel = $("#officetheme"); if (sel && sel.value !== THEME) sel.value = THEME;
+  }
   // ---- 16x24 sprite art (source): o outline, h hair, s skin, e eye, c shirt, p pants, b shoes, . transparent
   const BODY = ["...occccccco....", "..occcccccccco..", ".osccccccccccso.", ".osccccccccccso.", ".oocccccccccooo.", "..occcccccccco..", "..oppppppppppo.."];
   const LEGS = { stand: ["..oppppooppppo..", "..opppo..opppo..", "..opppo..opppo..", "..obbbo..obbbo..", "..ooooo..ooooo..", "................"],
@@ -938,7 +1010,7 @@ const office = (() => {
     const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
     const officeW = Math.max(14, 4 + islandsPerRow * 6), officeH = 5 + islandRows * 6;           // two spare columns on the right: toilets and their queue
     MW = officeW + 2;
-    const yMid = 2 + officeH;
+    const yMid = 2 + officeH; Y_MID = yMid;
     const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(cap / bedsPerRow);
     MH = yMid + bedRows * 3 + 2; W = MW * T; H = MH * T;
     DESKS = new Array(cap); BEDS = []; map = []; solid = [];
@@ -1003,7 +1075,7 @@ const office = (() => {
     off.width = W * P; off.height = H * P;
     mapImg = document.createElement("canvas"); mapImg.width = W * P; mapImg.height = H * P;
     ctx = mapImg.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; for (const t of map[y][x]) TILES[t](); }
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; for (const t of map[y][x]) TILES[t](); }
     ctx = off.getContext("2d");
   }
   const key = (x, y) => y * MW + x;
@@ -1270,6 +1342,16 @@ const office = (() => {
     return "read";
   }
   const WAKE_MS = 2000;
+  function drawNight(workers, level) {                                       // after hours: the room goes dark except for a soft pool of light around each worker
+    const cell = 8, R = T * 3.4, spots = workers.map(w => [w.px + 16, w.py + 12]);
+    for (let y = 0; y < H; y += cell) for (let x = 0; x < W; x += cell) {
+      let light = 0;
+      for (const [sx, sy] of spots) { const d = Math.hypot(x + cell / 2 - sx, (y + cell / 2 - sy) * 1.15) / R; if (d < 1) light = Math.max(light, 0.5 + 0.5 * Math.cos(Math.PI * d)); }
+      const a = 0.74 * level * (1 - light); if (a < 0.02) continue;
+      ctx.fillStyle = "rgba(6,9,26," + a.toFixed(2) + ")"; ctx.fillRect(x, y, cell, cell);
+    }
+    for (const [sx, sy] of spots) { ctx.fillStyle = "rgba(255,225,160," + (0.10 * level).toFixed(2) + ")"; ctx.fillRect(sx - 20, sy - 16, 40, 30); }   // a warm tint at the desk
+  }
   function drawChar(c, t) {
     if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
@@ -1395,8 +1477,11 @@ const office = (() => {
   function start() {
     const box = $("#officebox"); if (!box) return;
     if (!canvas) {
-      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · a post with several tags is announced from the front, a post tagging one agent is said beside that agent, anything else is said in place · click a sprite for details</span></div><canvas id="office"></canvas>';
-      canvas = $("#office"); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
+      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details</span><span style="flex:1"></span><label class="hint">theme <select id="officetheme">' + Object.entries(THEMES).map(([k, v]) => '<option value="' + k + '">' + v.label + '</option>').join("") + '</select></label></div><canvas id="office"></canvas>';
+      canvas = $("#office");
+      let saved = "regular"; try { saved = localStorage.getItem("huntun.officeTheme") || "regular"; } catch (e) { /* no storage */ }
+      const sel = $("#officetheme"); if (sel) { sel.value = THEMES[saved] ? saved : "regular"; sel.onchange = () => setTheme(sel.value); }
+      THEME = THEMES[saved] ? saved : "regular"; Object.assign(C, BASE_C, THEMES[THEME].colors || {}); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
       ensureLayout(lastState ? seatsFor(lastState) : [{ role: "master" }, {}, {}, {}]);
       if (vctx) renderMap();
       canvas.onclick = onClick;
@@ -1426,6 +1511,9 @@ const office = (() => {
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0, W, H);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
+    const present = order.filter(c => !c.hidden), workers = present.filter(c => c.mode === "work" && !c.moving && !c.steps.length);
+    night += ((present.length > 4 && workers.length <= 2 ? 1 : 0) - night) * Math.min(1, dt * 1.2);     // fade the lights over about a second
+    if (night > 0.02) drawNight(workers, night);
     for (const c of order) {
       const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
       if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); continue; }                          // the chair back sits between the camera and the occupant
@@ -1449,7 +1537,7 @@ const office = (() => {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 })();
 route();
 </script>
