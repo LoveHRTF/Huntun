@@ -40,7 +40,7 @@ The theme picker in the office bar turns the room into a different working envir
 
 The Chinese tech theme also changes the floor plan: desks in a row form one long connected desk, every agent's bunk stands right behind its chair, and the master sits in a walled office with a large dark red desk and chair, a money tree by the entrance, red banners hung across the room, a countdown board on the left wall, street-style CCTV poles watching the floor and the toilets, and a stopwatch over each stall that runs while it is occupied. Speech bubbles turn into green WeChat-style bubbles, every random line is in Chinese (150 fighting-spirit lines while the team is paused, 150 "give me work" lines while a usage limit holds, plus Chinese nothing-to-do, hello, goodbye and tantrum lines), and once a minute, when nobody is talking, the master delivers one of a hundred motivational lines for ten seconds.
 
-Lights stay on unless fewer than two agents are working while two or more are asleep; then the room dims, with a soft pool of light around the one who is still working.
+Lights stay on unless fewer than two agents are active while two or more are asleep; active means at a desk or walking to it, speaking a post or walking to say it, or away compacting context. When the room dims, a soft pool of light follows the one who is still active.
 
 ## The board
 
