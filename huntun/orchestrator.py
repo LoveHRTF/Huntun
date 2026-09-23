@@ -363,6 +363,7 @@ class AgentRuntime:
             "context_limit": st.context_limit,
             "compactions": st.compactions,
             "compacting": st.compacting,
+            "activity": self.memory.last_activity,
         }
 
     @property

@@ -30,6 +30,7 @@ class AgentMemory:
         self.dir = agents_dir / name
         self.dir.mkdir(parents=True, exist_ok=True)
         self.state = self._load_state()
+        self.last_activity: dict[str, str] | None = None  # kind and time of the newest activity line (the office view animates from it)
 
     def _load_state(self) -> AgentState:
         f = self.dir / "state.json"
@@ -89,8 +90,10 @@ class AgentMemory:
 
     def activity(self, kind: str, text: str) -> None:
         """Appends one line to the agent's activity log: cycle starts, tool calls, tool results, model text."""
+        at = now_iso()
+        self.last_activity = {"kind": kind, "at": at}
         with (self.dir / "activity.jsonl").open("a") as fh:
-            fh.write(json.dumps({"at": now_iso(), "kind": kind, "text": text[:4000]}) + "\n")
+            fh.write(json.dumps({"at": at, "kind": kind, "text": text[:4000]}) + "\n")
 
     def read_activity(self, after: int = 0, limit: int = 300) -> tuple[list[dict[str, Any]], int]:
         """Entries after line index `after` (0 = from the start), newest last, plus the new cursor."""
