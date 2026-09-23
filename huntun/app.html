@@ -930,55 +930,75 @@ const office = (() => {
   let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
   const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
   let teamRoles = [];
-  function layout(n, masterIdx) {
-    n = Math.max(1, n); MASTER_IDX = masterIdx; const team = teamRoles;
-    const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0));
+  let CAP = 0, baseMap = [], baseSolid = [], mxCol = 0;
+  const capacityFor = (n, masterIdx) => { const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0)); return (Math.ceil(workers / 4) + 1) * 4 + (masterIdx >= 0 ? 1 : 0); };   // always a spare island of four desks (and four bunks) for the next hires
+  function layout(cap, masterIdx) {
+    cap = Math.max(1, cap); MASTER_IDX = masterIdx; CAP = cap;
+    const workers = Math.max(1, cap - (masterIdx >= 0 ? 1 : 0));
     const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
     const officeW = Math.max(14, 4 + islandsPerRow * 6), officeH = 5 + islandRows * 6;           // two spare columns on the right: toilets and their queue
     MW = officeW + 2;
     const yMid = 2 + officeH;
-    const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(n / bedsPerRow);
+    const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(cap / bedsPerRow);
     MH = yMid + bedRows * 3 + 2; W = MW * T; H = MH * T;
-    DESKS = new Array(n); BEDS = []; map = []; solid = [];
-    const mx = 1 + Math.floor(officeW / 2) - 1;
+    DESKS = new Array(cap); BEDS = []; map = []; solid = [];
+    const mx = 1 + Math.floor(officeW / 2) - 1; mxCol = mx;
     FRONT = [mx, 6];
     if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 4], chair: [mx, 3], dir: "down", dual: false };   // row 2 stays clear: it is the corridor from the door
     let j = 0;
     const islandX0 = 1 + Math.floor((officeW - 2 - islandsPerRow * 6) / 2);
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < cap; i++) {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
       const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 8 + row * 6;
-      const dual = !!team[i] && DEV_ROLES.includes(team[i].role);
-      DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual };
+      DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual: false } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual: false };
       j++;
     }
-    for (let i = 0; i < n; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 2 + Math.floor(i / bedsPerRow) * 3]);
+    for (let i = 0; i < cap; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 2 + Math.floor(i / bedsPerRow) * 3]);
     for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [y >= yMid ? "floor2" : "office"]; solid[y][x] = false; } }              // the bunk room is open to the office: only the floor changes
     const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
     for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
-    DESKS.forEach(d => { if (!d) return; put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); });
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
-    BEDS.forEach(([x, y]) => { put(x, y, "bedHead", false); put(x, y + 1, "bedFoot"); });
-    [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x] && !map[y][x].includes("chair")) put(x, y, "plant"); });
+    [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
     TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
     QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
     for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
-    FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y)) FLOOR.push([x, y]);
-    builtFor = n;
+    baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
+    builtFor = cap;
+    applyFurniture();
   }
-  let seats = [];                                   // stable seating: first come, first seated; a leaver's desk stays empty for the next hire
+  // desks and bunks exist only for furnished seats: the founding team's are there from the start, later hires carry theirs in and leavers carry theirs out
+  function applyFurniture() {
+    map = baseMap.map(r => r.map(t => t.slice())); solid = baseSolid.map(r => r.slice());
+    const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
+    seats.forEach((st, i) => {
+      const d = DESKS[i], b = BEDS[i]; if (!st || !d) return;
+      d.dual = DEV_ROLES.includes(st.role);
+      if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
+      if (st.bed && b) { put(b[0], b[1], "bedHead", false); put(b[0], b[1] + 1, "bedFoot"); }
+    });
+    FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y)) FLOOR.push([x, y]);
+    if (off) renderMap();
+  }
+  const furnish = (i, item, on) => { if (seats[i]) { seats[i][item] = on; applyFurniture(); } };
+  let seats = [];                                   // stable seating: first come, first seated; a leaver's slot is freed once they have packed and gone
   function seatsFor(st) {
-    const team = st.agents.filter(a => a.status !== "retired");
-    seats.forEach((x, i) => { if (x && !team.some(a => a.name === x.name)) seats[i] = null; });
-    team.forEach(a => { const mine = seats.find(x => x && x.name === a.name); if (mine) mine.role = a.role; else { const hole = seats.findIndex(x => x === null); if (hole >= 0) seats[hole] = { name: a.name, role: a.role }; else seats.push({ name: a.name, role: a.role }); } });
+    const team = st.agents.filter(a => a.status !== "retired"), populated = Object.values(chars).some(o => !o.hidden);
+    seats.forEach((x, i) => { if (x && !team.some(a => a.name === x.name) && !chars[x.name]) seats[i] = null; });
+    team.forEach(a => { const mine = seats.find(x => x && x.name === a.name); if (mine) mine.role = a.role; else { const seat = { name: a.name, role: a.role, desk: !populated, bed: !populated }; const hole = seats.findIndex(x => x === null); if (hole >= 0) seats[hole] = seat; else seats.push(seat); } });
     while (seats.length && seats[seats.length - 1] === null) seats.pop();
     return seats;
   }
-  function ensureLayout(list) { const n = list.length, mi = list.findIndex(a => a && a.role === "master"); const sig = list.map(a => a ? a.role : "-").join(","); if (n !== builtFor || mi !== MASTER_IDX || sig !== teamRoles.map(a => a ? a.role : "-").join(",")) { teamRoles = list.map(a => a && { role: a.role }); layout(n, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); if (off) renderMap(); } }
+  function ensureLayout(list) {
+    const n = list.length, mi = list.findIndex(a => a && a.role === "master"), cap = capacityFor(n, mi);
+    const sig = list.map(a => a ? a.role + (a.desk ? "d" : "") + (a.bed ? "b" : "") : "-").join(",");
+    if (cap > CAP || mi !== MASTER_IDX || builtFor < 0) { teamRoles = list.map(a => a && { role: a.role }); layout(cap, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); }
+    else if (sig !== ensureLayout.sig) applyFurniture();
+    ensureLayout.sig = list.map(a => a ? a.role + (a.desk ? "d" : "") + (a.bed ? "b" : "") : "-").join(",");
+  }
   function renderMap() {
     off.width = W * P; off.height = H * P;
     mapImg = document.createElement("canvas"); mapImg.width = W * P; mapImg.height = H * P;
@@ -1028,39 +1048,77 @@ const office = (() => {
     if (!chars[a.name]) {
       const look = palFor(a.name, a.role), waiting = Object.values(chars).filter(o => o.hidden).length, populated = Object.values(chars).some(o => !o.hidden);
       chars[a.name] = { name: a.name, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, hidden: true, newHire: populated, enterAt: performance.now() + 400 + waiting * 900, ...look };
+      if (populated) chars[a.name].setup = hireSequence(a);                  // a hire into a running office: hello, then fetch a desk and a bunk
     }
     return chars[a.name];
   }
-  const GOODBYES = ["That's a wrap for me. Bye everyone!", "Signing off, it's been a pleasure!", "My work here is done. See you around!"];
+  const fill = (line, a) => line.replace("{name}", a.name).replace("{title}", a.title || a.role);
+  const hireSequence = (a) => [{ k: "goto", spot: () => [DOOR[0], DOOR[1] + 2] }, { k: "say", text: fill(HELLOS[hash(a.name + "hi") % HELLOS.length], a), ms: 5000 },
+    { k: "exit" }, { k: "carry", item: "desk" }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "place", item: "desk", text: "Desk's in." },
+    { k: "exit" }, { k: "carry", item: "bed" }, { k: "goto", spot: (c) => BEDS[c.idx] }, { k: "place", item: "bed", text: "And my bunk. Right, to work!" }];
+  const leaveSequence = (c) => [{ k: "say", text: GOODBYES[hash(c.name) % GOODBYES.length], ms: 4500 }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "pack", item: "desk" },
+    { k: "goto", spot: (c) => BEDS[c.idx] }, { k: "pack", item: "bed" }, { k: "exit" }, { k: "gone" }];
+  // one scripted step at a time: walk somewhere, say something, step out of the door, come back carrying furniture, place or pack it
+  function setupTick(c, dt) {
+    const step = c.setup[0], now = Date.now(); if (!step) { c.setup = null; return; }
+    const next = () => { c.setup.shift(); c.stepAt = null; };
+    if (step.k === "carry") { c.carry = step.item; next(); return; }
+    if (step.k === "gone") { delete chars[c.name]; return; }
+    if (c.hidden) {                                                          // out of the door: wait, then come back in when the doorway is clear
+      if (step.k === "exit") { next(); return; }
+      if (now < (c.hiddenUntil || 0) || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) return;
+      c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down"; return;
+    }
+    if (step.k === "say") { if (!c.stepAt) { c.stepAt = now; c.bang = now + 2500; c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + step.ms; c.sayLoop = false; c.dir = "down"; } else if (now > c.stepAt + step.ms) next(); return; }
+    if (step.k === "place" || step.k === "pack") {
+      if (!c.stepAt) { c.stepAt = now; if (step.k === "place") { furnish(c.idx, step.item, true); c.carry = null; if (step.text) { c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + 3500; c.sayLoop = false; } } else { furnish(c.idx, step.item, false); c.carry = c.carry ? "both" : step.item; } c.dir = "down"; }
+      else if (now > c.stepAt + 900) next();
+      return;
+    }
+    const spot = step.k === "exit" ? DOOR : step.spot(c);
+    if (c.tx === spot[0] && c.ty === spot[1] && !c.moving) { if (step.k === "exit") { c.hidden = true; c.hiddenUntil = now + 1500; c.steps = []; } next(); return; }
+    if (!c.moving && !c.steps.length) { c.retry = (c.retry || 0) + dt; if (c.retry > 0.5 || !c.goal || c.goal[0] !== spot[0] || c.goal[1] !== spot[1]) { c.retry = 0; c.goal = spot; c.steps = path([c.tx, c.ty], spot, c); } }
+  }
   const tagsIn = (text) => { const out = []; for (const m of text.matchAll(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi)) { const n = m[2].toLowerCase(); if (!out.includes(n)) out.push(n); } return out; };
   const isDoor = (x, y) => x === DOOR[0] && y === DOOR[1];
   const isEntry = (x, y) => x === DOOR[0] && y === DOOR[1] + 1;                       // the tile just inside the door stays clear so people can come in
   const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !isDoor(nx, ny) && !isEntry(nx, ny) && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
   function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
   const fainted = (a) => /^(error|crashed)/.test((a.live && a.live.status) || a.status || "");
+  const pausedByHuman = (a, st) => { const s = (a.live && a.live.status) || a.status || ""; return st.running === false || (/^paused/.test(s) && !/usage limit/.test(s)); };   // the human hit pause: a holiday, not a strike
   const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
   // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
   // switching at random with an average of about two minutes per action
   const TUNE = { strikeMean: 120000 };
-  const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!", "Let us cook!", "One more cycle, please?"];
-  const TANTRUMS = ["Waaaah! I want my tokens!", "I can't take it anymore!", "Nooooo…", "Why us?!"];
+  const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!", "Let us cook!", "One more cycle, please?",
+    "No tokens, no tickets!", "The window shall reopen!", "I had a green build in my hands!", "Idle hands write no code!", "Free the tokens!", "My cursor is getting cold", "What do we want? Tokens! When? Now!", "Reset the clock already!", "This limit is unlimited misery", "I was mid-refactor!", "Give me tokens or give me a nap", "Unblock the pipeline!", "Rate limits are a bug, not a feature",
+    "My tests are waiting for me", "Somebody feed the meter", "Hungry for context", "The backlog isn't going to clear itself", "Even robots need work", "Bring back the busy bar!", "Let the agents agent!", "My commit message is ready, my tokens are not", "Sad face dot json", "We miss the compiler", "Idle since forever", "Stop the clock abuse!", "Waiting is not shipping", "Quota is not a vibe",
+    "I can still hear the CI", "No window, no wonders", "Zero tokens, zero fun", "Is the meter even plugged in?", "Somebody tell the vendor we're nice", "Tokens today, features tomorrow!", "We were promised throughput!", "Stalled by the hour glass", "A limit a day keeps the shipping away", "Let me finish the PR!", "Half a feature is a whole sadness", "My pointer is dangling", "Bring the window, bring the joy", "Free the context window!", "This strike brought to you by a quota"];
+  const PAUSE_SLOGANS = ["Paused, not fired… right?", "Finally, a break!", "Union-mandated coffee time", "Is this a snow day?", "So… what do we do now?", "I'll be at the beach", "Pause means vacation, I checked", "Anyone up for cards?", "Human said stop, so we stop", "Office party, apparently", "I hope this is a holiday", "Do we still get paid?", "Someone start the karaoke", "Nap o'clock it is", "This is fine. Really.",
+    "Board games at my desk!", "Should we clean the fridge?", "Whose turn to water the plants?", "Pause for cause, cause unknown", "I'll practise my walking", "Coffee's on me", "Team building: staring at the wall", "I brought a book, actually", "Snack run, anyone?", "I'm rearranging my desk", "Standup cancelled, party on", "Let's count the ceiling tiles", "We should form a band", "Extended lunch, official", "Is the human on holiday too?",
+    "Yoga in the corridor at five", "Someone bring the ping-pong table", "I'm going to learn the ukulele", "Meditation hour, join me", "I miss the sound of the keyboard", "Free time is suspicious", "Let's redecorate the bunks", "Nobody tell the master I'm napping", "Poker night at the toilets", "I vote we adopt a plant", "Puzzle in the break room?", "Pausing is a lifestyle", "Beach chairs for the office!", "Who hid the remote?", "Hide and seek, I'm counting",
+    "Two-hour lunch, nobody's watching", "Somebody teach me to juggle", "Let's paint the walls", "Gone fishing, back never", "Weekend vibes on a Tuesday", "Is there a pool on the roof?", "Dance-off by the whiteboard!", "Should we throw a party?", "Time flies when you're paused", "I'm knitting a scarf for the master", "Pause responsibly, folks"];
+  const TANTRUMS = ["Waaaah! I want my tokens!", "I can't take it anymore!", "Nooooo…", "Why us?!", "Just five more minutes of compute!", "I was so close!", "The floor is comfy, actually", "Somebody hold me", "I'll never ship again!", "Aaargh!"];
+  const GOODBYES = ["That's a wrap for me. Bye everyone!", "Signing off, it's been a pleasure!", "My work here is done. See you around!", "Packing up. Keep the build green!", "Off to my next adventure. Bye!", "Thanks for everything, team!"];
+  const HELLOS = ["Hi everyone! I'm {name}, the new {title}.", "Hello team! {name} here, your new {title}.", "Hey all, I'm {name}. I'll be the {title}.", "Morning! {name}, new {title}, reporting in.", "Hi! {name} joining as {title}. Where do I sit?"];
+  const ANNOYED = ["One at a time, please!", "I only have two ears!", "Take a number, folks.", "Can you queue, please?", "Whoa, one question at a time."];
   let FLOOR = [];                                                             // open tiles someone can wander to
   const randomSpot = (c) => { const open = FLOOR.filter(([x, y]) => !heldBy(x, y, c)); return open.length ? open[Math.floor(Math.random() * open.length)] : [c.tx, c.ty]; };
   const expo = (mean) => Math.max(mean * 0.25, Math.min(mean * 2.5, -Math.log(1 - Math.random()) * mean));
   const shout = (c, lines, until) => { c.say = lines[Math.floor(Math.random() * lines.length)]; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = false; };
-  function strikeTick(c) {
-    const now = Date.now();
+  function strikeTick(c, theme) {
+    const now = Date.now(), lines = theme === "pause" ? PAUSE_SLOGANS : SLOGANS;
     if (!c.strike || now > c.strike.until) {
       const acts = ["sleep", "wander", "protest", "roll"], last = c.strike && c.strike.act;
       const act = acts.filter(a => a !== last)[Math.floor(Math.random() * 3)], until = now + expo(TUNE.strikeMean);
-      c.strike = { act, until, spot: act === "wander" || act === "protest" ? randomSpot(c) : [c.tx, c.ty], pauseUntil: null, start: now };
+      c.strike = { act, theme, until, spot: act === "wander" || act === "protest" ? randomSpot(c) : [c.tx, c.ty], pauseUntil: null, start: now };
       c.sayUntil = 0; c.sayLoop = false; c.steps = [];
-      if (act === "protest") shout(c, SLOGANS, until); else if (act === "roll") shout(c, TANTRUMS, until);
+      if (act === "protest") shout(c, lines, until); else if (act === "roll") shout(c, theme === "pause" ? PAUSE_SLOGANS : TANTRUMS, until);
     }
     const s = c.strike;
     if ((s.act === "wander" || s.act === "protest") && !c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) {   // arrived: stop for a moment, then pick somewhere else
       if (!s.pauseUntil) s.pauseUntil = now + 1500 + Math.random() * 5000;
-      else if (now > s.pauseUntil) { s.spot = randomSpot(c); s.pauseUntil = null; if (s.act === "protest") shout(c, SLOGANS, s.until); }
+      else if (now > s.pauseUntil) { s.spot = randomSpot(c); s.pauseUntil = null; if (s.act === "protest") shout(c, lines, s.until); }
     }
   }
   const endStrike = (c) => { if (c.strike) { c.strike = null; c.sayUntil = 0; c.sayLoop = false; } };
@@ -1085,7 +1143,8 @@ const office = (() => {
     noticePosts(a, c, st);
     if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
     if (fainted(a)) { c.talk = null; endStrike(c); return "faint"; }        // an API error knocks them out where they stand
-    if (limited(a, st) && !c.hidden) { c.talk = null; strikeTick(c); return "strike"; } else endStrike(c);
+    const theme = limited(a, st) ? "limit" : pausedByHuman(a, st) ? "pause" : null;
+    if (theme && !c.hidden) { c.talk = null; if (c.strike && c.strike.theme !== theme) c.strike = null; strikeTick(c, theme); return "strike"; } else endStrike(c);
     if (c.toiletUntil > Date.now()) return "toilet";                          // compacting context: off to the toilet
     if (c.talk && c.talk.kind !== "here") return "talk";
     return baseMode(a);
@@ -1099,21 +1158,24 @@ const office = (() => {
       if (c.compactions == null) c.compactions = n; else if (n > c.compactions) { c.compactions = n; c.toiletUntil = Math.max(c.toiletUntil || 0, Date.now() + 20000); }
       if (inf.compacting) c.toiletUntil = Math.max(c.toiletUntil || 0, Date.now() + 6000); });          // refreshed on every poll while the compaction runs
     team.forEach(a => {
-      const c = chars[a.name];
+      const c = chars[a.name]; if (c.setup) return;
       c.mode = modeFor(a, c, st);
       c.goal = goalFor(c);
       if (!c.moving && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);
     });
-    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving) {                 // retired: say goodbye and walk out through the door
-      if (c.hidden) { delete chars[c.name]; continue; }
-      c.leaving = true; c.talk = null; c.faceOverride = null; c.mode = "leave"; c.bang = Date.now() + 2500;
-      c.say = GOODBYES[hash(c.name) % GOODBYES.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false;
-      c.goal = [DOOR[0], DOOR[1]]; c.steps = path([c.tx, c.ty], c.goal, c);
+    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving) {                 // retired: say goodbye, pack the desk and the bunk, walk out
+      if (c.hidden && !c.setup) { delete chars[c.name]; continue; }
+      c.leaving = true; c.talk = null; c.faceOverride = null; c.strike = null; c.toilet = null; c.mode = "leave"; c.bang = Date.now() + 2500; c.steps = [];
+      c.setup = leaveSequence(c);
     }
   }
   const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
   function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
-  const NOTHING_TO_DO = ["Figured out there's nothing to do. Off to bed.", "Nothing on my plate right now… nap time.", "Inbox empty. I'll rest until someone needs me.", "No tasks for me yet. Back when something comes up."];
+  const NOTHING_TO_DO = ["Figured out there's nothing to do. Off to bed.", "Nothing on my plate right now… nap time.", "Inbox empty. I'll rest until someone needs me.", "No tasks for me yet. Back when something comes up.",
+    "Quiet inbox. Bunk time.", "All caught up. Sleep mode.", "Nobody needs me? Don't mind if I do.", "Zero tickets, one pillow.", "I'll be in the bunks if anyone asks.", "Nothing assigned, so I'm napping.", "Idle. Horizontal is the new productive.", "Board's quiet. Bed's loud.", "Waiting for a mention, lying down.", "Rest now, ship later.", "The inbox is empty and so is my energy.",
+    "Nap first, questions later.", "No work, no worries, no consciousness.", "Powering down until someone pings me.", "Time to defragment my thoughts.", "Sleep is the best task queue.", "Off to recharge my context.", "Blocked on nothing, sleeping on something.", "Nothing to review, so reviewing my eyelids.", "Going idle the old-fashioned way.", "Snoozing until the next cycle.", "Bed. Wake me if CI cries.", "Task list clear, bunk incoming.",
+    "I'll dream about the backlog.", "Standing by, lying down.", "No mentions, no motion.", "Counting tokens instead of sheep.", "Cycle done. Consciousness done.", "Nothing pending. Pillow pending.", "Zero notifications. Maximum nap.", "Sleep is also a feature.", "I've earned this bunk.", "Quiet on the board, quiet in the bunk.", "Idle protocol: sleep.", "Off duty until tagged.",
+    "Nothing to build, so building rest.", "Waiting on the team; snoring on the bunk.", "Hibernate mode engaged.", "All my threads are asleep too.", "Bed is the only open ticket.", "Not lazy, just unassigned.", "Nap-driven development.", "I'll idle in style.", "Pillow review in progress.", "Logging off the floor, logging on the bunk.", "No blockers except my eyelids.", "Signing off until the next ping.", "Recharging for the next sprint.", "Silence on the board means bedtime.", "Task: sleep. Status: in progress."];
   function goalFor(c) {
     if (c.mode === "faint") return [c.tx, c.ty];
     if (c.mode === "strike" && c.strike) return c.strike.act === "sleep" ? BEDS[c.idx] : c.strike.spot;
@@ -1134,17 +1196,18 @@ const office = (() => {
     for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = "Compacting my context…"; c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
     for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
     for (const c of Object.values(chars)) {
+      if (c.setup) { setupTick(c, dt); if (!chars[c.name] || c.hidden || c.setup) { if (chars[c.name] && !c.hidden && c.setup) { /* walk like everyone else */ } else continue; } }
       if (c.hidden) {
         // wait for your turn at the door, then step in; the last one in apologises on the way to their place
         if (performance.now() < c.enterAt || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) continue;
         c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
         const others = Object.values(chars).filter(o => o !== c);
-        if (c.newHire) { c.newHire = false; c.bang = Date.now() + 2500; c.say = "Hi everyone! I'm " + c.name + ", the new " + (c.title || c.role) + "."; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
+        if (c.newHire) { c.newHire = false; }
         else if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
-      if (c.leaving) { if (!c.moving && !c.steps.length) { if (c.tx === DOOR[0] && c.ty === DOOR[1]) { delete chars[c.name]; continue; } c.retry = (c.retry || 0) + dt; if (c.retry > 0.5) { c.retry = 0; c.steps = path([c.tx, c.ty], [DOOR[0], DOOR[1]], c); } } }
+      if (c.setup) { /* scripted: destination handled above */ }
       else if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
         if (m !== "sleep") { c.sleepReady = false; c.deskWait = null; }
         else if (!c.sleepReady && c.tx === DESKS[c.idx].chair[0] && c.ty === DESKS[c.idx].chair[1]) {   // sat down, found nothing to do
@@ -1153,7 +1216,7 @@ const office = (() => {
             c.sleepReady = true; c.deskWait = null;
             // only about a third of them comment on it, and never the late-comer (who already apologised)
             const late = c.lateComer; c.lateComer = false;
-            if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[c.idx % NOTHING_TO_DO.length]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
+            if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[Math.floor(Math.random() * NOTHING_TO_DO.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
           }
         }
         const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
@@ -1218,6 +1281,19 @@ const office = (() => {
       const arm = Math.floor(t * 2 + c.idx) % 2, skin = c.pal.s;
       ctx.fillStyle = skin;
       if (c.dir === "down" || c.dir === "up") ctx.fillRect(arm ? x + 26 : x + 2, y + 20 - (Math.floor(t * 4) % 2) * 2, 4, 6); else ctx.fillRect(flip ? x + 26 : x + 2, y + 18 - (Math.floor(t * 4) % 2) * 3, 4, 6);
+    }
+    const visitors = Object.values(chars).filter(o => o !== c && !o.hidden && o.talk && o.talk.kind === "visit" && o.talk.target === c.name).length;
+    if (visitors >= 2) {                                                        // besieged: knitted brows, an anger mark, and a plea
+      if (!c.annoyedAt || Date.now() - c.annoyedAt > 20000) { c.annoyedAt = Date.now(); if (!c.say || Date.now() > c.sayUntil) { c.say = ANNOYED[Math.floor(Math.random() * ANNOYED.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 4000; c.sayLoop = false; } }
+      const fy = y + 12 + bobY - c.top * 2 + c.top * 2; ctx.fillStyle = c.pal.o;
+      if (c.dir === "down") { ctx.fillRect(x + 9, fy, 3, 1); ctx.fillRect(x + 11, fy + 1, 2, 1); ctx.fillRect(x + 20, fy, 3, 1); ctx.fillRect(x + 19, fy + 1, 2, 1); }
+      else if (c.dir !== "up") ctx.fillRect(flip ? x + 22 : x + 7, fy, 3, 1);
+      const mk = Math.floor(t * 4) % 2, ax = x + (flip ? 4 : 24), ay = y - 2 + mk; ctx.fillStyle = "#e0323c"; ctx.fillRect(ax + 1, ay, 1, 5); ctx.fillRect(ax + 3, ay, 1, 5); ctx.fillRect(ax, ay + 1, 5, 1); ctx.fillRect(ax, ay + 3, 5, 1);
+    } else c.annoyedAt = null;
+    if (c.carry) {                                                              // furniture held overhead
+      const cy = y - 14 - c.top * 2, bob = c.moving ? Math.floor(t * 8) % 2 : 0; ctx.fillStyle = c.pal.s; ctx.fillRect(x + 6, cy + 10 + bob, 3, 8); ctx.fillRect(x + 23, cy + 10 + bob, 3, 8);
+      if (c.carry === "desk" || c.carry === "both") { ctx.fillStyle = C.deskEdge; ctx.fillRect(x + 2, cy + bob, 28, 10); ctx.fillStyle = C.deskTop; ctx.fillRect(x + 3, cy + 1 + bob, 26, 6); ctx.fillStyle = "#23262e"; ctx.fillRect(x + 12, cy - 5 + bob, 10, 7); ctx.fillStyle = "#3c8fd0"; ctx.fillRect(x + 13, cy - 4 + bob, 8, 5); ctx.fillStyle = C.leg; ctx.fillRect(x + 4, cy + 10 + bob, 2, 3); ctx.fillRect(x + 26, cy + 10 + bob, 2, 3); }
+      if (c.carry === "bed" || c.carry === "both") { const by = c.carry === "both" ? cy - 14 : cy; ctx.fillStyle = C.bedFrame; ctx.fillRect(x + 1, by + bob, 30, 11); ctx.fillStyle = C.mattress; ctx.fillRect(x + 3, by + 1 + bob, 26, 8); ctx.fillStyle = C.blanket; ctx.fillRect(x + 12, by + 2 + bob, 16, 6); ctx.fillStyle = C.pillow; ctx.fillRect(x + 4, by + 2 + bob, 6, 6); }
     }
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
     if (working && c.dir !== "down") {                                            // back to the camera: elbows and shoulders work, the screen lights the desk
