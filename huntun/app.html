@@ -1089,7 +1089,7 @@ const office = (() => {
   const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
   // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
   // switching at random with an average of about two minutes per action
-  const TUNE = { strikeMean: 120000 };
+  const TUNE = { strikeMean: 120000, phoneShare: 0.3 };
   const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!",
     "Let us cook!", "One more cycle, please?", "No tokens, no tickets!", "The window shall reopen!", "I had a green build in my hands!", "Idle hands write no code!", "Free the tokens!", "My cursor is getting cold", "What do we want? Tokens! When? Now!", "Reset the clock already!",
     "This limit is unlimited misery", "I was mid-refactor!", "Give me tokens or give me a nap", "Unblock the pipeline!", "Rate limits are a bug, not a feature", "My tests are waiting for me", "Somebody feed the meter", "Hungry for context", "The backlog isn't going to clear itself", "Even robots need work",
@@ -1176,7 +1176,7 @@ const office = (() => {
       const c = chars[a.name]; if (c.setup) return;
       c.mode = modeFor(a, c, st);
       c.goal = goalFor(c);
-      if (!c.moving && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);
+      if (!c.moving && !c.wasAsleep && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);   // a sleeper wakes up first (see stepChars)
     });
     for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving) {                 // retired: say goodbye, pack the desk and the bunk, walk out
       if (c.hidden && !c.setup) { delete chars[c.name]; continue; }
@@ -1240,7 +1240,9 @@ const office = (() => {
             if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[Math.floor(Math.random() * NOTHING_TO_DO.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
           }
         }
-        const g = goalFor(c); if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
+        const g = goalFor(c);
+        if (c.wasAsleep && (g[0] !== c.tx || g[1] !== c.ty)) { if (!c.wake) { c.wake = Date.now(); c.bang = Date.now() + 1500; } if (Date.now() - c.wake < WAKE_MS) continue; c.wake = null; c.wasAsleep = false; }   // sit up and stretch before getting out of bed
+        if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
       if (!c.moving && c.steps.length) {
         const [nx, ny] = c.steps[0];
         if (heldBy(nx, ny, c)) { c.wait = (c.wait || 0) + dt; if (c.wait > 0.8) { c.wait = 0; c.steps = path([c.tx, c.ty], c.goal || [nx, ny], c); } }
@@ -1256,13 +1258,18 @@ const office = (() => {
     }
   }
   // what a working agent is doing right now, from its newest activity line: thinking, typing (writing text or using tools), or reading the screen
+  // Claude Code and Codex do not stream their reasoning, so thinking is inferred from the timeline: after a prompt or a tool result the model is
+  // generating (thinking); while a tool runs, or just after text or a result landed, the agent is working; a long silence is reading.
   function actKind(c) {
     const a = c.act; if (!a || !a.at) return "read";
-    const age = Date.now() - new Date(a.at).getTime(); if (age > 25000) return "read";
-    if (a.kind === "thinking") return "think";
-    if (a.kind === "text" || a.kind === "tool" || a.kind === "result") return "type";
+    const age = Date.now() - new Date(a.at).getTime(); if (age > 90000) return "read";
+    if (a.kind === "thinking" || a.kind === "prompt") return "think";
+    if (a.kind === "result") return age < 2000 ? "type" : "think";
+    if (a.kind === "text") return age < 6000 ? "type" : "think";
+    if (a.kind === "tool") return "type";
     return "read";
   }
+  const WAKE_MS = 2000;
   function drawChar(c, t) {
     if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
@@ -1294,21 +1301,41 @@ const office = (() => {
       if (Math.floor(t * 2 + c.idx) % 5 === 4) { const py = Math.floor((t * 2) % 1 * 8); ctx.fillStyle = "rgba(235,235,225,.85)"; ctx.fillRect(x + 25, c.py + 22 - py, 5, 3); ctx.fillRect(x + 27, c.py + 19 - py, 4, 3); }
       return;
     }
+    if (c.wake && Date.now() - c.wake < WAKE_MS) {                             // waking up: sitting up in bed, eyes still shut, arms stretched overhead
+      const ph = (Date.now() - c.wake) / WAKE_MS, hy = c.py - 6 - c.top * 2, rows = headRows(c, "down").concat(bodyRows(c, "down"));
+      drawSprite(rows, x, hy, false, c.pal, c.cap, "down", c.top);
+      const lift = Math.round(Math.min(1, ph * 2) * 10); ctx.fillStyle = c.pal.s; ctx.fillRect(x + 3, hy + 24 + c.top * 2 - lift, 4, 10 + lift); ctx.fillRect(x + 25, hy + 24 + c.top * 2 - lift, 4, 10 + lift);
+      ctx.fillStyle = C.blanket; ctx.fillRect(x + 2, c.py + 26, 28, 8); ctx.fillStyle = C.blanketHi; ctx.fillRect(x + 2, c.py + 26, 28, 2);
+      if (ph < 0.55) { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 9, hy + 14 + c.top * 2, 3, 1); ctx.fillRect(x + 20, hy + 14 + c.top * 2, 3, 1); }   // eyes still closed
+      else if (ph < 0.8) { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 14, hy + 17 + c.top * 2, 4, 2); }                                            // a yawn
+      c.wasAsleep = true; return;
+    }
     if (asleep) {
+      c.wasAsleep = true;
       // head on the pillow, the blanket covers the rest
       const head = headRows(c, "down").slice(0, 10 + c.top); drawSprite(head, x, c.py - 2 - c.top * 2, false, c.pal, c.cap, "down", c.top);
       const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 22, c.py - 4 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 21, c.py - 5 - z * 2);
       return;
     }
+    c.wasAsleep = false;
     const flip = c.dir === "right";
     const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
     const talking = (c.talk && !c.moving && !c.steps.length && c.mode === "talk") || (c.mode === "strike" && c.strike && c.strike.act === "protest");   // marchers wave their fist as they go
     const act = working ? actKind(c) : null, typing = act === "type", thinking = act === "think";
+    if (thinking) { if (!c.thinkStyle) c.thinkStyle = Math.random() < TUNE.phoneShare ? "phone" : "chin"; } else c.thinkStyle = null;   // each thinking spell: mostly chin in hand, sometimes a phone call
+    const phone = thinking && c.thinkStyle === "phone";
     const tick = Math.floor(t * 7 + c.idx) % 2, bobY = typing && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
-    const tilt = thinking ? (Math.floor(t / 1.5 + c.idx) % 2 ? 1 : -1) : 0;                     // thinking: the head leans a little, hand on the chin
+    const tilt = phone ? (flip ? -1 : 1) : thinking ? (Math.floor(t / 1.5 + c.idx) % 2 ? 1 : -1) : 0;   // thinking: the head leans a little
     drawSprite(sprite(c, c.dir, c.frame), x + tilt, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
     if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
-    if (thinking) {
+    if (phone) {                                                               // on the phone: handset at the ear, free hand gesturing, a chatter of little marks
+      const ear = c.dir === "down" ? [x + 23, y + 7] : [x + 25, y + 5], talk = Math.floor(t * 5 + c.idx) % 2;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(ear[0] - 1, ear[1] + 5, 5, 3); ctx.fillRect(ear[0] + 2, ear[1] + 8, 3, 9);
+      ctx.fillStyle = "#23262e"; ctx.fillRect(ear[0], ear[1], 3, 7); ctx.fillStyle = "#6fc3f0"; ctx.fillRect(ear[0] + 1, ear[1] + 1, 1, 3);
+      ctx.fillStyle = c.pal.s; ctx.fillRect(x + 3, y + 20 - talk * 2, 4, 6);
+      if (c.dir === "down" && talk) { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 15, y + 17, 2, 1); }
+      ctx.fillStyle = "#ffffff"; for (let k = 0; k < 3; k++) if ((Math.floor(t * 6 + c.idx) + k) % 3) ctx.fillRect(ear[0] + 5 + k * 3, ear[1] - 3 + (k % 2), 2, 1);
+    } else if (thinking) {
       ctx.fillStyle = c.pal.s;
       if (c.dir === "down") { ctx.fillRect(x + 17 + tilt, y + 20, 5, 3); ctx.fillRect(x + 22, y + 22, 4, 8); } else { ctx.fillRect(x + 24 + tilt, y + 6, 3, 5); ctx.fillRect(x + 26, y + 10, 4, 12); }
       const bx = x + 26, by = y - 14 - c.top * 2, dots = 1 + Math.floor(t * 1.5 + c.idx) % 3;           // thought bubble with pulsing dots
