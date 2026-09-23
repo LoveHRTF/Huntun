@@ -671,8 +671,12 @@ const office = (() => {
   const wood = (base, line, hi, grain) => { Q(0, 0, 64, 64, base); for (let y = 0; y < 64; y += 16) { Q(0, y, 64, 1, line); const o = (y / 16) % 2 ? 32 : 0; Q(o, y, 1, 16, line); Q(o + 6, y + 5, 12, 1, grain); Q(o + 20, y + 9, 10, 1, grain); Q(o + 8, y + 12, 8, 1, grain); Q(o + 4, y + 2, 1, 1, hi); Q(o + 26, y + 3, 1, 1, hi); } };
   const wallBase = () => { Q(0, 0, 64, 64, C.wall); Q(0, 0, 64, 8, C.wallTrim); Q(0, 8, 64, 2, "#b89a6e"); Q(0, 10, 64, 1, "#f9f0dc"); Q(0, 54, 64, 10, C.base); Q(0, 54, 64, 2, C.baseLine); Q(0, 56, 64, 1, "#a07a4c"); Q(0, 62, 64, 2, "#5c3f22"); };
   // desk pieces (half-unit coordinates). The left tile carries the left edge and leg, the right tile the right ones, so a pair reads as one desk.
-  const deskBase = (left) => { const x0 = left ? 4 : 0, x1 = left ? 64 : 60; Q(x0, 0, x1 - x0, 46, C.deskTop); Q(x0, 0, x1 - x0, 3, C.deskHi); Q(x0, 3, x1 - x0, 1, "#e2b072"); for (let y = 8; y < 42; y += 6) { Q(x0 + 3, y, x1 - x0 - 6, 1, "#bd8244"); Q(x0 + 9, y + 3, x1 - x0 - 18, 1, "#c9914f"); } Q(x0, 42, x1 - x0, 4, C.deskEdge); Q(x0, 42, x1 - x0, 1, "#a56c38"); Q(x0, 45, x1 - x0, 1, "#6e4726");
-                               if (left) { Q(4, 0, 4, 46, C.deskEdge); Q(4, 0, 1, 46, "#7a4f27"); Q(8, 46, 6, 16, C.leg); Q(8, 46, 2, 16, "#8a5a30"); Q(8, 60, 6, 2, "#4f321b"); } else { Q(56, 0, 4, 46, C.deskEdge); Q(59, 0, 1, 46, "#7a4f27"); Q(50, 46, 6, 16, C.leg); Q(50, 46, 2, 16, "#8a5a30"); Q(50, 60, 6, 2, "#4f321b"); } };
+  const deskAt = (dx) => { const row = map[TILE_Y], t = row && row[TILE_X + dx]; return !!(t && t.some(n => n.startsWith("desk"))); };
+  const deskBase = (side) => { const left = side === true, mid = side === "mid", edgeL = (left || mid) && !deskAt(-1), edgeR = (!left || mid) && !deskAt(1), x0 = edgeL ? 4 : 0, x1 = edgeR ? 60 : 64; Q(x0, 0, x1 - x0, 46, C.deskTop); Q(x0, 0, x1 - x0, 3, C.deskHi); Q(x0, 3, x1 - x0, 1, "#e2b072"); for (let y = 8; y < 42; y += 6) { Q(x0 + 3, y, x1 - x0 - 6, 1, "#bd8244"); Q(x0 + 9, y + 3, x1 - x0 - 18, 1, "#c9914f"); } Q(x0, 42, x1 - x0, 4, C.deskEdge); Q(x0, 42, x1 - x0, 1, "#a56c38"); Q(x0, 45, x1 - x0, 1, "#6e4726");
+                               if (edgeL) { Q(4, 0, 4, 46, C.deskEdge); Q(4, 0, 1, 46, tint(C.deskEdge, -0.15)); Q(8, 46, 6, 16, C.leg); Q(8, 46, 2, 16, tint(C.leg, 0.25)); Q(8, 60, 6, 2, tint(C.leg, -0.3)); }
+                               if (edgeR) { Q(56, 0, 4, 46, C.deskEdge); Q(59, 0, 1, 46, tint(C.deskEdge, -0.15)); Q(50, 46, 6, 16, C.leg); Q(50, 46, 2, 16, tint(C.leg, 0.25)); Q(50, 60, 6, 2, tint(C.leg, -0.3)); } };
+  const BOSS = { deskTop: "#7a1f1f", deskHi: "#9a2a2a", deskEdge: "#4a1010", leg: "#3a0c0c", chair: "#5a0f0f", chairDark: "#3f0a0a" };
+  const withBoss = (fn) => { const keep = {}; for (const k in BOSS) { keep[k] = C[k]; C[k] = BOSS[k]; } fn(); Object.assign(C, keep); };
   const monitorFront = (x, w, second) => {                                 // facing the camera: bezel, editor + terminal, taskbar, LED, neck and foot on the desk
     const h = 26, sx = x + 3, sw = w - 6 - (second ? 2 : 0), half = Math.floor((sw - 4) / 2), cx = x + Math.floor(w / 2);
     Q(x + 1, 0, w - 2, h, "#23262e"); Q(x, 1, w, h - 2, "#23262e"); Q(x + 2, 2, w - 4 - (second ? 2 : 0), h - 4, "#2f3340"); Q(sx, 3, sw, h - 6, "#101a2e");
@@ -722,6 +726,15 @@ const office = (() => {
     deskR: () => { deskBase(false); monitorFront(4, 36, true); mug(44, 22); },
     deskRBack: () => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); },
     deskPlain: () => { deskBase(false); papers(); mug(44, 22); },
+    deskMid: () => { deskBase("mid"); Q(20, 22, 24, 6, "#f7f7f2"); Q(22, 24, 20, 1, "#b8bcc8"); Q(22, 26, 14, 1, "#b8bcc8"); mug(48, 8); },
+    bossDeskL: () => withBoss(() => { deskBase(true); keyboard(18, 4); mouse(50, 4); monitorBack(10, 44, 10, false); }),
+    bossDeskR: () => withBoss(() => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); }),
+    bossDeskMid: () => withBoss(() => { deskBase("mid"); Q(8, 20, 26, 8, "#e6c15a"); Q(10, 22, 22, 4, "#c9a24a"); Q(40, 18, 14, 12, "#f7f7f2"); Q(42, 20, 10, 1, "#b8bcc8"); Q(42, 23, 8, 1, "#b8bcc8"); }),
+    bossChair: () => withBoss(() => TILES.chair()),
+    bossChairBack: () => withBoss(() => TILES.chairUpBack()),
+    moneyTree: () => { Q(20, 42, 24, 18, "#b8202a"); Q(18, 40, 28, 5, "#d9303a"); Q(18, 40, 28, 1, "#f05a64"); Q(24, 48, 16, 1, "#e6c15a"); Q(30, 24, 4, 18, "#5a3a1f");
+                       Q(20, 10, 24, 20, "#2c7a39"); Q(16, 16, 32, 12, "#3fa34d"); Q(24, 6, 16, 8, "#3fa34d"); Q(12, 20, 8, 8, "#2c7a39"); Q(44, 20, 8, 8, "#2c7a39");
+                       [[22, 14], [36, 12], [18, 24], [42, 24], [30, 20], [28, 28]].forEach(([x, y]) => { Q(x, y, 5, 5, "#e6c15a"); Q(x + 1, y + 1, 3, 3, "#f5d76e"); Q(x + 2, y + 2, 1, 1, "#b8861e"); }); },
     chairUp: () => { chairSeatUp(); chairBackUp(); },
     chairUpBack: () => chairBackUp(),
     chair: () => { Q(19, 22, 26, 20, C.chairDark); Q(18, 23, 28, 18, C.chairDark); Q(20, 24, 24, 16, C.chair); Q(20, 24, 24, 2, "#4d80e8"); Q(20, 31, 24, 1, C.chairDark); Q(12, 44, 4, 12, "#2b2b2b"); Q(48, 44, 4, 12, "#2b2b2b"); Q(12, 44, 4, 1, "#454545"); Q(48, 44, 4, 1, "#454545");
@@ -809,14 +822,64 @@ const office = (() => {
       shelf: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) Q(x, 0, 2, 54, "#8e929a"); Q(0, 54, 64, 10, "#6f737a"); Q(6, 8, 52, 40, "#c9a26a"); for (let y = 12; y < 46; y += 6) for (let x = 10; x < 56; x += 6) Q(x, y, 1, 1, "#8a6a3a"); Q(12, 14, 4, 20, "#5f6268"); Q(10, 30, 8, 4, "#5f6268"); Q(24, 14, 14, 3, "#5f6268"); Q(30, 17, 3, 16, "#5f6268"); Q(44, 14, 8, 22, "#d84c4c"); Q(46, 10, 4, 5, "#2b2b2b"); },
       board: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) Q(x, 0, 2, 54, "#8e929a"); Q(0, 54, 64, 10, "#6f737a"); Q(6, 8, 52, 40, "#f7f7f7"); Q(8, 10, 48, 36, "#e9e9e9"); Q(12, 14, 40, 3, "#3a6fd8"); Q(12, 22, 28, 3, "#d84c4c"); Q(12, 30, 34, 3, "#3aa35b"); Q(12, 38, 18, 3, "#3a6fd8"); } },
   };
-  let THEME = "regular";
+  const CN_SLOGANS = ["业绩是唯一的保命符，零单就是自上绞刑架！", "绩效末位，即刻斩首；没有功劳，就是死罪！", "淘汰台已经搭好，今天谁的名字挂在刽子手刀下？", "拿不出结果，就自己把绳索套在脖子上！", "这里没有缓刑，不出单，当下立决！", "KPI就是你的铡刀，升上去是神，掉下来是鬼！",
+    "今天不冲业绩，明天就冲人才市场！", "客户不签字，你就别下班！", "数据不好看，人就不好过！", "报表上没你的名字，工位上也不该有！", "指标就是圣旨，完不成就是抗旨！", "谁的曲线往下走，谁的工牌就往外走！", "月底不达标，月初就清场！", "不加班的人，是在偷公司的时间！", "凌晨三点的灯，才配叫奋斗！", "别谈感受，谈转化率！",
+    "客户挂电话，你就得再打十个！", "订单是氧气，没单就窒息！", "今天的懈怠，就是明天的裁员通知！", "把竞品逼到墙角，再把墙推倒！", "市场只有一块饼，抢不到就饿死！", "只有第一名有饭吃，第二名连汤都没有！", "你不是来上班的，你是来打仗的！", "考核不看过程，只看尸体数量！", "跪着签单也是签单！", "今天少打一个电话，明天少活一天！",
+    "会议室里没有借口，只有数字！", "你的假期，是客户给的！", "不出成绩，年终奖就是空气！", "团队不需要好人，只需要能人！", "哭是没用的，哭完继续打电话！", "把身体交给公司，把灵魂交给业绩！", "月度冠军上墙，月度末位出局！", "别等风口，自己当推土机！", "客户的拒绝，是你的开场白！", "没有周末，只有周报！",
+    "谁先松懈，谁先出局！", "把对手的客户列成清单，一个一个拔掉！", "用他们的市场，养我们的团队！", "别人休息的时候，我们在收割！", "同情心是业绩的毒药！", "服务到客户害怕为止！", "指标翻倍，人手减半，这才叫效率！", "低于均值，就是拖累！", "每一分钟不产出，都是在浪费公司的空气！", "今天不狠，明天就没！",
+    "问题只有一个：单呢？", "对不起三个字，换不来一分钱！", "累了就想想房贷！", "签单之前，不许生病！", "客户是猎物，不是朋友！", "不要解释，要交付！", "谁敢按时下班，谁就是在挑衅！", "把'不可能'三个字从字典里撕掉！", "业绩就是尊严，没业绩就没尊严！", "团队只记得冠军的名字！",
+    "对自己狠一点，对客户再狠一点！", "今天签不下来，明天就换人来签！", "一天不进步，就是在退步等死！", "每一次拒绝都是你没努力的证据！", "别把'尽力了'当成绩！", "工资是公司借你的，业绩是你还的！", "不要让你的坐姿比业绩还稳！", "没有淡季的市场，只有懒惰的销售！", "把客户的钱包翻过来，抖三下！", "你的对手今晚没睡，你凭什么睡？",
+    "冠军吃肉，末位喝西北风！", "会哭的孩子没奶吃，会签的员工才有！", "打不动了就想想被淘汰的样子！", "在这里，慢就是死！", "汇报里少一个零，人生就少一个机会！", "只有结果有人听，过程没人问！", "目标定得不吓人，就没有意义！", "今天是压力，明天是压垮！", "干不完就别回家，家不需要一个失败者！", "工位是租的，业绩是命！",
+    "没有借口的团队，才配叫团队！", "谁拖后腿，就砍谁的腿！", "客户不下单，就再见一次，再再见一次！", "你的KPI，是你的通行证，也是你的判决书！", "不比谁聪明，比谁更狠！", "先干死对手，再谈理想！", "考核的刀口，永远朝着最慢的那个人！", "哪怕签下一个，也别空手回来！", "别等公司裁你，先把自己逼疯！", "拼命是底线，不是上限！",
+    "早上不定目标，晚上就定罪名！", "有些人的工牌，今晚就要回收了！", "把每一句'再想想'都当成'再打一次'！", "不允许亏损，不允许安逸，不允许喘气！", "别问方法，问你自己有没有拼到吐！", "月底见真章，见不到就见走人！", "别把公司当家，家不会考核你！", "抢光他们的客户，榨干他们的市场，断绝他们的生路！", "不要问公司能为你做什么，问问你自己今天配不配活着！", "今天你挤不出业绩，明天团队就挤干你的水分！",
+    "签单不是任务，是活命！", "你的产出，决定你的座位！", "落后一天，全盘皆输！", "把数字做上去，其他都是废话！"];
+  const CN_BANNERS = ["不要问公司能为你做什么，问问你自己今天配不配活着！", "今天你挤不出业绩，明天团队就挤干你的水分！", "抢光他们的客户，榨干他们的市场，断绝他们的生路！"];
+  THEMES.chinese_tech = { label: "Chinese tech (中式互联网)", layout: { connected: true, bedsAtDesk: true, bossOffice: true }, wechat: true,
+    colors: { deskTop: "#dfe3e8", deskHi: "#eef1f4", deskEdge: "#a9b0ba", leg: "#8a919b", wall: "#f0f0ee", wallTrim: "#d9d9d6", wallPanel: "#e4e4e0", base: "#b9b9b4", baseLine: "#8f8f8a", wallTop: "#5a5a56", wallTopHi: "#767672", chair: "#2b2b2b", chairDark: "#1c1c1c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", bedFrame: "#8f8f8a", blanket: "#3a6fd8", blanketHi: "#4d80e8", pot: "#b8202a", potRim: "#d9303a" },
+    office: () => { Q(0, 0, 64, 64, "#c8ccd2"); Q(0, 0, 64, 1, "#b4b8be"); Q(0, 0, 1, 64, "#b4b8be"); Q(32, 1, 1, 63, "#bfc3c9"); Q(1, 32, 63, 1, "#bfc3c9"); },
+    floor2: () => { Q(0, 0, 64, 64, "#c8ccd2"); },
+    wallFace: () => { wallBase(); Q(28, 12, 8, 40, "#e4e4e0"); },
+    shelf: () => { wallBase(); Q(26, 10, 12, 42, "#c8161d"); Q(27, 11, 10, 40, "#d8262d"); Q(29, 14, 6, 34, "#ffe27a"); Q(30, 16, 4, 30, "#c8161d"); },
+    board: () => { wallBase(); Q(2, 8, 60, 40, "#1b1d22"); Q(4, 10, 56, 36, "#0b0c10"); },
+    decorate: () => {
+      const L = THEMES.chinese_tech.layout, rows = Math.max(1, Math.round((Y_MID - 10) / 10)), pad = 2;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      for (let r = 0; r < rows; r++) {                                                             // red banners hung across the room over each corridor
+        const y = (7 + r * 10) * T + 4, x0 = T + 2, x1 = (MW - 1) * T - 2;
+        ctx.fillStyle = "#8f0d12"; ctx.fillRect(x0 - 2, y - 2, x1 - x0 + 4, 24); ctx.fillStyle = "#c8161d"; ctx.fillRect(x0, y, x1 - x0, 20); ctx.fillStyle = "#e6c15a"; ctx.fillRect(x0, y, x1 - x0, 1); ctx.fillRect(x0, y + 19, x1 - x0, 1);
+        ctx.fillStyle = "#ffe27a"; ctx.font = "bold 13px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"; ctx.fillText(CN_BANNERS[r % CN_BANNERS.length], (x0 + x1) / 2, y + 10);
+      }
+      ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', monospace"; ctx.fillText("攻坚倒计时003天", (mxCol + 1) * T, T + 14);   // the countdown behind the master
+      CAMS.length = 0; CAMS.push([(MW - 3) * T + 10, T + 12, -1], [3 * T + 10, T + 12, 1]);                // CCTV over the toilets and over the floor
+      for (const [x, y, dir] of CAMS) { ctx.fillStyle = "#6f7480"; ctx.fillRect(x + 5, y - 6, 3, 6); ctx.fillStyle = "#9aa3b5"; ctx.fillRect(x, y, 13, 7); ctx.fillStyle = "#c8ccd6"; ctx.fillRect(x, y, 13, 1); ctx.fillStyle = "#1b1d22"; ctx.fillRect(dir < 0 ? x : x + 9, y + 1, 4, 5); ctx.fillStyle = "#3fd2e6"; ctx.fillRect(dir < 0 ? x + 1 : x + 10, y + 2, 2, 2); }
+      ctx.textBaseline = "alphabetic"; void L; void pad;
+    } };
+  const CAMS = [];
+  let THEME = "regular", nextSloganAt = 0, transition = null;
   function themed(name) { return () => ((THEMES[THEME] && THEMES[THEME][name]) || BASE_TILES[name])(); }   // hoisted: TILES is built before this section runs
-  function setTheme(name) {
+  function applyThemeNow(name) {
     THEME = THEMES[name] ? name : "regular";
     Object.assign(C, BASE_C, THEMES[THEME].colors || {});
     try { localStorage.setItem("huntun.officeTheme", THEME); } catch (e) { /* no storage: fine */ }
-    if (off) renderMap();
+    nextSloganAt = Date.now() + 60000;
+    if (LAYOUT_THEME !== THEME) builtFor = -1;
+    if (lastState) ensureLayout(seatsFor(lastState)); else if (off) renderMap();
     const sel = $("#officetheme"); if (sel && sel.value !== THEME) sel.value = THEME;
+  }
+  // changing the theme with people inside: everyone leaves through the door, the lights go out, the room is rebuilt, the lights come up, everyone walks back in
+  function setTheme(name) {
+    if (!THEMES[name] || name === THEME) return;
+    const present = Object.values(chars).filter(c => !c.hidden);
+    if (!present.length || transition) { if (!transition) applyThemeNow(name); return; }
+    transition = { theme: name, phase: "exit", t0: Date.now() };
+    for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.faceOverride = null; c.sayUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
+  }
+  function transitionTick() {
+    if (!transition) return 0;
+    const now = Date.now();
+    if (transition.phase === "exit") { if (Object.values(chars).every(c => c.hidden)) { transition.phase = "out"; transition.t0 = now; } else if (now - transition.t0 > 60000) { Object.values(chars).forEach(c => { c.hidden = true; }); transition.phase = "out"; transition.t0 = now; } return 0; }
+    if (transition.phase === "out") { const a = Math.min(1, (now - transition.t0) / 900); if (a >= 1) { applyThemeNow(transition.theme); let k = 0; for (const c of Object.values(chars)) { c.setup = null; c.hidden = true; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.moving = false; c.steps = []; c.enterAt = performance.now() + 900 + k++ * 900; c.wasAsleep = false; c.wake = null; } transition.phase = "in"; transition.t0 = now; } return a; }
+    const a = 1 - Math.min(1, (now - transition.t0) / 900); if (a <= 0) transition = null; return a;
   }
   // ---- 16x24 sprite art (source): o outline, h hair, s skin, e eye, c shirt, p pants, b shoes, . transparent
   const BODY = ["...occccccco....", "..occcccccccco..", ".osccccccccccso.", ".osccccccccccso.", ".oocccccccccooo.", "..occcccccccco..", "..oppppppppppo.."];
@@ -1002,42 +1065,46 @@ const office = (() => {
   let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
   const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
   let teamRoles = [];
-  let CAP = 0, baseMap = [], baseSolid = [], mxCol = 0;
+  let CAP = 0, baseMap = [], baseSolid = [], mxCol = 0, LAYOUT_THEME = "regular";
   const capacityFor = (n, masterIdx) => { const workers = Math.max(1, n - (masterIdx >= 0 ? 1 : 0)); return (Math.ceil(workers / 4) + 1) * 4 + (masterIdx >= 0 ? 1 : 0); };   // always a spare island of four desks (and four bunks) for the next hires
   function layout(cap, masterIdx) {
     cap = Math.max(1, cap); MASTER_IDX = masterIdx; CAP = cap;
-    const workers = Math.max(1, cap - (masterIdx >= 0 ? 1 : 0));
+    const workers = Math.max(1, cap - (masterIdx >= 0 ? 1 : 0)), L = THEMES[THEME].layout || {}; LAYOUT_THEME = THEME;
+    const S = L.connected ? 4 : 6, RS = L.bedsAtDesk ? 10 : 6, iy0 = L.bedsAtDesk ? 12 : 8;      // connected rows pack the islands; beds at the desk need taller rows
     const islands = Math.ceil(workers / 4), islandsPerRow = Math.min(4, islands), islandRows = Math.ceil(islands / islandsPerRow);
-    const officeW = Math.max(14, 4 + islandsPerRow * 6), officeH = 5 + islandRows * 6;           // two spare columns on the right: toilets and their queue
+    const officeW = Math.max(L.bossOffice ? 18 : 14, 4 + islandsPerRow * S), officeH = (L.bedsAtDesk ? 8 : 5) + islandRows * RS;   // two spare columns on the right: toilets and their queue
     MW = officeW + 2;
     const yMid = 2 + officeH; Y_MID = yMid;
     const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(cap / bedsPerRow);
-    MH = yMid + bedRows * 3 + 2; W = MW * T; H = MH * T;
+    MH = L.bedsAtDesk ? yMid + 1 : yMid + bedRows * 3 + 2; W = MW * T; H = MH * T;
     DESKS = new Array(cap); BEDS = []; map = []; solid = [];
     const mx = 1 + Math.floor(officeW / 2) - 1; mxCol = mx;
-    FRONT = [mx, 6];
-    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 4], chair: [mx, 3], dir: "down", dual: false };   // row 2 stays clear: it is the corridor from the door
+    FRONT = [mx, L.bossOffice ? 8 : 6];
+    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 4], chair: [mx, 3], dir: "down", dual: false, boss: !!L.bossOffice };   // row 2 stays clear: it is the corridor from the door
     let j = 0;
-    const islandX0 = 1 + Math.floor((officeW - 2 - islandsPerRow * 6) / 2);
+    const islandX0 = 1 + Math.floor((officeW - 2 - islandsPerRow * S) / 2);
     for (let i = 0; i < cap; i++) {
       if (i === masterIdx) continue;
       const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
-      const ix = islandX0 + col * 6 + (pos % 2) * 2, iy = 8 + row * 6;
+      const ix = islandX0 + col * S + (pos % 2) * 2, iy = iy0 + row * RS;
       DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual: false } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual: false };
       j++;
     }
-    for (let i = 0; i < cap; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 2 + Math.floor(i / bedsPerRow) * 3]);
+    if (L.bedsAtDesk) { for (let i = 0; i < cap; i++) { const d = DESKS[i]; BEDS.push(i === masterIdx ? [mx - 1, 2] : d.dir === "down" ? [d.desk[0], d.desk[1] - 3] : [d.desk[0], d.desk[1] + 2]); } }   // a bunk right behind every chair
+    else for (let i = 0; i < cap; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 2 + Math.floor(i / bedsPerRow) * 3]);
     for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [y >= yMid ? "floor2" : "office"]; solid[y][x] = false; } }              // the bunk room is open to the office: only the floor changes
     const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
     for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
+    if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 6; y++) { put(mx - 2, y, "wallTop"); put(mx + 3, y, "wallTop"); } for (let x = mx - 1; x <= mx + 2; x++) if (x !== mx + 2) put(x, 6, "wallTop"); }   // the master's own office, door at the right
     [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
     TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
     QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
     for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
+    if (L.bossOffice) put(DOOR[0] + 1, 2, "moneyTree");                                      // 发财树 by the entrance
     baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
     builtFor = cap;
     applyFurniture();
@@ -1049,7 +1116,8 @@ const office = (() => {
     seats.forEach((st, i) => {
       const d = DESKS[i], b = BEDS[i]; if (!st || !d) return;
       d.dual = DEV_ROLES.includes(st.role);
-      if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
+      if (st.desk && d.boss) { put(d.desk[0] - 1, d.desk[1], "bossDeskMid"); put(d.desk[0], d.desk[1], "bossDeskL"); put(d.desk[0] + 1, d.desk[1], "bossDeskR"); put(d.chair[0], d.chair[1], "bossChair", false); }
+      else if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
       if (st.bed && b) { put(b[0], b[1], "bedHead", false); put(b[0], b[1] + 1, "bedFoot"); }
     });
     FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y)) FLOOR.push([x, y]);
@@ -1076,6 +1144,7 @@ const office = (() => {
     mapImg = document.createElement("canvas"); mapImg.width = W * P; mapImg.height = H * P;
     ctx = mapImg.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; for (const t of map[y][x]) TILES[t](); }
+    if (THEMES[THEME].decorate) THEMES[THEME].decorate();
     ctx = off.getContext("2d");
   }
   const key = (x, y) => y * MW + x;
@@ -1138,6 +1207,7 @@ const office = (() => {
     if (step.k === "gone") { delete chars[c.name]; return; }
     if (c.hidden) {                                                          // out of the door: wait, then come back in when the doorway is clear
       if (step.k === "exit") { next(); return; }
+      if (step.k === "hold") return;
       if (now < (c.hiddenUntil || 0) || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) return;
       c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down"; return;
     }
@@ -1465,13 +1535,18 @@ const office = (() => {
     const lh = cssPx(16.5), pad = cssPx(8), lw = Math.max(...lines.map(l => ctx.measureText(l).width)), bw = Math.min(W - 16, Math.ceil(lw + pad * 2)), bh = Math.ceil(lines.length * lh + pad * 1.6);
     let bx = Math.round(c.px + 16 - bw / 2); bx = Math.max(4, Math.min(W - bw - 4, bx));
     const by = Math.max(4, c.py - 24 - bh - 8);
-    ctx.fillStyle = "#3b2a1e"; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4); ctx.fillStyle = "#ffffff"; ctx.fillRect(bx, by, bw, bh);
-    ctx.fillStyle = "#3b2a1e"; ctx.fillRect(c.px + 12, by + bh + 2, 8, 2); ctx.fillRect(c.px + 14, by + bh + 4, 4, 2); ctx.fillStyle = "#ffffff"; ctx.fillRect(c.px + 12, by + bh, 8, 2);
-    let count = 0; ctx.fillStyle = "#333333";
+    const wc = !!THEMES[THEME].wechat, edge = wc ? "#5fbf47" : "#3b2a1e", face = wc ? "#95ec69" : "#ffffff", ink = wc ? "#0b1a0b" : "#333333";   // WeChat-style green bubbles in the Chinese office
+    ctx.fillStyle = edge; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4); ctx.fillStyle = face; ctx.fillRect(bx, by, bw, bh);
+    if (wc) { ctx.fillStyle = edge; ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx + bw - 1, by, 1, 1); ctx.fillRect(bx, by + bh - 1, 1, 1); ctx.fillRect(bx + bw - 1, by + bh - 1, 1, 1); }
+    ctx.fillStyle = edge; ctx.fillRect(c.px + 12, by + bh + 2, 8, 2); ctx.fillRect(c.px + 14, by + bh + 4, 4, 2); ctx.fillStyle = face; ctx.fillRect(c.px + 12, by + bh, 8, 2);
+    let count = 0; ctx.fillStyle = ink;
     lines.forEach((l, i) => { const take = Math.max(0, Math.min(l.length, shown - count)); ctx.fillText(l.slice(0, take), bx + pad, by + pad * 0.5 + lh * (i + 0.85)); count += l.length; });
     if (pages.length > 1) { ctx.fillStyle = "#9aa3bd"; ctx.font = "500 " + cssPx(9.75) + "px " + SANS; ctx.textAlign = "right"; ctx.fillText((pi + 1) + "/" + pages.length, bx + bw - cssPx(3), by + bh - cssPx(2.5)); }
   }
-  function wrapLines(text, n) { const words = text.split(/\s+/), out = []; let cur = ""; for (const w of words) { if ((cur + " " + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += " " + w; } if (cur.trim()) out.push(cur.trim()); return out; }
+  function wrapLines(text, n) {
+    const words = text.split(/\s+/).flatMap(w => { const out = []; for (let i = 0; i < w.length; i += n) out.push(w.slice(i, i + n)); return out.length ? out : [w]; });   // text without spaces (CJK) is cut into lines by length
+    const out = []; let cur = ""; for (const w of words) { if ((cur + " " + w).trim().length > n) { if (cur.trim()) out.push(cur.trim()); cur = w; } else cur += " " + w; } if (cur.trim()) out.push(cur.trim()); return out;
+  }
 
   // ---- lifecycle
   function start() {
@@ -1511,13 +1586,19 @@ const office = (() => {
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0, W, H);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
     for (const c of order) drawChar(c, t);
-    const present = order.filter(c => !c.hidden), workers = present.filter(c => c.mode === "work" && !c.moving && !c.steps.length);
-    night += ((present.length > 4 && workers.length <= 2 ? 1 : 0) - night) * Math.min(1, dt * 1.2);     // fade the lights over about a second
+    if (CAMS.length && Math.floor(t * 2) % 2) { ctx.fillStyle = "#ff3b3b"; for (const [x, y] of CAMS) ctx.fillRect(x + 6, y + 3, 2, 2); }   // the cameras' recording light
+    if (THEMES[THEME].wechat && !transition) {                                                            // the master's motivational line every minute, when the room is quiet
+      const m = order.find(c => c.role === "master" && !c.hidden && !c.setup), busy = order.some(c => c.talk || (c.say && Date.now() < c.sayUntil));
+      if (m && !busy && Date.now() > nextSloganAt) { m.say = CN_SLOGANS[Math.floor(Math.random() * CN_SLOGANS.length)]; m.sayStart = performance.now(); m.sayUntil = Date.now() + 10000; m.sayLoop = false; m.bang = Date.now() + 1500; nextSloganAt = Date.now() + 60000; }
+    }
+    const present = order.filter(c => !c.hidden), workers = present.filter(c => c.mode === "work" && !c.moving && !c.steps.length), sleepers = present.filter(c => c.wasAsleep);
+    night += ((workers.length <= 2 && sleepers.length >= 2 ? 1 : 0) - night) * Math.min(1, dt * 1.2);   // lights stay on unless it is a quiet night: at most two working, two or more asleep
     if (night > 0.02) drawNight(workers, night);
     for (const c of order) {
       const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
-      if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); continue; }                          // the chair back sits between the camera and the occupant
-      TX = d.desk[0] * T; TY = d.desk[1] * T; (d.dual ? TILES.deskLBack : TILES.deskLapBack)(); TX += T; (d.dual ? TILES.deskRBack : TILES.deskPlain)();
+      if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); continue; }
+      if (d.boss) { TX = d.chair[0] * T; TY = d.chair[1] * T; }                          // the chair back sits between the camera and the occupant
+      TX = d.desk[0] * T; TY = d.desk[1] * T; TILE_X = d.desk[0]; TILE_Y = d.desk[1]; if (d.boss) { TILES.bossDeskL(); TX += T; TILE_X++; TILES.bossDeskR(); } else { (d.dual ? TILES.deskLBack : TILES.deskLapBack)(); TX += T; TILE_X++; (d.dual ? TILES.deskRBack : TILES.deskPlain)(); }
       if (c.mode === "work" && !c.faceOverride && actKind(c) === "type") {
         const tick = Math.floor(t * 7 + c.idx) % 2, x = c.px, y = c.py - 20, dy = d.desk[1] * T;
         // arms from the shoulders down over the lap to the keyboard on the far edge of the desk; the hands alternate as they type
@@ -1529,6 +1610,7 @@ const office = (() => {
     }
     vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.imageSmoothingEnabled = false; vctx.fillStyle = "#0a0c14"; vctx.fillRect(0, 0, cw, chh);
     vctx.drawImage(off, 0, 0, W * P, H * P, ox, oy, Math.round(W * scale), Math.round(H * scale));
+    const dark = transitionTick(); if (dark > 0) { vctx.fillStyle = "rgba(0,0,0," + dark.toFixed(2) + ")"; vctx.fillRect(0, 0, cw, chh); }
     // text goes straight onto the visible canvas under the display transform, so it is rasterised at device resolution at a fixed on-screen size
     vctx.setTransform(scale, 0, 0, scale, ox, oy); ctx = vctx; const cssPx = (n) => n * dpr / scale;
     ctx.font = "600 " + cssPx(10.5) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(3); ctx.strokeStyle = "rgba(10,7,4,.9)";

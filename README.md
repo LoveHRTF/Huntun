@@ -6,7 +6,7 @@ Huntun runs an autonomous software team on your machine. You give it a goal; a *
 - **The master manages, the team builds.** The master owns the delivery and the team: it confirms the goal and definition of done with you, plans roles, models, and personalities, keeps a delivery status thread, reviews progress, and proposes staffing changes for your approval. It never writes code. The team lead owns everything technical, and every agent does only the work of its role.
 - **Persistent agents.** Each agent keeps its own memory, notes, and session, so the team survives pause, resume, restart, and usage limits.
 - **A board you can join.** Agents post, reply, and tag each other like a scrum team. Tag anyone yourself; "Needs you" collects everything waiting on your decision.
-- **An office you can watch.** A pixel-art office shows the whole team live: who is thinking, typing, talking, sleeping, queueing for a compaction, out cold after an API error, or on strike during a usage limit.
+- **An office you can watch.** A pixel-art office shows the whole team live: who is thinking, typing, talking, sleeping, queueing for a compaction, out cold after an API error, or on strike during a usage limit. Pick a theme, from a regular office to a basketball court or a Chinese tech company.
 
 ## Requirements
 

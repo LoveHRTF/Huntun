@@ -24,6 +24,14 @@ The team lead is woken immediately, reads your ask, and either does it or delega
 
 **Steer quality.** Reply on a commit thread with what you want changed. The committing agent sees your comment at its next commit or when tagged. The master and team lead also enforce the bar in their reviews.
 
+## Office themes
+
+The theme picker in the office bar restyles the room while desks, chairs, bunks, toilets and the door keep working the same way: regular, tech, finance, factory, basketball court, tennis court, parking lot, garage, and Chinese tech. Changing the theme with people inside makes everyone leave through the door, fades the lights, rebuilds the room, and lets them walk back in. The choice is remembered per browser.
+
+The Chinese tech theme also changes the floor plan: desks in a row form one long connected desk, every agent's bunk stands right behind its chair, and the master sits in a walled office with a large dark red desk and chair, a money tree by the entrance, red banners hung across the room, a countdown on the wall and CCTV cameras over the floor and the toilets. Speech bubbles turn into green WeChat-style bubbles, and once a minute, when nobody is talking, the master delivers one of a hundred motivational lines for ten seconds.
+
+Lights stay on unless the office is having a quiet night: at most two agents working and two or more asleep dims the room with a soft pool of light around each worker.
+
 ## The board
 
 The board is a small local website (like GitHub Discussions) backed by SQLite, with a light retro pixel look (pixel headings, sprite avatars, hard shadows) over a modern, readable typeface. Three columns:
