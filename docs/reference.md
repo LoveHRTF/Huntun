@@ -29,16 +29,16 @@ The team lead is woken immediately, reads your ask, and either does it or delega
 The theme picker in the office bar turns the room into a different working environment while desks, chairs, sleeping spots, toilets and the door keep working the same way:
 
 - **Regular office**: carpet, wooden desks, whiteboard, bookshelves, a bunk room.
-- **Tech**: a dark loft with glass walls and server racks; the team naps on bean bags in a lounge with a ping-pong table and an arcade cabinet.
-- **Finance**: a trading floor of connected mahogany desks with two monitors each, world clocks and tickers on the wall, a corner office for the master, and a nap room with sleep pods.
-- **Factory**: brick walls and concrete, steel workbenches with tools, a foreman's office, and a break room with a conveyor, forklift, barrels, crates and cots.
-- **Basketball court**: hardwood with court lines, hoops on the side walls, a scoreboard, a ball rack, and a locker room with lockers and benches.
-- **Tennis court**: a hard court with baselines, service boxes and a net, an umpire chair beside the master, ball baskets and a ball machine, and a clubhouse locker room.
-- **Parking lot**: asphalt with parking bays, an attendant's booth for the master, a barrier at the entrance, lamp posts and cones; everyone sleeps in a parked car.
+- **Microsoft campus (Redmond)**: light carpet, white desks, glass walls looking out on evergreens, the four-colour logo on the wall, whiteboards, tree planters; the team naps on couches in a lounge with an Xbox corner and a coffee bar.
+- **Goldman Sachs (200 West)**: a trading floor of connected mahogany desks with two monitors each, black leather chairs, dark wood panelling, world clocks and tickers, a GS plaque and a 200 West street sign, a bull statue, a glass corner office for the master, and a nap room with sleep pods.
+- **Factory**: an industrial hall with corrugated walls and high windows, a gantry crane, yellow lane markings, steel workbenches with tools, a conveyor running behind each row of benches, presses and lathes, pallets, a glass control room for the master, and a break room with lockers, cots, a forklift, barrels and crates.
+- **Basketball court**: a hardwood court with sidelines, centre circle, keys and free-throw arcs painted under the furniture, hoops on the side walls, a scoreboard, a ball rack, and a locker room where the team sleeps on benches under a wall of lockers.
+- **Tennis court**: a hard court with baselines, doubles alleys, service boxes and a net with posts, an umpire chair beside the master, ball baskets and a ball machine, and a clubhouse locker room with benches.
+- **Parking lot**: asphalt with painted bays and lane lines, cars parked in the empty bays, an attendant's kiosk and barrier at the entrance, lamp posts and cones; the team sleeps in ordinary beds out on the lot.
 - **Garage**: corrugated walls, oil-stained concrete, workbenches with toolboxes, a tool chest, a car on a lift, tyre stacks and oil drums; mattresses on the floor.
 - **Chinese tech**: see below. Changing the theme with people inside makes everyone leave through the door, fades the lights, rebuilds the room, and lets them walk back in. The choice is remembered per browser.
 
-The Chinese tech theme also changes the floor plan: desks in a row form one long connected desk, every agent's bunk stands right behind its chair, and the master sits in a walled office with a large dark red desk and chair, a money tree by the entrance, red banners hung across the room, a countdown on the wall and CCTV cameras over the floor and the toilets. Speech bubbles turn into green WeChat-style bubbles, and once a minute, when nobody is talking, the master delivers one of a hundred motivational lines for ten seconds.
+The Chinese tech theme also changes the floor plan: desks in a row form one long connected desk, every agent's bunk stands right behind its chair, and the master sits in a walled office with a large dark red desk and chair, a money tree by the entrance, red banners hung across the room, a countdown board on the left wall, street-style CCTV poles watching the floor and the toilets, and a stopwatch over each stall that runs while it is occupied. Speech bubbles turn into green WeChat-style bubbles, and once a minute, when nobody is talking, the master delivers one of a hundred motivational lines for ten seconds.
 
 Lights stay on unless exactly two agents are working while two or more are asleep; then the room dims with a soft pool of light around each of the two workers.
 

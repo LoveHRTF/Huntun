@@ -772,14 +772,14 @@ const office = (() => {
   const glowBoard = (bg, fg, digits) => { Q(2, 10, 60, 40, "#1b1d22"); Q(4, 12, 56, 36, bg); Q(4, 12, 56, 1, "#3a3d44"); digits.forEach(([x, y, w, col]) => Q(x, y, w, 2, col)); Q(6, 40, 52, 1, fg); };
   const THEMES = {
     regular: { label: "Regular office" },
-    tech: { label: "Tech", colors: { deskTop: "#e9ebf0", deskHi: "#f7f8fb", deskEdge: "#b3b8c4", leg: "#8a8f9c", wall: "#1c2130", wallTrim: "#2b3345", wallPanel: "#27304a", base: "#141826", baseLine: "#0e1118", wallTop: "#0d1020", wallTopHi: "#1d2338", door: "#2b3345", doorPanel: "#3a465f", knob: "#3fd2e6", bedFrame: "#3a3f4c", pot: "#3a3f4c", potRim: "#4a5062" },
+    tech: { label: "Microsoft campus (Redmond)", colors: { deskTop: "#e9ebf0", deskHi: "#f7f8fb", deskEdge: "#b3b8c4", leg: "#8a8f9c", wall: "#1c2130", wallTrim: "#2b3345", wallPanel: "#27304a", base: "#141826", baseLine: "#0e1118", wallTop: "#0d1020", wallTopHi: "#1d2338", door: "#2b3345", doorPanel: "#3a465f", knob: "#3fd2e6", bedFrame: "#3a3f4c", pot: "#3a3f4c", potRim: "#4a5062" },
       office: () => { Q(0, 0, 64, 64, "#232838"); Q(0, 0, 64, 1, "#2f3650"); Q(0, 0, 1, 64, "#2f3650"); Q(32, 0, 1, 64, "#2a3048"); Q(0, 32, 64, 1, "#2a3048"); for (const y of [0, 32]) for (const x of [0, 32]) Q(x, y, 1, 1, "#3fd2e6"); },
       floor2: () => { Q(0, 0, 64, 64, "#1c2030"); Q(0, 0, 64, 1, "#262b3e"); Q(0, 0, 1, 64, "#262b3e"); Q(31, 31, 2, 2, "#2c3348"); },
       wallTop: () => { Q(0, 0, 64, 64, "#0d1020"); Q(0, 0, 64, 4, "#1d2338"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#151a2c"); },
       wallFace: () => { wallBase(); Q(6, 12, 52, 40, "#27304a"); Q(8, 14, 48, 36, "#2f3b5c"); Q(8, 14, 48, 1, "#4a5a86"); Q(10, 16, 20, 1, "#3fd2e6"); Q(10, 20, 30, 1, "#3fd2e6"); Q(10, 24, 14, 1, "#3fd2e6"); },
       shelf: () => { Q(6, 0, 52, 60, "#2b3040"); Q(8, 2, 48, 56, "#1b1f2a"); for (let y = 6; y < 56; y += 8) { Q(10, y, 44, 6, "#2f3546"); Q(12, y + 2, 2, 2, (y / 8) % 3 ? "#3fd2e6" : "#5cff8a"); Q(16, y + 2, 2, 2, "#5cff8a"); Q(48, y + 1, 4, 4, "#0f1218"); } },
       board: () => { wallBase(); glowBoard("#0f1626", "#3fd2e6", [[8, 18, 20, "#3fd2e6"], [8, 24, 32, "#5cff8a"], [8, 30, 14, "#3fd2e6"], [30, 18, 24, "#ff5cab"]]); } },
-    finance: { label: "Finance", colors: { deskTop: "#6b3a2a", deskHi: "#83493a", deskEdge: "#4a251a", leg: "#3a1d14", wall: "#243a5e", wallTrim: "#c9a24a", wallPanel: "#2d4670", base: "#1a2a45", baseLine: "#c9a24a", wallTop: "#141f33", wallTopHi: "#243a5e", door: "#4a251a", doorPanel: "#6b3a2a", knob: "#e6c15a", pot: "#c9a24a", potRim: "#e6c15a", bedFrame: "#4a251a", blanket: "#2f4a8a", blanketHi: "#3f5fa8" },
+    finance: { label: "Goldman Sachs (200 West)", colors: { deskTop: "#6b3a2a", deskHi: "#83493a", deskEdge: "#4a251a", leg: "#3a1d14", wall: "#243a5e", wallTrim: "#c9a24a", wallPanel: "#2d4670", base: "#1a2a45", baseLine: "#c9a24a", wallTop: "#141f33", wallTopHi: "#243a5e", door: "#4a251a", doorPanel: "#6b3a2a", knob: "#e6c15a", pot: "#c9a24a", potRim: "#e6c15a", bedFrame: "#4a251a", blanket: "#2f4a8a", blanketHi: "#3f5fa8" },
       office: () => { Q(0, 0, 64, 64, "#e9e4d8"); Q(0, 0, 64, 1, "#c9c2b2"); Q(0, 0, 1, 64, "#c9c2b2"); Q(10, 4, 30, 1, "#d4cdbd"); Q(38, 6, 20, 1, "#d4cdbd"); Q(4, 40, 22, 1, "#d4cdbd"); Q(24, 42, 34, 1, "#d4cdbd"); Q(50, 20, 1, 16, "#d4cdbd"); },
       floor2: () => { Q(0, 0, 64, 64, "#6a2e3a"); for (let y = 4; y < 64; y += 16) for (let x = 4; x < 64; x += 16) { Q(x, y, 8, 8, "#5f2733"); Q(x + 3, y + 3, 2, 2, "#c9a24a"); } },
       wallTop: () => { Q(0, 0, 64, 64, "#141f33"); Q(0, 0, 64, 4, "#243a5e"); Q(0, 4, 64, 1, "#c9a24a"); },
@@ -794,21 +794,21 @@ const office = (() => {
       shelf: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); Q(8, 20, 20, 34, "#d9a22a"); Q(8, 20, 20, 3, "#f0c04a"); Q(8, 30, 20, 3, "#b8861e"); Q(8, 42, 20, 3, "#b8861e"); Q(34, 24, 22, 30, "#2f6fb8"); Q(34, 24, 22, 3, "#4a8fd8"); Q(34, 36, 22, 3, "#255a96"); },
       board: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); Q(6, 10, 52, 36, "#e0b73a"); Q(8, 12, 48, 32, "#f0c95a"); Q(12, 16, 40, 4, "#2b2b2b"); Q(12, 24, 28, 3, "#2b2b2b"); Q(12, 31, 34, 3, "#2b2b2b"); Q(12, 38, 20, 3, "#2b2b2b"); } },
     basketball: { label: "Basketball court", colors: { deskTop: "#e2c48f", deskHi: "#efd7a8", deskEdge: "#b3925e", leg: "#8a6d42", wall: "#a8332f", wallTrim: "#f2f2f2", wallPanel: "#8e2a27", base: "#7a2320", baseLine: "#5a1a18", wallTop: "#4a1a18", wallTopHi: "#6a2622", door: "#8a6d42", doorPanel: "#b3925e", knob: "#f2f2f2", pot: "#e8792b", potRim: "#f28c28" },
-      office: () => { wood("#d99a4a", "#c4863c", "#e8b060", "#cf9040"); lines("#f7f7f7"); if (TILE_X === Math.floor(MW / 2) && TILE_Y > 2 && TILE_Y < Y_MID - 1) Q(0, 0, 3, 64, "#f7f7f7"); },
+      office: () => { wood("#d99a4a", "#c4863c", "#e8b060", "#cf9040"); },
       floor2: () => { Q(0, 0, 64, 64, "#9fc3d8"); for (let i = 0; i < 64; i += 16) { Q(i, 0, 1, 64, "#8bb1c8"); Q(0, i, 64, 1, "#8bb1c8"); } },
       wallTop: () => { Q(0, 0, 64, 64, "#4a1a18"); Q(0, 0, 64, 4, "#6a2622"); },
       wallFace: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 30, 64, 4, "#f2f2f2"); for (let x = 0; x < 64; x += 16) Q(x, 14, 1, 40, "#8e2a27"); Q(0, 54, 64, 10, "#7a2320"); Q(0, 54, 64, 2, "#5a1a18"); },
       shelf: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 54, 64, 10, "#7a2320"); Q(14, 16, 36, 24, "#f7f7f7"); Q(16, 18, 32, 20, "#e8e8e8"); Q(24, 26, 16, 10, "#d84c4c"); Q(22, 36, 20, 3, "#f28c28"); Q(24, 39, 16, 10, "#f2f2f2"); for (let x = 26; x < 40; x += 4) Q(x, 39, 1, 10, "#c8c8c8"); },
       board: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 54, 64, 10, "#7a2320"); glowBoard("#111111", "#ff5c5c", [[10, 20, 6, "#ff5c5c"], [18, 20, 6, "#ff5c5c"], [30, 20, 3, "#f2f2f2"], [38, 20, 6, "#ff5c5c"], [46, 20, 6, "#ff5c5c"], [12, 30, 40, "#5cff8a"]]); } },
     tennis: { label: "Tennis court", colors: { deskTop: "#e6e0d0", deskHi: "#f4efe3", deskEdge: "#b8b09c", leg: "#8f8878", wall: "#2f5e3a", wallTrim: "#3f7a4a", wallPanel: "#27502f", base: "#1f4026", baseLine: "#163019", wallTop: "#163019", wallTopHi: "#27502f", door: "#8f8878", doorPanel: "#b8b09c", knob: "#e6e0d0", pot: "#c0603a", potRim: "#d9805a", blanket: "#3aa35b", blanketHi: "#4fbf6f" },
-      office: () => { Q(0, 0, 64, 64, "#3b6fb0"); Q(0, 0, 64, 1, "#3565a2"); Q(0, 0, 1, 64, "#3565a2"); lines("#f7f7f7"); if (TILE_Y === Math.floor((2 + Y_MID) / 2) && TILE_X > 1 && TILE_X < MW - 2) { Q(0, 30, 64, 4, "#f7f7f7"); for (let x = 0; x < 64; x += 4) Q(x, 26, 1, 8, "#e3e3e3"); } },
+      office: () => { Q(0, 0, 64, 64, "#3b6fb0"); Q(0, 0, 64, 1, "#3565a2"); Q(0, 0, 1, 64, "#3565a2"); },
       floor2: () => { Q(0, 0, 64, 64, "#4d9c56"); speckle("#438a4b", 16, 5); speckle("#5aac63", 10, 11); },
       wallTop: () => { Q(0, 0, 64, 64, "#163019"); Q(0, 0, 64, 4, "#27502f"); },
       wallFace: () => { Q(0, 0, 64, 64, "#2f5e3a"); for (let y = 8; y < 54; y += 6) for (let x = (y / 6) % 2 ? 3 : 0; x < 64; x += 6) Q(x, y, 1, 1, "#4a8a56"); Q(0, 54, 64, 10, "#1f4026"); Q(0, 54, 64, 2, "#163019"); },
       shelf: () => { Q(0, 0, 64, 64, "#2f5e3a"); Q(0, 54, 64, 10, "#1f4026"); Q(10, 10, 44, 36, "#1b1b1b"); Q(12, 12, 40, 32, "#f7f7f7"); Q(14, 14, 36, 28, "#d8ecff"); Q(18, 18, 28, 1, "#ff5c5c"); Q(18, 24, 28, 1, "#ff5c5c"); Q(18, 30, 12, 1, "#ff5c5c"); Q(46, 20, 12, 12, "#d5ff5c"); Q(48, 22, 8, 8, "#c4ee4b"); },
       board: () => { Q(0, 0, 64, 64, "#2f5e3a"); Q(0, 54, 64, 10, "#1f4026"); glowBoard("#111111", "#f2f2f2", [[10, 20, 6, "#e6c15a"], [18, 20, 6, "#e6c15a"], [30, 20, 3, "#f2f2f2"], [38, 20, 6, "#e6c15a"], [46, 20, 6, "#e6c15a"], [12, 30, 40, "#5cff8a"]]); } },
     parking: { label: "Parking lot", colors: { deskTop: "#7d838c", deskHi: "#959ba4", deskEdge: "#565b63", leg: "#3f434a", wall: "#8f9298", wallTrim: "#e0b73a", wallPanel: "#7f8288", base: "#e0b73a", baseLine: "#b8931e", wallTop: "#5a5d63", wallTopHi: "#6f7278", door: "#565b63", doorPanel: "#7d838c", knob: "#e0b73a", bedFrame: "#565b63", pot: "#f28c28", potRim: "#ff9f3f" },
-      office: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 7); if (TILE_Y >= 6 && TILE_Y < Y_MID - 2 && TILE_X % 2 === 0) Q(0, 0, 3, 64, "#f2f2f2"); if (TILE_Y === Y_MID - 2) Q(0, 60, 64, 4, "#e0b73a"); },
+      office: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 7); },
       floor2: () => { Q(0, 0, 64, 64, "#3f4247"); speckle("#484b51", 14, 13); for (let i = -64; i < 64; i += 16) { for (let k = 0; k < 64; k++) if (i + k >= 0 && i + k < 64) Q(i + k, k, 3, 1, "#e0b73a"); } },
       wallTop: () => { Q(0, 0, 64, 64, "#5a5d63"); Q(0, 0, 64, 4, "#6f7278"); },
       wallFace: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(0, 44, 64, 2, "#b8931e"); for (let x = 0; x < 64; x += 16) Q(x, 46, 8, 18, "#2b2b2b"); },
@@ -840,7 +840,6 @@ const office = (() => {
     floor2: () => { Q(0, 0, 64, 64, "#c8ccd2"); },
     wallFace: () => { wallBase(); Q(28, 12, 8, 40, "#e4e4e0"); },
     shelf: () => { wallBase(); Q(26, 10, 12, 42, "#c8161d"); Q(27, 11, 10, 40, "#d8262d"); Q(29, 14, 6, 34, "#ffe27a"); Q(30, 16, 4, 30, "#c8161d"); },
-    board: () => { wallBase(); Q(2, 8, 60, 40, "#1b1d22"); Q(4, 10, 56, 36, "#0b0c10"); },
     decorate: () => {
       const L = THEMES.chinese_tech.layout, rows = Math.max(1, Math.round((Y_MID - 10) / 10)), pad = 2;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -849,55 +848,90 @@ const office = (() => {
         ctx.fillStyle = "#8f0d12"; ctx.fillRect(x0 - 2, y - 2, x1 - x0 + 4, 24); ctx.fillStyle = "#c8161d"; ctx.fillRect(x0, y, x1 - x0, 20); ctx.fillStyle = "#e6c15a"; ctx.fillRect(x0, y, x1 - x0, 1); ctx.fillRect(x0, y + 19, x1 - x0, 1);
         ctx.fillStyle = "#ffe27a"; ctx.font = "bold 13px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"; ctx.fillText(CN_BANNERS[r % CN_BANNERS.length], (x0 + x1) / 2, y + 10);
       }
-      ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', monospace"; ctx.fillText("攻坚倒计时003天", (mxCol + 1) * T, T + 14);   // the countdown behind the master
-      CAMS.length = 0; CAMS.push([(MW - 3) * T + 10, T + 12, -1], [3 * T + 10, T + 12, 1]);                // CCTV over the toilets and over the floor
-      for (const [x, y, dir] of CAMS) { ctx.fillStyle = "#6f7480"; ctx.fillRect(x + 5, y - 6, 3, 6); ctx.fillStyle = "#9aa3b5"; ctx.fillRect(x, y, 13, 7); ctx.fillStyle = "#c8ccd6"; ctx.fillRect(x, y, 13, 1); ctx.fillStyle = "#1b1d22"; ctx.fillRect(dir < 0 ? x : x + 9, y + 1, 4, 5); ctx.fillStyle = "#3fd2e6"; ctx.fillRect(dir < 0 ? x + 1 : x + 10, y + 2, 2, 2); }
+      ctx.fillStyle = "#1b1d22"; ctx.fillRect(T + 4, T + 6, 3.8 * T, 20); ctx.fillStyle = "#0b0c10"; ctx.fillRect(T + 6, T + 8, 3.8 * T - 4, 16);      // the countdown board on the left wall
+      ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', monospace"; ctx.fillText("攻坚倒计时003天", T + 4 + 1.9 * T, T + 17);
       ctx.textBaseline = "alphabetic"; void L; void pad;
     } };
   // ---- environment props and furniture variants per theme (the office stays a working office: same desks, chairs, sleeping spots, toilets, door)
   const carBody = (col) => { Q(8, 4, 48, 56, tint(col, -0.35)); Q(10, 6, 44, 52, col); Q(12, 8, 40, 6, tint(col, 0.25)); Q(14, 14, 36, 16, "#9fd3ff"); Q(16, 16, 32, 12, "#c7e6ff"); Q(14, 34, 36, 20, tint(col, -0.1)); Q(6, 10, 4, 10, "#2b2b2b"); Q(54, 10, 4, 10, "#2b2b2b"); Q(6, 40, 4, 10, "#2b2b2b"); Q(54, 40, 4, 10, "#2b2b2b"); Q(14, 4, 8, 3, "#fff3b0"); Q(42, 4, 8, 3, "#fff3b0"); };
   const carTail = (col) => { Q(8, 0, 48, 44, tint(col, -0.35)); Q(10, 0, 44, 42, col); Q(14, 4, 36, 20, tint(col, -0.1)); Q(14, 26, 36, 10, "#9fd3ff"); Q(6, 6, 4, 10, "#2b2b2b"); Q(54, 6, 4, 10, "#2b2b2b"); Q(14, 38, 8, 3, "#ff5c5c"); Q(42, 38, 8, 3, "#ff5c5c"); Q(24, 39, 16, 2, "#e6e6e6"); Q(26, 38, 12, 4, "#f7f7f7"); Q(28, 39, 8, 2, "#2b2b2b"); };
-  const locker = () => { Q(4, 0, 56, 64, "#5a6a7a"); for (const x of [6, 34]) { Q(x, 2, 24, 60, "#7d8fa3"); Q(x, 2, 24, 2, "#9fb1c4"); Q(x + 8, 10, 8, 2, "#3f4a56"); Q(x + 8, 14, 8, 2, "#3f4a56"); Q(x + 18, 30, 3, 6, "#2b2b2b"); } };
+  const lockers = (bg) => { Q(0, 0, 64, 64, bg); Q(2, 0, 60, 60, "#5a6a7a"); for (const x of [4, 24, 44]) { Q(x, 2, 16, 56, "#7d8fa3"); Q(x, 2, 16, 2, "#9fb1c4"); Q(x + 4, 8, 8, 2, "#3f4a56"); Q(x + 4, 12, 8, 2, "#3f4a56"); Q(x + 12, 28, 2, 6, "#2b2b2b"); } };
+  const benchHead = (bg, wood, towel) => { Q(0, 0, 64, 64, bg); Q(8, 8, 48, 56, tint(wood, -0.3)); Q(10, 10, 44, 54, wood); Q(10, 10, 44, 2, tint(wood, 0.25)); Q(14, 14, 36, 14, towel); Q(16, 16, 32, 4, tint(towel, 0.3)); };
+  const benchFoot = (bg, wood) => { Q(0, 0, 64, 64, bg); Q(8, 0, 48, 40, tint(wood, -0.3)); Q(10, 0, 44, 36, wood); Q(10, 36, 44, 4, tint(wood, -0.15)); Q(12, 40, 6, 14, tint(wood, -0.4)); Q(46, 40, 6, 14, tint(wood, -0.4)); };
+  const glassStrip = (v, x, y, w, h) => { Q(x, y, w, h, "#8fb8d8"); Q(v ? x + 2 : x, v ? y : y + 2, v ? 4 : w, v ? h : 4, "#c7e6ff"); Q(x, y, v ? 1 : w, v ? h : 1, "#5f8aa8"); Q(v ? x + w - 1 : x, v ? y : y + h - 1, v ? 1 : w, v ? h : 1, "#5f8aa8"); };
+  Object.assign(TILES, {
+    glassV: () => glassStrip(true, 28, 0, 8, 64), glassH: () => glassStrip(false, 0, 28, 64, 8),
+    glassBL: () => { glassStrip(true, 28, 0, 8, 36); glassStrip(false, 28, 28, 36, 8); }, glassBR: () => { glassStrip(true, 28, 0, 8, 36); glassStrip(false, 0, 28, 36, 8); },
+    cctvPole: () => { CAMS.push([TX + 20, TY - 6], [TX + 6, TY + 2]); Q(30, 8, 4, 56, "#5f666f"); Q(28, 60, 8, 4, "#3f4348"); Q(12, 6, 40, 3, "#5f666f"); Q(12, -2, 22, 10, "#f7f7f7"); Q(10, 0, 4, 6, "#1b1d22"); Q(12, -2, 22, 2, "#d0d4da"); Q(34, 12, 22, 10, "#f7f7f7"); Q(56, 14, 4, 6, "#1b1d22"); Q(34, 12, 22, 2, "#d0d4da"); },
+  });
   const ENV = {
-    tech: { props: (put, o) => { put(o.MW - 5, o.yMid + 1, "pingpongL"); put(o.MW - 4, o.yMid + 1, "pingpongR"); put(o.MW - 5, o.yMid + 4, "arcade"); put(2, 2, "rack2"); },
-      bedHead: () => { Q(0, 0, 64, 64, "#1c2030"); Q(12, 20, 40, 44, "#7a3fd8"); Q(8, 28, 48, 36, "#7a3fd8"); Q(14, 22, 36, 8, "#9a6ae8"); Q(16, 40, 32, 16, "#6a33c4"); },
-      bedFoot: () => { Q(0, 0, 64, 64, "#1c2030"); Q(8, 0, 48, 30, "#7a3fd8"); Q(12, 0, 40, 40, "#7a3fd8"); Q(16, 28, 32, 8, "#6a33c4"); Q(10, 40, 44, 6, "#4a2390"); },
-      pingpongL: () => { Q(4, 12, 60, 36, "#1e6b3a"); Q(6, 14, 58, 32, "#2a8a4c"); Q(6, 29, 58, 2, "#f7f7f7"); Q(60, 14, 4, 32, "#f7f7f7"); Q(8, 48, 6, 12, "#2b2b2b"); Q(8, 14, 2, 32, "#f7f7f7"); Q(20, 20, 6, 6, "#ff9f3f"); },
-      pingpongR: () => { Q(0, 12, 60, 36, "#1e6b3a"); Q(0, 14, 58, 32, "#2a8a4c"); Q(0, 29, 58, 2, "#f7f7f7"); Q(0, 14, 4, 32, "#f7f7f7"); Q(50, 48, 6, 12, "#2b2b2b"); Q(56, 14, 2, 32, "#f7f7f7"); Q(36, 32, 8, 3, "#d84c4c"); Q(43, 30, 3, 8, "#8a5a2b"); },
-      arcade: () => { Q(10, 4, 44, 58, "#2b2f3a"); Q(12, 6, 40, 20, "#101a2e"); Q(14, 8, 36, 16, "#1c3358"); Q(18, 12, 6, 6, "#ffd23f"); Q(30, 14, 4, 4, "#ff5cab"); Q(40, 10, 4, 4, "#5cff8a"); Q(12, 30, 40, 10, "#3a3f4c"); Q(20, 33, 6, 4, "#d84c4c"); Q(30, 33, 6, 4, "#3a6fd8"); Q(40, 32, 3, 8, "#2b2b2b"); Q(12, 44, 40, 16, "#23262e"); },
-      rack2: () => { Q(6, 0, 52, 60, "#2b3040"); Q(8, 2, 48, 56, "#1b1f2a"); for (let y = 6; y < 56; y += 8) { Q(10, y, 44, 6, "#2f3546"); Q(12, y + 2, 2, 2, "#5cff8a"); Q(16, y + 2, 2, 2, (y / 8) % 2 ? "#3fd2e6" : "#ff5c5c"); } } },
-    finance: { layout: { connected: true, bossOffice: true }, allDual: true,
-      props: (put, o) => { put(2, 2, "clockwall"); put(o.MW - 5, o.yMid + 1, "coffee"); },
+    tech: { label: "Microsoft campus (Redmond)", colors: { deskTop: "#f2f3f5", deskHi: "#ffffff", deskEdge: "#c3c8d0", leg: "#9aa0aa", wall: "#eef1f4", wallTrim: "#d3d8de", wallPanel: "#e4e8ec", base: "#c3c8d0", baseLine: "#9aa0aa", wallTop: "#6b7280", wallTopHi: "#8b929c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", chair: "#2b2f3a", chairDark: "#1c1f27", bedFrame: "#4a5568", pot: "#8a5a2b", potRim: "#a97a4e" },
+      office: () => { Q(0, 0, 64, 64, "#cfd6dd"); Q(0, 0, 64, 1, "#bcc4cc"); Q(0, 0, 1, 64, "#bcc4cc"); for (let y = 4; y < 64; y += 8) for (let x = (y / 8) % 2 ? 4 : 0; x < 64; x += 8) Q(x, y, 2, 2, "#c2cad2"); },
+      floor2: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(0, 0, 64, 1, "#a8b3be"); Q(0, 0, 1, 64, "#a8b3be"); },
+      wallTop: () => { Q(0, 0, 64, 64, "#6b7280"); Q(0, 0, 64, 4, "#8b929c"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#9fd3ff"); Q(0, 0, 64, 20, "#b7e0ff"); for (const x of [6, 36]) { Q(x + 8, 14, 6, 30, "#5a3a1f"); Q(x, 20, 22, 10, "#2f7a3f"); Q(x + 3, 12, 16, 10, "#2f7a3f"); Q(x + 6, 6, 10, 8, "#3f9a4f"); } Q(0, 44, 64, 10, "#3fa34d"); Q(0, 0, 64, 2, "#d3d8de"); Q(0, 52, 64, 2, "#d3d8de"); Q(31, 0, 2, 54, "#d3d8de"); Q(0, 54, 64, 10, "#c3c8d0"); Q(0, 54, 64, 2, "#9aa0aa"); },
+      board: () => { wallBase(); Q(16, 14, 32, 32, "#f7f7f7"); Q(18, 16, 13, 13, "#f25022"); Q(33, 16, 13, 13, "#7fba00"); Q(18, 31, 13, 13, "#00a4ef"); Q(33, 31, 13, 13, "#ffb900"); },
+      shelf: () => { wallBase(); Q(6, 10, 52, 40, "#f7f7f7"); Q(8, 12, 48, 36, "#ffffff"); Q(12, 16, 20, 2, "#3a6fd8"); Q(12, 22, 30, 2, "#d84c4c"); Q(12, 28, 16, 2, "#3aa35b"); Q(36, 16, 10, 10, "#ffe27a"); Q(40, 30, 10, 10, "#9fd3ff"); Q(12, 36, 24, 2, "#2b2b2b"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(6, 6, 52, 58, "#3a5fa8"); Q(10, 10, 44, 54, "#4f78c8"); Q(12, 12, 40, 12, "#6b93de"); Q(6, 6, 6, 58, "#2f4f8a"); Q(52, 6, 6, 58, "#2f4f8a"); Q(16, 26, 32, 10, "#e6e6e6"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(6, 0, 52, 44, "#3a5fa8"); Q(10, 0, 44, 40, "#4f78c8"); Q(6, 0, 6, 44, "#2f4f8a"); Q(52, 0, 6, 44, "#2f4f8a"); Q(10, 40, 44, 4, "#2f4f8a"); Q(12, 44, 6, 6, "#1c1f27"); Q(46, 44, 6, 6, "#1c1f27"); },
+      props: (put, o) => { put(o.MW - 5, o.yMid + 1, "xbox"); put(o.MW - 4, o.yMid + 1, "coffee"); put(2, o.yMid + 1, "evergreen"); put(o.MW - 5, o.yMid + 4, "evergreen"); put(2, 2, "evergreen"); put(o.MW - 5, 3, "evergreen"); },
+      xbox: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(8, 6, 48, 30, "#1b1d22"); Q(10, 8, 44, 26, "#107c10"); Q(14, 12, 36, 18, "#3aa35b"); Q(26, 16, 12, 10, "#f7f7f7"); Q(20, 40, 24, 8, "#2b2f3a"); Q(22, 42, 20, 4, "#107c10"); Q(12, 50, 16, 8, "#2b2f3a"); Q(36, 50, 16, 8, "#2b2f3a"); },
+      coffee: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(8, 8, 48, 52, "#3a3d44"); Q(10, 10, 44, 20, "#23262e"); Q(14, 14, 36, 12, "#101a2e"); Q(18, 18, 10, 4, "#ffd23f"); Q(12, 34, 40, 22, "#2b2f3a"); Q(22, 40, 20, 12, "#8a5a2b"); Q(26, 36, 12, 4, "#f7f7f7"); Q(28, 30, 8, 6, "#6b3a2a"); },
+      evergreen: () => { Q(22, 46, 20, 14, "#8a5a2b"); Q(20, 44, 24, 4, "#a97a4e"); Q(30, 30, 4, 16, "#5a3a1f"); Q(14, 26, 36, 12, "#2f7a3f"); Q(18, 16, 28, 12, "#2f7a3f"); Q(22, 8, 20, 10, "#3f9a4f"); Q(28, 2, 8, 8, "#3f9a4f"); Q(24, 12, 4, 2, "#5cbf6c"); Q(20, 22, 4, 2, "#5cbf6c"); } },
+    finance: { label: "Goldman Sachs (200 West)", layout: { connected: true, bossOffice: true }, allDual: true, colors: { chair: "#1f1f1f", chairDark: "#111111", wall: "#3a2a1e", wallTrim: "#c9a24a", wallPanel: "#4a3626", base: "#2a1e14", baseLine: "#c9a24a", wallTop: "#1a1410", wallTopHi: "#3a2a1e", deskTop: "#5a3020", deskHi: "#6f3d2a", deskEdge: "#3a1d12", leg: "#2a140c" },
+      wallFace: () => { Q(0, 0, 64, 64, "#3a2a1e"); for (let x = 0; x < 64; x += 16) { Q(x + 2, 6, 12, 46, "#4a3626"); Q(x + 2, 6, 12, 1, "#6a4a36"); } Q(0, 54, 64, 10, "#2a1e14"); Q(0, 54, 64, 2, "#c9a24a"); },
+      board: () => { Q(0, 0, 64, 64, "#3a2a1e"); Q(0, 54, 64, 10, "#2a1e14"); Q(0, 54, 64, 2, "#c9a24a"); Q(10, 10, 44, 40, "#7f9ec9"); Q(12, 12, 40, 36, "#1f3a66"); Q(20, 22, 6, 14, "#f7f7f7"); Q(22, 22, 8, 3, "#f7f7f7"); Q(22, 33, 8, 3, "#f7f7f7"); Q(24, 28, 6, 3, "#f7f7f7"); Q(34, 22, 10, 3, "#f7f7f7"); Q(34, 22, 3, 8, "#f7f7f7"); Q(34, 28, 10, 3, "#f7f7f7"); Q(41, 28, 3, 8, "#f7f7f7"); Q(34, 33, 10, 3, "#f7f7f7"); },
       bedHead: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 12, 44, 52, "#e8e8ec"); Q(14, 16, 36, 44, "#f7f7fa"); Q(18, 20, 28, 14, "#c9d6e6"); Q(12, 12, 40, 4, "#c8c8cc"); },
       bedFoot: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 0, 44, 40, "#e8e8ec"); Q(14, 0, 36, 32, "#f7f7fa"); Q(18, 4, 28, 20, "#dde6f0"); Q(10, 40, 44, 6, "#c8c8cc"); Q(20, 46, 24, 8, "#9a9aa0"); },
-      clockwall: () => { Q(0, 0, 64, 64, "#243a5e"); [[6, "#f7f7f7"], [24, "#f7f7f7"], [42, "#f7f7f7"]].forEach(([x, c], i) => { Q(x, 14, 16, 16, "#1b1d22"); Q(x + 1, 15, 14, 14, c); Q(x + 7, 17, 2, 6, "#1b1d22"); Q(x + 8, 22, 4 + i * 2, 2, "#1b1d22"); Q(x + 2, 34, 12, 3, "#c9a24a"); }); Q(0, 54, 64, 10, "#1a2a45"); },
-      coffee: () => { Q(8, 8, 48, 52, "#3a3d44"); Q(10, 10, 44, 20, "#23262e"); Q(14, 14, 36, 12, "#101a2e"); Q(18, 18, 10, 4, "#ffd23f"); Q(12, 34, 40, 22, "#2b2f3a"); Q(22, 40, 20, 12, "#8a5a2b"); Q(26, 36, 12, 4, "#f7f7f7"); Q(28, 30, 8, 6, "#6b3a2a"); } },
-    factory: { layout: { connected: true, bossOffice: true }, deskPlain: () => { deskBase(false); Q(6, 18, 18, 6, "#8a8f9c"); Q(8, 20, 14, 2, "#5f666f"); Q(24, 16, 3, 10, "#5f666f"); Q(34, 20, 10, 10, "#c9a24a"); Q(36, 22, 6, 6, "#8f96a0"); Q(46, 14, 8, 14, "#d84c4c"); Q(47, 12, 6, 3, "#2b2b2b"); Q(30, 32, 20, 3, "#2b2b2b"); },
-      props: (put, o) => { for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "conveyor"); put(o.MW - 5, o.yMid + 1, "forklift"); put(o.MW - 5, o.yMid + 4, "barrels"); put(2, o.yMid + 4, "crates"); },
+      props: (put, o) => { put(2, 2, "clockwall"); put(o.MW - 5, o.yMid + 1, "bull"); put(2, o.yMid + 1, "coffee"); put(o.MW - 5, 3, "streetsign"); },
+      clockwall: () => { Q(0, 0, 64, 64, "#3a2a1e"); [[6, "#f7f7f7"], [24, "#f7f7f7"], [42, "#f7f7f7"]].forEach(([x, c], i) => { Q(x, 14, 16, 16, "#1b1d22"); Q(x + 1, 15, 14, 14, c); Q(x + 7, 17, 2, 6, "#1b1d22"); Q(x + 8, 22, 4 + i * 2, 2, "#1b1d22"); Q(x + 2, 34, 12, 3, "#c9a24a"); }); Q(0, 54, 64, 10, "#2a1e14"); },
+      bull: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 50, 44, 8, "#4a3626"); Q(14, 30, 36, 20, "#b8861e"); Q(10, 26, 16, 16, "#b8861e"); Q(6, 22, 6, 6, "#d9a22a"); Q(24, 22, 6, 6, "#d9a22a"); Q(12, 30, 3, 3, "#2b2b2b"); Q(16, 44, 6, 8, "#8a6416"); Q(40, 44, 6, 8, "#8a6416"); Q(48, 28, 6, 12, "#b8861e"); },
+      streetsign: () => { Q(0, 0, 64, 64, "#3a2a1e"); Q(30, 10, 4, 50, "#5f666f"); Q(8, 12, 48, 14, "#2f5e3a"); Q(10, 14, 44, 10, "#3f7a4a"); Q(14, 17, 36, 4, "#f7f7f7"); Q(0, 54, 64, 10, "#2a1e14"); } },
+    factory: { label: "Factory", layout: { connected: true, bossOffice: true }, colors: { deskTop: "#8f96a0", deskHi: "#a9b0ba", deskEdge: "#5f666f", leg: "#4a4f57", wall: "#8e939a", wallTrim: "#e0b73a", wallPanel: "#7a7f86", base: "#5f666f", baseLine: "#3f4348", wallTop: "#3f4348", wallTopHi: "#5f666f", door: "#5f666f", doorPanel: "#8f96a0", knob: "#e0b73a", bedFrame: "#5f666f", pot: "#5f666f", potRim: "#8f96a0", chair: "#e0b73a", chairDark: "#b8931e" },
+      office: () => { Q(0, 0, 64, 64, "#9a9b9a"); Q(0, 0, 64, 1, "#8a8b8a"); Q(0, 0, 1, 64, "#8a8b8a"); speckle("#8c8d8c", 14, 3); },
+      floor2: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(0, 0, 64, 1, "#6f706f"); Q(0, 0, 1, 64, "#6f706f"); speckle("#717271", 12, 9); },
+      wallFace: () => { Q(0, 0, 64, 64, "#8e939a"); for (let x = 0; x < 64; x += 8) { Q(x, 0, 2, 54, "#7a7f86"); Q(x + 5, 0, 1, 54, "#a3a8af"); } Q(8, 8, 20, 14, "#9fd3ff"); Q(36, 8, 20, 14, "#9fd3ff"); Q(8, 8, 20, 1, "#5f666f"); Q(36, 8, 20, 1, "#5f666f"); Q(0, 54, 64, 10, "#5f666f"); Q(0, 54, 64, 2, "#3f4348"); for (let x = 0; x < 64; x += 16) { Q(x, 56, 8, 8, "#e0b73a"); Q(x + 8, 56, 8, 8, "#2b2b2b"); } },
+      shelf: () => { THEMES.factory.wallFace(); Q(10, 24, 44, 24, "#2b2b2b"); Q(12, 26, 40, 20, "#f0f0f0"); Q(16, 30, 32, 3, "#d84c4c"); Q(16, 36, 24, 3, "#2b2b2b"); Q(16, 41, 18, 2, "#2b2b2b"); },
+      board: () => { THEMES.factory.wallFace(); Q(6, 22, 52, 28, "#1b1d22"); Q(8, 24, 48, 24, "#0b0c10"); Q(12, 28, 40, 4, "#5cff8a"); Q(12, 36, 20, 4, "#ff5c5c"); Q(36, 36, 16, 4, "#ffd23f"); },
+      deskPlain: () => { deskBase(false); Q(6, 18, 18, 6, "#8a8f9c"); Q(8, 20, 14, 2, "#5f666f"); Q(24, 16, 3, 10, "#5f666f"); Q(34, 20, 10, 10, "#c9a24a"); Q(36, 22, 6, 6, "#8f96a0"); Q(46, 14, 8, 14, "#d84c4c"); Q(47, 12, 6, 3, "#2b2b2b"); Q(30, 32, 20, 3, "#2b2b2b"); },
       bedHead: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(6, 4, 52, 60, "#4f5359"); Q(10, 8, 44, 56, "#8a8f9c"); Q(14, 12, 36, 12, "#f0f0f0"); Q(10, 30, 44, 34, "#3f7a4a"); Q(10, 30, 44, 2, "#4f9a5e"); },
       bedFoot: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(6, 0, 52, 52, "#4f5359"); Q(10, 0, 44, 44, "#3f7a4a"); Q(10, 44, 44, 4, "#8a8f9c"); Q(6, 52, 52, 4, "#3a3d42"); },
+      props: (put, o) => { for (const iy of o.rowsDeskBack) for (let x = o.islandX0; x < o.MW - 4; x++) put(x, iy + 2, "conveyor"); put(o.MW - 5, o.yMid - 3, "press"); put(o.MW - 4, o.yMid - 3, "lathe"); put(1, o.yMid - 3, "press"); put(2, o.yMid - 3, "pallet"); for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "lockerrow"); put(o.MW - 5, o.yMid + 1, "forklift"); put(o.MW - 5, o.yMid + 4, "barrels"); put(2, o.yMid + 4, "crates"); },
       conveyor: () => { Q(0, 20, 64, 26, "#3f4348"); Q(0, 22, 64, 22, "#5a5f66"); for (let x = 0; x < 64; x += 8) Q(x + 2, 24, 4, 18, "#4a4f56"); Q(0, 20, 64, 2, "#7a7f86"); Q(0, 44, 64, 2, "#2b2f34"); Q(10, 48, 6, 10, "#4f5359"); Q(48, 48, 6, 10, "#4f5359"); if ((TILE_X * 5) % 3 === 0) { Q(24, 26, 16, 14, "#c9a24a"); Q(26, 28, 12, 10, "#b8861e"); } },
+      press: () => { Q(6, 4, 52, 56, "#3f4348"); Q(8, 6, 48, 52, "#5f666f"); Q(12, 10, 40, 14, "#e0b73a"); Q(14, 12, 36, 10, "#b8931e"); Q(24, 24, 16, 20, "#2b2f34"); Q(26, 26, 12, 16, "#8f96a0"); Q(12, 46, 40, 8, "#2b2f34"); Q(16, 48, 6, 4, "#ff5c5c"); Q(26, 48, 6, 4, "#5cff8a"); Q(36, 48, 12, 4, "#3fd2e6"); },
+      lathe: () => { Q(4, 24, 56, 30, "#3f4348"); Q(6, 26, 52, 26, "#5f666f"); Q(10, 30, 44, 8, "#8f96a0"); Q(14, 32, 36, 4, "#c8ccd6"); Q(8, 40, 14, 10, "#2b2f34"); Q(40, 40, 14, 10, "#2b2f34"); Q(26, 42, 12, 6, "#e0b73a"); Q(8, 54, 8, 8, "#2b2b2b"); Q(48, 54, 8, 8, "#2b2b2b"); },
+      pallet: () => { Q(6, 30, 52, 26, "#8a5a2b"); for (let y = 32; y < 54; y += 6) Q(8, y, 48, 3, "#c9a26a"); Q(10, 10, 20, 20, "#c9a24a"); Q(32, 10, 20, 20, "#c9a24a"); Q(12, 12, 16, 16, "#b8861e"); Q(34, 12, 16, 16, "#b8861e"); },
+      lockerrow: () => lockers("#7d7e7d"),
       forklift: () => { Q(10, 30, 36, 26, "#e0b73a"); Q(12, 32, 32, 22, "#f0c95a"); Q(16, 20, 22, 12, "#2b2b2b"); Q(18, 22, 18, 8, "#9fd3ff"); Q(46, 10, 4, 46, "#3f4348"); Q(50, 40, 12, 4, "#3f4348"); Q(50, 46, 12, 4, "#3f4348"); Q(8, 54, 10, 8, "#2b2b2b"); Q(36, 54, 10, 8, "#2b2b2b"); },
       barrels: () => { [[6, 10], [34, 10], [20, 34]].forEach(([x, y]) => { Q(x, y, 24, 28, "#2f6fb8"); Q(x + 2, y + 2, 20, 24, "#3a80cc"); Q(x, y + 8, 24, 2, "#255a96"); Q(x, y + 18, 24, 2, "#255a96"); Q(x + 4, y + 2, 4, 24, "#5a9ee0"); }); },
-      crates: () => { [[4, 6], [34, 6], [20, 34]].forEach(([x, y]) => { Q(x, y, 26, 26, "#8a5a2b"); Q(x + 2, y + 2, 22, 22, "#c9a26a"); Q(x + 2, y + 12, 22, 2, "#8a5a2b"); Q(x + 12, y + 2, 2, 22, "#8a5a2b"); }); } },
-    basketball: { props: (put, o) => { put(1, o.yMid - 3, "hoopL"); put(o.MW - 2, o.yMid - 3, "hoopR"); put(o.MW - 5, o.yMid + 1, "ballrack"); },
-      bedHead: () => { Q(0, 0, 64, 64, "#9fc3d8"); locker(); }, bedFoot: () => { Q(0, 0, 64, 64, "#9fc3d8"); Q(4, 4, 56, 22, "#8a6d42"); Q(6, 6, 52, 18, "#b3925e"); Q(6, 6, 52, 2, "#d0b080"); Q(8, 26, 6, 12, "#5a4a2f"); Q(50, 26, 6, 12, "#5a4a2f"); Q(18, 10, 28, 10, "#f2f2f2"); Q(20, 12, 24, 6, "#a8332f"); },
+      crates: () => { [[4, 6], [34, 6], [20, 34]].forEach(([x, y]) => { Q(x, y, 26, 26, "#8a5a2b"); Q(x + 2, y + 2, 22, 22, "#c9a26a"); Q(x + 2, y + 12, 22, 2, "#8a5a2b"); Q(x + 12, y + 2, 2, 22, "#8a5a2b"); }); },
+      floorMarks: () => { ctx.fillStyle = "#e0b73a"; for (const y of [2 * T + 2, (Y_MID - 1) * T + T - 6]) for (let x = T; x < (MW - 1) * T; x += 16) ctx.fillRect(x, y, 8, 3); },
+      decorate: () => { ctx.fillStyle = "#e0b73a"; ctx.fillRect(T, 2 * T - 10, (MW - 2) * T, 6); ctx.fillStyle = "#b8931e"; ctx.fillRect(T, 2 * T - 4, (MW - 2) * T, 2); const hx = Math.floor(MW * 0.7) * T; ctx.fillStyle = "#3f4348"; ctx.fillRect(hx, 2 * T - 12, 14, 10); ctx.fillRect(hx + 6, 2 * T - 2, 2, 14); ctx.fillStyle = "#e0b73a"; ctx.fillRect(hx + 3, 2 * T + 12, 8, 4); } },
+    basketball: { props: (put, o) => { put(1, o.yMid - 3, "hoopL"); put(o.MW - 2, o.yMid - 3, "hoopR"); for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "lockerrowB"); put(o.MW - 5, o.yMid + 1, "ballrack"); },
+      bedHead: () => benchHead("#9fc3d8", "#b3925e", "#a8332f"), bedFoot: () => benchFoot("#9fc3d8", "#b3925e"), lockerrowB: () => lockers("#9fc3d8"),
       hoopL: () => { Q(0, 0, 64, 64, "#d99a4a"); Q(0, 8, 10, 48, "#f7f7f7"); Q(2, 10, 6, 44, "#e8e8e8"); Q(3, 24, 4, 12, "#d84c4c"); Q(10, 30, 14, 3, "#f28c28"); Q(12, 33, 10, 10, "#f2f2f2"); for (let y = 33; y < 43; y += 3) Q(12, y, 10, 1, "#c8c8c8"); },
       hoopR: () => { Q(0, 0, 64, 64, "#d99a4a"); Q(54, 8, 10, 48, "#f7f7f7"); Q(56, 10, 6, 44, "#e8e8e8"); Q(57, 24, 4, 12, "#d84c4c"); Q(40, 30, 14, 3, "#f28c28"); Q(42, 33, 10, 10, "#f2f2f2"); for (let y = 33; y < 43; y += 3) Q(42, y, 10, 1, "#c8c8c8"); },
       ballrack: () => { Q(0, 0, 64, 64, "#9fc3d8"); Q(8, 10, 48, 50, "#5a5d63"); Q(10, 12, 44, 46, "#7a7d83"); [[14, 16], [30, 16], [14, 34], [30, 34], [22, 25]].forEach(([x, y]) => { Q(x, y, 14, 14, "#e8792b"); Q(x + 2, y + 2, 10, 10, "#f28c28"); Q(x + 6, y + 2, 2, 10, "#2b2b2b"); Q(x + 2, y + 6, 10, 2, "#2b2b2b"); }); },
-      decorate: () => { const cx = (MW / 2) * T, cy = ((2 + Y_MID) / 2) * T; ctx.strokeStyle = "#f7f7f7"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, T * 2, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(1.5 * T, cy, T * 3, -Math.PI / 2, Math.PI / 2); ctx.stroke(); ctx.beginPath(); ctx.arc((MW - 1.5) * T, cy, T * 3, Math.PI / 2, Math.PI * 1.5); ctx.stroke(); } },
-    tennis: { props: (put, o) => { put(o.mx + 2, 3, "umpire"); put(o.MW - 5, o.yMid + 1, "ballbasket"); put(2, o.yMid + 1, "ballmachine"); },
-      bedHead: () => { Q(0, 0, 64, 64, "#4d9c56"); locker(); }, bedFoot: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(4, 4, 56, 22, "#8f8878"); Q(6, 6, 52, 18, "#e6e0d0"); Q(8, 26, 6, 12, "#6f6a5c"); Q(50, 26, 6, 12, "#6f6a5c"); Q(18, 10, 28, 10, "#3aa35b"); Q(20, 12, 24, 6, "#2f8a4a"); },
+      floorMarks: () => { const x0 = T + 8, x1 = (MW - 1) * T - 8, y0 = 2 * T + 8, y1 = Y_MID * T - 8, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; ctx.fillStyle = "#f7f7f7"; ctx.fillRect(x0, y0, x1 - x0, 3); ctx.fillRect(x0, y1 - 3, x1 - x0, 3); ctx.fillRect(x0, y0, 3, y1 - y0); ctx.fillRect(x1 - 3, y0, 3, y1 - y0); ctx.fillRect(cx - 1, y0, 3, y1 - y0);
+        for (const [kx, dir] of [[x0, 1], [x1, -1]]) { const kw = 4 * T, kh = 5 * T; ctx.fillRect(dir > 0 ? kx : kx - kw, cy - kh / 2, kw, 3); ctx.fillRect(dir > 0 ? kx : kx - kw, cy + kh / 2 - 3, kw, 3); ctx.fillRect(dir > 0 ? kx + kw - 3 : kx - kw, cy - kh / 2, 3, kh); }
+        ctx.strokeStyle = "#f7f7f7"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, T * 2, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(x0 + 4 * T, cy, T * 2, -Math.PI / 2, Math.PI / 2); ctx.stroke(); ctx.beginPath(); ctx.arc(x1 - 4 * T, cy, T * 2, Math.PI / 2, Math.PI * 1.5); ctx.stroke(); } },
+    tennis: { props: (put, o) => { put(o.mx + 2, 3, "umpire"); for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "lockerrowT"); put(o.MW - 5, o.yMid + 1, "ballbasket"); put(o.MW - 5, o.yMid + 4, "ballmachine"); },
+      bedHead: () => benchHead("#4d9c56", "#e6e0d0", "#3aa35b"), bedFoot: () => benchFoot("#4d9c56", "#e6e0d0"), lockerrowT: () => lockers("#4d9c56"),
       umpire: () => { Q(28, 4, 8, 56, "#8f8878"); Q(14, 4, 36, 10, "#e6e0d0"); Q(16, 6, 32, 6, "#f4efe3"); Q(18, 14, 28, 8, "#3aa35b"); Q(20, 24, 6, 36, "#8f8878"); Q(38, 24, 6, 36, "#8f8878"); for (let y = 30; y < 58; y += 8) Q(24, y, 16, 3, "#b8b09c"); },
       ballbasket: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(12, 14, 40, 44, "#5a5d63"); Q(14, 16, 36, 40, "#7a7d83"); for (let y = 20; y < 52; y += 10) for (let x = 16; x < 46; x += 10) { Q(x, y, 8, 8, "#d5ff5c"); Q(x + 2, y + 2, 4, 4, "#c4ee4b"); } Q(10, 58, 8, 4, "#2b2b2b"); Q(46, 58, 8, 4, "#2b2b2b"); },
       ballmachine: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(14, 20, 36, 34, "#3f4348"); Q(16, 22, 32, 30, "#5a5f66"); Q(20, 10, 24, 14, "#2b2f34"); Q(26, 12, 12, 8, "#1b1d22"); Q(28, 14, 8, 4, "#d5ff5c"); Q(12, 54, 10, 8, "#2b2b2b"); Q(42, 54, 10, 8, "#2b2b2b"); },
-      decorate: () => { const y0 = 2 * T, y1 = Y_MID * T, x0 = T, x1 = (MW - 1) * T, sy = Math.floor((2 + Y_MID) / 2) * T; ctx.fillStyle = "#f7f7f7"; ctx.fillRect(x0 + T * 2, y0 + 3, 3, y1 - y0 - 6); ctx.fillRect(x1 - T * 2 - 3, y0 + 3, 3, y1 - y0 - 6); ctx.fillRect(x0 + T * 2, sy - T * 3, x1 - x0 - T * 4, 3); ctx.fillRect(x0 + T * 2, sy + T * 3 + T, x1 - x0 - T * 4, 3); ctx.fillRect((MW / 2) * T - 1, sy - T * 3, 3, T * 7); } },
-    parking: { layout: { bossOffice: true }, props: (put, o) => { put(o.DOORX - 1, 2, "barrier"); put(2, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid + 1, "cones"); },
-      bedHead: () => { Q(0, 0, 64, 64, "#3f4247"); carBody(["#d84c4c", "#3a6fd8", "#e6c15a", "#f7f7f7", "#3aa35b"][(TILE_X * 3 + TILE_Y) % 5]); },
-      bedFoot: () => { Q(0, 0, 64, 64, "#3f4247"); carTail(["#d84c4c", "#3a6fd8", "#e6c15a", "#f7f7f7", "#3aa35b"][(TILE_X * 3 + TILE_Y - 1) % 5]); },
-      barrier: () => { Q(0, 0, 64, 64, "#4c4f55"); Q(4, 36, 12, 24, "#e0b73a"); Q(6, 38, 8, 20, "#f0c95a"); Q(12, 42, 50, 6, "#f7f7f7"); for (let x = 16; x < 62; x += 12) Q(x, 42, 6, 6, "#d84c4c"); Q(6, 30, 8, 6, "#2b2b2b"); },
-      lamp: () => { Q(0, 0, 64, 64, "#4c4f55"); Q(28, 8, 8, 52, "#6f7278"); Q(24, 56, 16, 6, "#5a5d63"); Q(16, 2, 32, 10, "#3f4348"); Q(20, 6, 24, 6, "#fff3b0"); Q(22, 12, 20, 3, "#ffe27a"); },
-      cones: () => { Q(0, 0, 64, 64, "#4c4f55"); [[8, 20], [30, 12], [40, 36]].forEach(([x, y]) => { Q(x + 6, y, 8, 22, "#f28c28"); Q(x + 4, y + 8, 12, 4, "#f7f7f7"); Q(x, y + 22, 20, 5, "#f28c28"); Q(x + 2, y + 24, 16, 2, "#c96e1e"); }); } },
+      floorMarks: () => { const x0 = T + 8, x1 = (MW - 1) * T - 8, y0 = 2 * T + 8, y1 = Y_MID * T - 8, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, ally = T; ctx.fillStyle = "#f7f7f7";
+        ctx.fillRect(x0, y0, x1 - x0, 3); ctx.fillRect(x0, y1 - 3, x1 - x0, 3); ctx.fillRect(x0, y0, 3, y1 - y0); ctx.fillRect(x1 - 3, y0, 3, y1 - y0); ctx.fillRect(x0, y0 + ally, x1 - x0, 2); ctx.fillRect(x0, y1 - ally - 2, x1 - x0, 2);
+        ctx.fillRect(cx - 3 * T, y0 + ally, 2, y1 - y0 - 2 * ally); ctx.fillRect(cx + 3 * T, y0 + ally, 2, y1 - y0 - 2 * ally); ctx.fillRect(cx - 3 * T, cy - 1, 6 * T, 2); ctx.fillRect(x0, cy - 4, 6, 8); ctx.fillRect(x1 - 6, cy - 4, 6, 8);
+        ctx.fillStyle = "#e6e6e6"; ctx.fillRect(cx - 2, y0 - 4, 4, y1 - y0 + 8); for (let y = y0; y < y1; y += 6) ctx.fillRect(cx - 6, y, 12, 1); ctx.fillStyle = "#2b2b2b"; ctx.fillRect(cx - 4, y0 - 8, 8, 8); ctx.fillRect(cx - 4, y1, 8, 8); } },
+    parking: { layout: {}, colors: { deskTop: "#7d838c", deskHi: "#959ba4", deskEdge: "#565b63", leg: "#3f434a", wall: "#8f9298", wallTrim: "#e0b73a", wallPanel: "#7f8288", base: "#e0b73a", baseLine: "#b8931e", wallTop: "#5a5d63", wallTopHi: "#6f7278", door: "#565b63", doorPanel: "#7d838c", knob: "#e0b73a", pot: "#f28c28", potRim: "#ff9f3f" },
+      office: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 7); }, floor2: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 21); },
+      props: (put, o) => { put(o.DOORX - 1, 2, "barrier"); put(o.DOORX - 2, 2, "kiosk"); put(2, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid + 1, "cones"); put(2, o.yMid + 1, "lamp"); put(o.MW - 5, o.yMid + 4, "lamp"); const bays = [[o.MW - 6, 6], [o.MW - 8, 6], [o.MW - 6, 10], [o.MW - 10, 6]]; bays.forEach(([x, y], i) => { put(x, y, "carTop" + (i % 5)); put(x, y + 1, "carBot" + (i % 5)); }); },
+      floorMarks: () => { ctx.fillStyle = "#f2f2f2"; for (let x = 2; x < MW - 3; x += 2) ctx.fillRect(x * T, 5 * T, 3, (Y_MID - 7) * T); ctx.fillStyle = "#e0b73a"; ctx.fillRect(T, (Y_MID - 2) * T + 28, (MW - 2) * T, 4); ctx.fillRect(T, 2 * T + 28, (MW - 2) * T, 2); },
+      barrier: () => { Q(4, 36, 12, 24, "#e0b73a"); Q(6, 38, 8, 20, "#f0c95a"); Q(12, 42, 50, 6, "#f7f7f7"); for (let x = 16; x < 62; x += 12) Q(x, 42, 6, 6, "#d84c4c"); Q(6, 30, 8, 6, "#2b2b2b"); },
+      kiosk: () => { Q(6, 6, 52, 54, "#5a5d63"); Q(8, 8, 48, 50, "#8f9298"); Q(12, 12, 40, 22, "#9fd3ff"); Q(14, 14, 36, 18, "#c7e6ff"); Q(6, 2, 52, 6, "#e0b73a"); Q(20, 40, 24, 18, "#2b2b2b"); Q(22, 42, 20, 14, "#5a5d63"); },
+      lamp: () => { Q(28, 8, 8, 52, "#6f7278"); Q(24, 56, 16, 6, "#5a5d63"); Q(16, 2, 32, 10, "#3f4348"); Q(20, 6, 24, 6, "#fff3b0"); Q(22, 12, 20, 3, "#ffe27a"); },
+      cones: () => { [[8, 20], [30, 12], [40, 36]].forEach(([x, y]) => { Q(x + 6, y, 8, 22, "#f28c28"); Q(x + 4, y + 8, 12, 4, "#f7f7f7"); Q(x, y + 22, 20, 5, "#f28c28"); Q(x + 2, y + 24, 16, 2, "#c96e1e"); }); } },
     garage: { props: (put, o) => { put(o.MW - 6, o.yMid + 1, "liftL"); put(o.MW - 5, o.yMid + 1, "liftR"); put(2, o.yMid + 1, "tyres"); put(o.MW - 5, o.yMid + 4, "drums"); put(2, 2, "toolchest"); },
       deskPlain: () => { deskBase(false); Q(4, 14, 22, 16, "#d84c4c"); Q(6, 16, 18, 4, "#e86060"); Q(6, 22, 18, 2, "#8f2f2f"); Q(12, 12, 6, 2, "#2b2b2b"); Q(32, 16, 12, 3, "#8a8f9c"); Q(34, 19, 3, 12, "#8a8f9c"); Q(46, 20, 10, 10, "#5f666f"); Q(48, 22, 6, 6, "#8f96a0"); },
       bedHead: () => { Q(0, 0, 64, 64, "#6c6f75"); Q(4, 10, 56, 54, "#9a8f7a"); Q(8, 14, 48, 50, "#b8ad96"); Q(14, 18, 36, 12, "#e6e0d0"); Q(8, 40, 48, 24, "#5a6a7a"); Q(8, 40, 48, 2, "#7a8a9a"); },
@@ -907,8 +941,10 @@ const office = (() => {
       tyres: () => { Q(0, 0, 64, 64, "#6c6f75"); [[6, 34], [30, 34], [18, 12]].forEach(([x, y]) => { Q(x, y, 28, 26, "#1b1d22"); Q(x + 2, y + 2, 24, 22, "#2b2b2b"); Q(x + 9, y + 8, 10, 10, "#8f96a0"); Q(x + 12, y + 11, 4, 4, "#3f4348"); }); },
       drums: () => { Q(0, 0, 64, 64, "#6c6f75"); [[6, 10], [34, 10], [20, 34]].forEach(([x, y]) => { Q(x, y, 24, 28, "#8f2f2f"); Q(x + 2, y + 2, 20, 24, "#d84c4c"); Q(x, y + 8, 24, 2, "#8f2f2f"); Q(x, y + 18, 24, 2, "#8f2f2f"); Q(x + 4, y + 2, 4, 24, "#e86060"); }); },
       toolchest: () => { Q(0, 0, 64, 64, "#7f8288"); Q(8, 8, 48, 52, "#8f2f2f"); Q(10, 10, 44, 48, "#d84c4c"); for (let y = 14; y < 56; y += 10) { Q(12, y, 40, 8, "#e86060"); Q(26, y + 3, 12, 2, "#2b2b2b"); } Q(6, 58, 10, 4, "#2b2b2b"); Q(48, 58, 10, 4, "#2b2b2b"); } },
+    chinese_tech: { props: (put, o) => { put(o.MW - 3, 5, "cctvPole"); put(1, 8, "cctvPole"); } },
   };
-  for (const [k, env] of Object.entries(ENV)) { const th = THEMES[k]; if (!th) continue; Object.assign(th, env); Object.entries(env).forEach(([name, fn]) => { if (typeof fn === "function" && !(name in TILES) && !["props", "decorate", "bedHead", "bedFoot", "deskPlain"].includes(name)) TILES[name] = fn; }); }
+  ["#d84c4c", "#3a6fd8", "#e6c15a", "#f7f7f7", "#3aa35b"].forEach((col, i) => { TILES["carTop" + i] = () => carBody(col); TILES["carBot" + i] = () => carTail(col); });
+  for (const [k, env] of Object.entries(ENV)) { const th = THEMES[k]; if (!th) continue; Object.assign(th, env); Object.entries(env).forEach(([name, fn]) => { if (typeof fn === "function" && !(name in TILES) && !["props", "decorate", "floorMarks", "bedHead", "bedFoot", "deskPlain", "office", "floor2", "wallTop", "wallFace", "board", "shelf"].includes(name)) TILES[name] = fn; }); }
   const CAMS = [];
   let THEME = "regular", nextSloganAt = 0, transition = null;
   function themed(name) { return () => ((THEMES[THEME] && THEMES[THEME][name]) || BASE_TILES[name])(); }   // hoisted: TILES is built before this section runs
@@ -1152,19 +1188,26 @@ const office = (() => {
     for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
-    if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 6; y++) { put(mx - 2, y, "wallTop"); put(mx + 3, y, "wallTop"); } for (let x = mx - 1; x <= mx + 2; x++) if (x !== mx + 2) put(x, 6, "wallTop"); }   // the master's own office, door at the right
+    if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 5; y++) { put(mx - 2, y, "glassV"); put(mx + 3, y, "glassV"); } put(mx - 2, 6, "glassBL"); put(mx + 3, 6, "glassBR"); for (let x = mx - 1; x <= mx + 1; x++) put(x, 6, "glassH"); }   // the master's own office: thin glass partitions, door gap at the right
     [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
     TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
     QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
-    for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
+    for (let x = THEME === "chinese_tech" ? 6 : 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
     if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
       const taken = new Set(); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
       BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); for (let k = 0; k < 6; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
-      const safe = (x, y, t) => { if (x <= 0 || y <= 1 || x >= MW - 1 || y >= MH - 1 || solid[y][x] || taken.has(key(x, y)) || isEntry(x, y) || (x === DOOR[0] && y <= 2) || map[y][x].length > 1) return; put(x, y, t); };
-      THEMES[THEME].props(safe, { MW, MH, yMid, mx, DOORX: DOOR[0] });
+      const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); for (let k = 0; k < 6; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]);
+      const allReachable = () => {                                                              // every chair, bunk, stall and spot must stay reachable from the door (a solid target counts if a neighbour is)
+        const seen = new Set([key(DOOR[0], DOOR[1] + 1)]), q = [[DOOR[0], DOOR[1] + 1]];
+        while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || solid[ny][nx] || seen.has(key(nx, ny))) continue; seen.add(key(nx, ny)); q.push([nx, ny]); } }
+        return targets.every(([x, y]) => seen.has(key(x, y)) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen.has(key(x + dx, y + dy))));
+      };
+      const safe = (x, y, t) => { if (x <= 0 || y <= 1 || x >= MW - 1 || y >= MH - 1 || solid[y][x] || taken.has(key(x, y)) || isEntry(x, y) || (x === DOOR[0] && y <= 2) || map[y][x].length > 1) return; put(x, y, t); if (!allReachable()) { map[y][x].pop(); solid[y][x] = false; } };
+      const rowsDeskBack = []; for (let r = 0; r < islandRows; r++) rowsDeskBack.push(iy0 + r * RS + 1);
+      THEMES[THEME].props(safe, { MW, MH, yMid, mx, DOORX: DOOR[0], islandX0, rowsDeskBack });
     }
     baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
     builtFor = cap;
@@ -1204,12 +1247,16 @@ const office = (() => {
     off.width = W * P; off.height = H * P;
     mapImg = document.createElement("canvas"); mapImg.width = W * P; mapImg.height = H * P;
     ctx = mapImg.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; for (const t of map[y][x]) TILES[t](); }
+    CAMS.length = 0;
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; TILES[map[y][x][0]](); }               // floors
+    if (THEMES[THEME].floorMarks) THEMES[THEME].floorMarks();                                                                                        // court lines, bays, lanes: under everything
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; for (let i = 1; i < map[y][x].length; i++) TILES[map[y][x][i]](); }   // walls, furniture, props
     if (THEMES[THEME].decorate) THEMES[THEME].decorate();
     ctx = off.getContext("2d");
   }
   const key = (x, y) => y * MW + x;
-  function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self || o.hidden) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
+  const seatedAtDesk = (o) => { const d = DESKS[o.idx]; return !!d && !o.moving && !o.steps.length && o.tx === d.chair[0] && o.ty === d.chair[1]; };   // sitting at the desk: others may pass behind the chair
+  function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self || o.hidden || seatedAtDesk(o)) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
   function path(from, to, self) {
     // Prefer a route around other people; if none exists, route through them (the walker waits at a blocked step);
     // if there is no route at all, return no steps rather than teleporting.
@@ -1452,7 +1499,7 @@ const office = (() => {
         else { c.steps.shift(); c.wait = 0; c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
       }
       if (c.moving) {
-        c.prog += dt * 2.8; const e = Math.min(1, c.prog);                   // ~0.36 s per tile, the same for everyone
+        c.prog += dt * 3.64; const e = Math.min(1, c.prog);                   // ~0.36 s per tile, the same for everyone
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
         c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
         if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { if (!c.talk.arrived) { c.talk.arrived = true; c.sayStart = performance.now(); c.talk.until = c.sayUntil = Math.min(c.talk.cap, Date.now() + talkMs(c.say)); }   // start saying it once in place; the cap still applies
@@ -1676,11 +1723,15 @@ const office = (() => {
     vctx.setTransform(scale, 0, 0, scale, ox, oy); ctx = vctx; const cssPx = (n) => n * dpr / scale;
     ctx.font = "600 " + cssPx(10.5) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(3); ctx.strokeStyle = "rgba(10,7,4,.9)";
     for (const c of order) { if (c.hidden) continue; let txt = c.name; while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…"; ctx.strokeText(txt, c.px + 16, c.py + 40); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, c.px + 16, c.py + 40); }
+    if (THEMES[THEME].wechat) for (const c of order) if (c.toilet != null && c.satAt) {                     // the stall's stopwatch, running since they sat down
+      const [tx, ty] = TOILETS[c.toilet], sec = Math.floor((Date.now() - c.satAt) / 1000), txt = String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+      ctx.font = "600 " + cssPx(9) + "px " + SANS; ctx.textAlign = "center"; ctx.fillStyle = "#111111"; ctx.fillRect(tx * T - 2, ty * T - 12, 36, 11); ctx.fillStyle = "#ff3b3b"; ctx.fillText(txt, tx * T + 16, ty * T - 3);
+    }
     for (const c of order) if (!c.hidden) drawBubble(c, cssPx);
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 })();
 route();
 </script>
