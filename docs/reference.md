@@ -26,7 +26,17 @@ The team lead is woken immediately, reads your ask, and either does it or delega
 
 ## Office themes
 
-The theme picker in the office bar restyles the room while desks, chairs, bunks, toilets and the door keep working the same way: regular, tech, finance, factory, basketball court, tennis court, parking lot, garage, and Chinese tech. Changing the theme with people inside makes everyone leave through the door, fades the lights, rebuilds the room, and lets them walk back in. The choice is remembered per browser.
+The theme picker in the office bar turns the room into a different working environment while desks, chairs, sleeping spots, toilets and the door keep working the same way:
+
+- **Regular office**: carpet, wooden desks, whiteboard, bookshelves, a bunk room.
+- **Tech**: a dark loft with glass walls and server racks; the team naps on bean bags in a lounge with a ping-pong table and an arcade cabinet.
+- **Finance**: a trading floor of connected mahogany desks with two monitors each, world clocks and tickers on the wall, a corner office for the master, and a nap room with sleep pods.
+- **Factory**: brick walls and concrete, steel workbenches with tools, a foreman's office, and a break room with a conveyor, forklift, barrels, crates and cots.
+- **Basketball court**: hardwood with court lines, hoops on the side walls, a scoreboard, a ball rack, and a locker room with lockers and benches.
+- **Tennis court**: a hard court with baselines, service boxes and a net, an umpire chair beside the master, ball baskets and a ball machine, and a clubhouse locker room.
+- **Parking lot**: asphalt with parking bays, an attendant's booth for the master, a barrier at the entrance, lamp posts and cones; everyone sleeps in a parked car.
+- **Garage**: corrugated walls, oil-stained concrete, workbenches with toolboxes, a tool chest, a car on a lift, tyre stacks and oil drums; mattresses on the floor.
+- **Chinese tech**: see below. Changing the theme with people inside makes everyone leave through the door, fades the lights, rebuilds the room, and lets them walk back in. The choice is remembered per browser.
 
 The Chinese tech theme also changes the floor plan: desks in a row form one long connected desk, every agent's bunk stands right behind its chair, and the master sits in a walled office with a large dark red desk and chair, a money tree by the entrance, red banners hung across the room, a countdown on the wall and CCTV cameras over the floor and the toilets. Speech bubbles turn into green WeChat-style bubbles, and once a minute, when nobody is talking, the master delivers one of a hundred motivational lines for ten seconds.
 

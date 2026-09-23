@@ -712,7 +712,7 @@ const office = (() => {
   };
   const TILES = {
     floor: () => wood(C.wood, C.woodLine, C.woodHi, "#cfa65f"),
-    office: () => themed("office")(), floor2: () => themed("floor2")(), wallTop: () => themed("wallTop")(), wallFace: () => themed("wallFace")(), board: () => themed("board")(), shelf: () => themed("shelf")(),
+    office: () => themed("office")(), floor2: () => themed("floor2")(), bedHead: () => themed("bedHead")(), bedFoot: () => themed("bedFoot")(), deskPlain: () => themed("deskPlain")(), wallTop: () => themed("wallTop")(), wallFace: () => themed("wallFace")(), board: () => themed("board")(), shelf: () => themed("shelf")(),
     carpet: () => { Q(0, 0, 64, 64, C.carpet); for (let y = 0; y < 64; y += 16) for (let x = 0; x < 64; x += 16) if ((x + y) / 16 % 2) Q(x, y, 16, 16, C.carpet2); for (let y = 0; y < 64; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 64; x += 4) Q(x, y, 1, 1, "#6480cf"); for (let y = 6; y < 64; y += 16) for (let x = 6; x < 64; x += 16) { Q(x, y, 4, 4, C.carpetDot); Q(x + 1, y + 1, 2, 2, "#93aaec"); } },
     _wallTop: () => { Q(0, 0, 64, 64, C.wallTop); Q(0, 0, 64, 4, C.wallTopHi); Q(0, 4, 64, 1, "#493b2a"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#33291d"); },
     _wallFace: () => { wallBase(); Q(30, 12, 4, 40, C.wallPanel); Q(30, 12, 1, 40, "#d9c6a0"); },
@@ -725,7 +725,7 @@ const office = (() => {
     deskLBack: () => { deskBase(true); keyboard(18, 4); mouse(50, 4); monitorBack(10, 44, 10, false); },
     deskR: () => { deskBase(false); monitorFront(4, 36, true); mug(44, 22); },
     deskRBack: () => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); },
-    deskPlain: () => { deskBase(false); papers(); mug(44, 22); },
+    _deskPlain: () => { deskBase(false); papers(); mug(44, 22); },
     deskMid: () => { deskBase("mid"); Q(20, 22, 24, 6, "#f7f7f2"); Q(22, 24, 20, 1, "#b8bcc8"); Q(22, 26, 14, 1, "#b8bcc8"); mug(48, 8); },
     bossDeskL: () => withBoss(() => { deskBase(true); keyboard(18, 4); mouse(50, 4); monitorBack(10, 44, 10, false); }),
     bossDeskR: () => withBoss(() => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); }),
@@ -739,10 +739,10 @@ const office = (() => {
     chairUpBack: () => chairBackUp(),
     chair: () => { Q(19, 22, 26, 20, C.chairDark); Q(18, 23, 28, 18, C.chairDark); Q(20, 24, 24, 16, C.chair); Q(20, 24, 24, 2, "#4d80e8"); Q(20, 31, 24, 1, C.chairDark); Q(12, 44, 4, 12, "#2b2b2b"); Q(48, 44, 4, 12, "#2b2b2b"); Q(12, 44, 4, 1, "#454545"); Q(48, 44, 4, 1, "#454545");
                    Q(17, 42, 30, 18, C.chair); Q(16, 43, 32, 16, C.chair); Q(17, 42, 30, 3, "#4d80e8"); Q(31, 45, 2, 12, C.chairDark); Q(16, 58, 32, 3, C.chairDark); Q(17, 61, 30, 1, "#264c9a"); },
-    bedHead: () => { Q(4, 0, 56, 64, C.bedFrame); Q(4, 0, 56, 8, "#6f4520"); Q(4, 0, 56, 2, "#9a6a3a"); Q(4, 0, 5, 12, "#5c3a1c"); Q(55, 0, 5, 12, "#5c3a1c"); Q(9, 8, 46, 56, C.mattress); Q(9, 8, 46, 1, "#e6e0d4");
+    _bedHead: () => { Q(4, 0, 56, 64, C.bedFrame); Q(4, 0, 56, 8, "#6f4520"); Q(4, 0, 56, 2, "#9a6a3a"); Q(4, 0, 5, 12, "#5c3a1c"); Q(55, 0, 5, 12, "#5c3a1c"); Q(9, 8, 46, 56, C.mattress); Q(9, 8, 46, 1, "#e6e0d4");
                      Q(13, 10, 38, 16, C.pillowSh); Q(14, 9, 36, 14, C.pillow); Q(13, 10, 1, 12, C.pillow); Q(50, 10, 1, 12, C.pillow); Q(18, 13, 28, 1, "#f2f2f2"); Q(22, 17, 20, 1, "#f2f2f2");
                      Q(9, 30, 46, 34, C.blanket); Q(9, 30, 46, 5, "#f1eae0"); Q(9, 35, 46, 1, "#d9d2c6"); for (let y = 40; y < 64; y += 8) { Q(9, y, 46, 2, C.blanketHi); for (let x = 12; x < 55; x += 8) Q(x, y + 4, 2, 1, "#b73634"); } Q(9, 36, 1, 28, "#b53230"); Q(54, 36, 1, 28, "#b53230"); },
-    bedFoot: () => { Q(4, 0, 56, 60, C.bedFrame); Q(9, 0, 46, 44, C.blanket); for (let y = 0; y < 44; y += 8) { Q(9, y, 46, 2, C.blanketHi); for (let x = 12; x < 55; x += 8) Q(x, y + 4, 2, 1, "#b73634"); } Q(9, 0, 1, 44, "#b53230"); Q(54, 0, 1, 44, "#b53230");
+    _bedFoot: () => { Q(4, 0, 56, 60, C.bedFrame); Q(9, 0, 46, 44, C.blanket); for (let y = 0; y < 44; y += 8) { Q(9, y, 46, 2, C.blanketHi); for (let x = 12; x < 55; x += 8) Q(x, y + 4, 2, 1, "#b73634"); } Q(9, 0, 1, 44, "#b53230"); Q(54, 0, 1, 44, "#b53230");
                      Q(9, 44, 46, 8, C.mattress); Q(9, 51, 46, 1, "#dcd6ca"); Q(4, 52, 56, 8, "#6f4520"); Q(4, 52, 56, 2, "#9a6a3a"); Q(4, 50, 5, 12, "#5c3a1c"); Q(55, 50, 5, 12, "#5c3a1c"); Q(4, 60, 56, 2, "#4a2d14"); },
     tableTL: () => { R(4, 4, 28, 28, C.tableEdge); R(6, 6, 26, 26, C.tableTop); },
     tableML: () => { R(4, 0, 28, 32, C.tableEdge); R(6, 0, 26, 32, C.tableTop); },
@@ -762,7 +762,7 @@ const office = (() => {
     door: () => { Q(0, 0, 64, 64, "#4a2f16"); Q(4, 0, 56, 64, C.door); Q(4, 0, 56, 1, "#9a6a3a"); Q(4, 0, 1, 64, "#9a6a3a"); Q(59, 0, 1, 64, "#4a2f16"); Q(10, 6, 44, 22, "#6a4327"); Q(12, 8, 40, 18, C.doorPanel); Q(12, 8, 40, 1, "#c3946a"); Q(10, 34, 44, 24, "#6a4327"); Q(12, 36, 40, 20, C.doorPanel); Q(12, 36, 40, 1, "#c3946a"); Q(46, 30, 8, 4, "#5c3a1c"); Q(47, 29, 6, 5, C.knob); Q(48, 30, 2, 1, "#fff0a0"); Q(4, 12, 3, 5, "#3a3a3a"); Q(4, 46, 3, 5, "#3a3a3a"); },
     mat: () => { Q(8, 40, 48, 24, C.matEdge); Q(12, 44, 40, 16, C.mat); for (let x = 16; x < 52; x += 8) Q(x, 48, 4, 8, "#7fa0e8"); Q(12, 44, 40, 1, "#7d9ce0"); Q(8, 62, 48, 2, "#4a6cae"); },
   };
-  Object.assign(BASE_TILES, { wallTop: TILES._wallTop, wallFace: TILES._wallFace, board: TILES._board, shelf: TILES._shelf });
+  Object.assign(BASE_TILES, { wallTop: TILES._wallTop, wallFace: TILES._wallFace, board: TILES._board, shelf: TILES._shelf, bedHead: TILES._bedHead, bedFoot: TILES._bedFoot, deskPlain: TILES._deskPlain });
   // ---- office themes: the same desks, chairs, bunks, toilets and door everywhere; floors, walls, colours and the props on the back wall change
   const BASE_C = { ...C };
   let TILE_X = 0, TILE_Y = 0, Y_MID = 0;                                  // tile coordinates while painting, so a theme can draw court lines or parking bays across tiles
@@ -854,6 +854,61 @@ const office = (() => {
       for (const [x, y, dir] of CAMS) { ctx.fillStyle = "#6f7480"; ctx.fillRect(x + 5, y - 6, 3, 6); ctx.fillStyle = "#9aa3b5"; ctx.fillRect(x, y, 13, 7); ctx.fillStyle = "#c8ccd6"; ctx.fillRect(x, y, 13, 1); ctx.fillStyle = "#1b1d22"; ctx.fillRect(dir < 0 ? x : x + 9, y + 1, 4, 5); ctx.fillStyle = "#3fd2e6"; ctx.fillRect(dir < 0 ? x + 1 : x + 10, y + 2, 2, 2); }
       ctx.textBaseline = "alphabetic"; void L; void pad;
     } };
+  // ---- environment props and furniture variants per theme (the office stays a working office: same desks, chairs, sleeping spots, toilets, door)
+  const carBody = (col) => { Q(8, 4, 48, 56, tint(col, -0.35)); Q(10, 6, 44, 52, col); Q(12, 8, 40, 6, tint(col, 0.25)); Q(14, 14, 36, 16, "#9fd3ff"); Q(16, 16, 32, 12, "#c7e6ff"); Q(14, 34, 36, 20, tint(col, -0.1)); Q(6, 10, 4, 10, "#2b2b2b"); Q(54, 10, 4, 10, "#2b2b2b"); Q(6, 40, 4, 10, "#2b2b2b"); Q(54, 40, 4, 10, "#2b2b2b"); Q(14, 4, 8, 3, "#fff3b0"); Q(42, 4, 8, 3, "#fff3b0"); };
+  const carTail = (col) => { Q(8, 0, 48, 44, tint(col, -0.35)); Q(10, 0, 44, 42, col); Q(14, 4, 36, 20, tint(col, -0.1)); Q(14, 26, 36, 10, "#9fd3ff"); Q(6, 6, 4, 10, "#2b2b2b"); Q(54, 6, 4, 10, "#2b2b2b"); Q(14, 38, 8, 3, "#ff5c5c"); Q(42, 38, 8, 3, "#ff5c5c"); Q(24, 39, 16, 2, "#e6e6e6"); Q(26, 38, 12, 4, "#f7f7f7"); Q(28, 39, 8, 2, "#2b2b2b"); };
+  const locker = () => { Q(4, 0, 56, 64, "#5a6a7a"); for (const x of [6, 34]) { Q(x, 2, 24, 60, "#7d8fa3"); Q(x, 2, 24, 2, "#9fb1c4"); Q(x + 8, 10, 8, 2, "#3f4a56"); Q(x + 8, 14, 8, 2, "#3f4a56"); Q(x + 18, 30, 3, 6, "#2b2b2b"); } };
+  const ENV = {
+    tech: { props: (put, o) => { put(o.MW - 5, o.yMid + 1, "pingpongL"); put(o.MW - 4, o.yMid + 1, "pingpongR"); put(o.MW - 5, o.yMid + 4, "arcade"); put(2, 2, "rack2"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#1c2030"); Q(12, 20, 40, 44, "#7a3fd8"); Q(8, 28, 48, 36, "#7a3fd8"); Q(14, 22, 36, 8, "#9a6ae8"); Q(16, 40, 32, 16, "#6a33c4"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#1c2030"); Q(8, 0, 48, 30, "#7a3fd8"); Q(12, 0, 40, 40, "#7a3fd8"); Q(16, 28, 32, 8, "#6a33c4"); Q(10, 40, 44, 6, "#4a2390"); },
+      pingpongL: () => { Q(4, 12, 60, 36, "#1e6b3a"); Q(6, 14, 58, 32, "#2a8a4c"); Q(6, 29, 58, 2, "#f7f7f7"); Q(60, 14, 4, 32, "#f7f7f7"); Q(8, 48, 6, 12, "#2b2b2b"); Q(8, 14, 2, 32, "#f7f7f7"); Q(20, 20, 6, 6, "#ff9f3f"); },
+      pingpongR: () => { Q(0, 12, 60, 36, "#1e6b3a"); Q(0, 14, 58, 32, "#2a8a4c"); Q(0, 29, 58, 2, "#f7f7f7"); Q(0, 14, 4, 32, "#f7f7f7"); Q(50, 48, 6, 12, "#2b2b2b"); Q(56, 14, 2, 32, "#f7f7f7"); Q(36, 32, 8, 3, "#d84c4c"); Q(43, 30, 3, 8, "#8a5a2b"); },
+      arcade: () => { Q(10, 4, 44, 58, "#2b2f3a"); Q(12, 6, 40, 20, "#101a2e"); Q(14, 8, 36, 16, "#1c3358"); Q(18, 12, 6, 6, "#ffd23f"); Q(30, 14, 4, 4, "#ff5cab"); Q(40, 10, 4, 4, "#5cff8a"); Q(12, 30, 40, 10, "#3a3f4c"); Q(20, 33, 6, 4, "#d84c4c"); Q(30, 33, 6, 4, "#3a6fd8"); Q(40, 32, 3, 8, "#2b2b2b"); Q(12, 44, 40, 16, "#23262e"); },
+      rack2: () => { Q(6, 0, 52, 60, "#2b3040"); Q(8, 2, 48, 56, "#1b1f2a"); for (let y = 6; y < 56; y += 8) { Q(10, y, 44, 6, "#2f3546"); Q(12, y + 2, 2, 2, "#5cff8a"); Q(16, y + 2, 2, 2, (y / 8) % 2 ? "#3fd2e6" : "#ff5c5c"); } } },
+    finance: { layout: { connected: true, bossOffice: true }, allDual: true,
+      props: (put, o) => { put(2, 2, "clockwall"); put(o.MW - 5, o.yMid + 1, "coffee"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 12, 44, 52, "#e8e8ec"); Q(14, 16, 36, 44, "#f7f7fa"); Q(18, 20, 28, 14, "#c9d6e6"); Q(12, 12, 40, 4, "#c8c8cc"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 0, 44, 40, "#e8e8ec"); Q(14, 0, 36, 32, "#f7f7fa"); Q(18, 4, 28, 20, "#dde6f0"); Q(10, 40, 44, 6, "#c8c8cc"); Q(20, 46, 24, 8, "#9a9aa0"); },
+      clockwall: () => { Q(0, 0, 64, 64, "#243a5e"); [[6, "#f7f7f7"], [24, "#f7f7f7"], [42, "#f7f7f7"]].forEach(([x, c], i) => { Q(x, 14, 16, 16, "#1b1d22"); Q(x + 1, 15, 14, 14, c); Q(x + 7, 17, 2, 6, "#1b1d22"); Q(x + 8, 22, 4 + i * 2, 2, "#1b1d22"); Q(x + 2, 34, 12, 3, "#c9a24a"); }); Q(0, 54, 64, 10, "#1a2a45"); },
+      coffee: () => { Q(8, 8, 48, 52, "#3a3d44"); Q(10, 10, 44, 20, "#23262e"); Q(14, 14, 36, 12, "#101a2e"); Q(18, 18, 10, 4, "#ffd23f"); Q(12, 34, 40, 22, "#2b2f3a"); Q(22, 40, 20, 12, "#8a5a2b"); Q(26, 36, 12, 4, "#f7f7f7"); Q(28, 30, 8, 6, "#6b3a2a"); } },
+    factory: { layout: { connected: true, bossOffice: true }, deskPlain: () => { deskBase(false); Q(6, 18, 18, 6, "#8a8f9c"); Q(8, 20, 14, 2, "#5f666f"); Q(24, 16, 3, 10, "#5f666f"); Q(34, 20, 10, 10, "#c9a24a"); Q(36, 22, 6, 6, "#8f96a0"); Q(46, 14, 8, 14, "#d84c4c"); Q(47, 12, 6, 3, "#2b2b2b"); Q(30, 32, 20, 3, "#2b2b2b"); },
+      props: (put, o) => { for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "conveyor"); put(o.MW - 5, o.yMid + 1, "forklift"); put(o.MW - 5, o.yMid + 4, "barrels"); put(2, o.yMid + 4, "crates"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(6, 4, 52, 60, "#4f5359"); Q(10, 8, 44, 56, "#8a8f9c"); Q(14, 12, 36, 12, "#f0f0f0"); Q(10, 30, 44, 34, "#3f7a4a"); Q(10, 30, 44, 2, "#4f9a5e"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(6, 0, 52, 52, "#4f5359"); Q(10, 0, 44, 44, "#3f7a4a"); Q(10, 44, 44, 4, "#8a8f9c"); Q(6, 52, 52, 4, "#3a3d42"); },
+      conveyor: () => { Q(0, 20, 64, 26, "#3f4348"); Q(0, 22, 64, 22, "#5a5f66"); for (let x = 0; x < 64; x += 8) Q(x + 2, 24, 4, 18, "#4a4f56"); Q(0, 20, 64, 2, "#7a7f86"); Q(0, 44, 64, 2, "#2b2f34"); Q(10, 48, 6, 10, "#4f5359"); Q(48, 48, 6, 10, "#4f5359"); if ((TILE_X * 5) % 3 === 0) { Q(24, 26, 16, 14, "#c9a24a"); Q(26, 28, 12, 10, "#b8861e"); } },
+      forklift: () => { Q(10, 30, 36, 26, "#e0b73a"); Q(12, 32, 32, 22, "#f0c95a"); Q(16, 20, 22, 12, "#2b2b2b"); Q(18, 22, 18, 8, "#9fd3ff"); Q(46, 10, 4, 46, "#3f4348"); Q(50, 40, 12, 4, "#3f4348"); Q(50, 46, 12, 4, "#3f4348"); Q(8, 54, 10, 8, "#2b2b2b"); Q(36, 54, 10, 8, "#2b2b2b"); },
+      barrels: () => { [[6, 10], [34, 10], [20, 34]].forEach(([x, y]) => { Q(x, y, 24, 28, "#2f6fb8"); Q(x + 2, y + 2, 20, 24, "#3a80cc"); Q(x, y + 8, 24, 2, "#255a96"); Q(x, y + 18, 24, 2, "#255a96"); Q(x + 4, y + 2, 4, 24, "#5a9ee0"); }); },
+      crates: () => { [[4, 6], [34, 6], [20, 34]].forEach(([x, y]) => { Q(x, y, 26, 26, "#8a5a2b"); Q(x + 2, y + 2, 22, 22, "#c9a26a"); Q(x + 2, y + 12, 22, 2, "#8a5a2b"); Q(x + 12, y + 2, 2, 22, "#8a5a2b"); }); } },
+    basketball: { props: (put, o) => { put(1, o.yMid - 3, "hoopL"); put(o.MW - 2, o.yMid - 3, "hoopR"); put(o.MW - 5, o.yMid + 1, "ballrack"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#9fc3d8"); locker(); }, bedFoot: () => { Q(0, 0, 64, 64, "#9fc3d8"); Q(4, 4, 56, 22, "#8a6d42"); Q(6, 6, 52, 18, "#b3925e"); Q(6, 6, 52, 2, "#d0b080"); Q(8, 26, 6, 12, "#5a4a2f"); Q(50, 26, 6, 12, "#5a4a2f"); Q(18, 10, 28, 10, "#f2f2f2"); Q(20, 12, 24, 6, "#a8332f"); },
+      hoopL: () => { Q(0, 0, 64, 64, "#d99a4a"); Q(0, 8, 10, 48, "#f7f7f7"); Q(2, 10, 6, 44, "#e8e8e8"); Q(3, 24, 4, 12, "#d84c4c"); Q(10, 30, 14, 3, "#f28c28"); Q(12, 33, 10, 10, "#f2f2f2"); for (let y = 33; y < 43; y += 3) Q(12, y, 10, 1, "#c8c8c8"); },
+      hoopR: () => { Q(0, 0, 64, 64, "#d99a4a"); Q(54, 8, 10, 48, "#f7f7f7"); Q(56, 10, 6, 44, "#e8e8e8"); Q(57, 24, 4, 12, "#d84c4c"); Q(40, 30, 14, 3, "#f28c28"); Q(42, 33, 10, 10, "#f2f2f2"); for (let y = 33; y < 43; y += 3) Q(42, y, 10, 1, "#c8c8c8"); },
+      ballrack: () => { Q(0, 0, 64, 64, "#9fc3d8"); Q(8, 10, 48, 50, "#5a5d63"); Q(10, 12, 44, 46, "#7a7d83"); [[14, 16], [30, 16], [14, 34], [30, 34], [22, 25]].forEach(([x, y]) => { Q(x, y, 14, 14, "#e8792b"); Q(x + 2, y + 2, 10, 10, "#f28c28"); Q(x + 6, y + 2, 2, 10, "#2b2b2b"); Q(x + 2, y + 6, 10, 2, "#2b2b2b"); }); },
+      decorate: () => { const cx = (MW / 2) * T, cy = ((2 + Y_MID) / 2) * T; ctx.strokeStyle = "#f7f7f7"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, T * 2, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(1.5 * T, cy, T * 3, -Math.PI / 2, Math.PI / 2); ctx.stroke(); ctx.beginPath(); ctx.arc((MW - 1.5) * T, cy, T * 3, Math.PI / 2, Math.PI * 1.5); ctx.stroke(); } },
+    tennis: { props: (put, o) => { put(o.mx + 2, 3, "umpire"); put(o.MW - 5, o.yMid + 1, "ballbasket"); put(2, o.yMid + 1, "ballmachine"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#4d9c56"); locker(); }, bedFoot: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(4, 4, 56, 22, "#8f8878"); Q(6, 6, 52, 18, "#e6e0d0"); Q(8, 26, 6, 12, "#6f6a5c"); Q(50, 26, 6, 12, "#6f6a5c"); Q(18, 10, 28, 10, "#3aa35b"); Q(20, 12, 24, 6, "#2f8a4a"); },
+      umpire: () => { Q(28, 4, 8, 56, "#8f8878"); Q(14, 4, 36, 10, "#e6e0d0"); Q(16, 6, 32, 6, "#f4efe3"); Q(18, 14, 28, 8, "#3aa35b"); Q(20, 24, 6, 36, "#8f8878"); Q(38, 24, 6, 36, "#8f8878"); for (let y = 30; y < 58; y += 8) Q(24, y, 16, 3, "#b8b09c"); },
+      ballbasket: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(12, 14, 40, 44, "#5a5d63"); Q(14, 16, 36, 40, "#7a7d83"); for (let y = 20; y < 52; y += 10) for (let x = 16; x < 46; x += 10) { Q(x, y, 8, 8, "#d5ff5c"); Q(x + 2, y + 2, 4, 4, "#c4ee4b"); } Q(10, 58, 8, 4, "#2b2b2b"); Q(46, 58, 8, 4, "#2b2b2b"); },
+      ballmachine: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(14, 20, 36, 34, "#3f4348"); Q(16, 22, 32, 30, "#5a5f66"); Q(20, 10, 24, 14, "#2b2f34"); Q(26, 12, 12, 8, "#1b1d22"); Q(28, 14, 8, 4, "#d5ff5c"); Q(12, 54, 10, 8, "#2b2b2b"); Q(42, 54, 10, 8, "#2b2b2b"); },
+      decorate: () => { const y0 = 2 * T, y1 = Y_MID * T, x0 = T, x1 = (MW - 1) * T, sy = Math.floor((2 + Y_MID) / 2) * T; ctx.fillStyle = "#f7f7f7"; ctx.fillRect(x0 + T * 2, y0 + 3, 3, y1 - y0 - 6); ctx.fillRect(x1 - T * 2 - 3, y0 + 3, 3, y1 - y0 - 6); ctx.fillRect(x0 + T * 2, sy - T * 3, x1 - x0 - T * 4, 3); ctx.fillRect(x0 + T * 2, sy + T * 3 + T, x1 - x0 - T * 4, 3); ctx.fillRect((MW / 2) * T - 1, sy - T * 3, 3, T * 7); } },
+    parking: { layout: { bossOffice: true }, props: (put, o) => { put(o.DOORX - 1, 2, "barrier"); put(2, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid + 1, "cones"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#3f4247"); carBody(["#d84c4c", "#3a6fd8", "#e6c15a", "#f7f7f7", "#3aa35b"][(TILE_X * 3 + TILE_Y) % 5]); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#3f4247"); carTail(["#d84c4c", "#3a6fd8", "#e6c15a", "#f7f7f7", "#3aa35b"][(TILE_X * 3 + TILE_Y - 1) % 5]); },
+      barrier: () => { Q(0, 0, 64, 64, "#4c4f55"); Q(4, 36, 12, 24, "#e0b73a"); Q(6, 38, 8, 20, "#f0c95a"); Q(12, 42, 50, 6, "#f7f7f7"); for (let x = 16; x < 62; x += 12) Q(x, 42, 6, 6, "#d84c4c"); Q(6, 30, 8, 6, "#2b2b2b"); },
+      lamp: () => { Q(0, 0, 64, 64, "#4c4f55"); Q(28, 8, 8, 52, "#6f7278"); Q(24, 56, 16, 6, "#5a5d63"); Q(16, 2, 32, 10, "#3f4348"); Q(20, 6, 24, 6, "#fff3b0"); Q(22, 12, 20, 3, "#ffe27a"); },
+      cones: () => { Q(0, 0, 64, 64, "#4c4f55"); [[8, 20], [30, 12], [40, 36]].forEach(([x, y]) => { Q(x + 6, y, 8, 22, "#f28c28"); Q(x + 4, y + 8, 12, 4, "#f7f7f7"); Q(x, y + 22, 20, 5, "#f28c28"); Q(x + 2, y + 24, 16, 2, "#c96e1e"); }); } },
+    garage: { props: (put, o) => { put(o.MW - 6, o.yMid + 1, "liftL"); put(o.MW - 5, o.yMid + 1, "liftR"); put(2, o.yMid + 1, "tyres"); put(o.MW - 5, o.yMid + 4, "drums"); put(2, 2, "toolchest"); },
+      deskPlain: () => { deskBase(false); Q(4, 14, 22, 16, "#d84c4c"); Q(6, 16, 18, 4, "#e86060"); Q(6, 22, 18, 2, "#8f2f2f"); Q(12, 12, 6, 2, "#2b2b2b"); Q(32, 16, 12, 3, "#8a8f9c"); Q(34, 19, 3, 12, "#8a8f9c"); Q(46, 20, 10, 10, "#5f666f"); Q(48, 22, 6, 6, "#8f96a0"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#6c6f75"); Q(4, 10, 56, 54, "#9a8f7a"); Q(8, 14, 48, 50, "#b8ad96"); Q(14, 18, 36, 12, "#e6e0d0"); Q(8, 40, 48, 24, "#5a6a7a"); Q(8, 40, 48, 2, "#7a8a9a"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#6c6f75"); Q(4, 0, 56, 44, "#9a8f7a"); Q(8, 0, 48, 36, "#5a6a7a"); Q(8, 36, 48, 4, "#b8ad96"); Q(4, 44, 56, 2, "#4f4a40"); },
+      liftL: () => { Q(0, 0, 64, 64, "#7f8288"); Q(6, 50, 58, 8, "#e0b73a"); Q(10, 14, 8, 40, "#3f4348"); Q(10, 10, 12, 6, "#e0b73a"); Q(20, 10, 44, 36, "#d84c4c"); Q(24, 12, 40, 30, "#e86060"); Q(28, 16, 36, 12, "#9fd3ff"); Q(20, 8, 44, 4, "#8f2f2f"); Q(24, 46, 12, 10, "#2b2b2b"); },
+      liftR: () => { Q(0, 0, 64, 64, "#7f8288"); Q(0, 50, 58, 8, "#e0b73a"); Q(46, 14, 8, 40, "#3f4348"); Q(42, 10, 12, 6, "#e0b73a"); Q(0, 10, 44, 36, "#d84c4c"); Q(0, 12, 40, 30, "#e86060"); Q(0, 16, 36, 12, "#9fd3ff"); Q(0, 8, 44, 4, "#8f2f2f"); Q(28, 46, 12, 10, "#2b2b2b"); Q(4, 24, 8, 8, "#fff3b0"); },
+      tyres: () => { Q(0, 0, 64, 64, "#6c6f75"); [[6, 34], [30, 34], [18, 12]].forEach(([x, y]) => { Q(x, y, 28, 26, "#1b1d22"); Q(x + 2, y + 2, 24, 22, "#2b2b2b"); Q(x + 9, y + 8, 10, 10, "#8f96a0"); Q(x + 12, y + 11, 4, 4, "#3f4348"); }); },
+      drums: () => { Q(0, 0, 64, 64, "#6c6f75"); [[6, 10], [34, 10], [20, 34]].forEach(([x, y]) => { Q(x, y, 24, 28, "#8f2f2f"); Q(x + 2, y + 2, 20, 24, "#d84c4c"); Q(x, y + 8, 24, 2, "#8f2f2f"); Q(x, y + 18, 24, 2, "#8f2f2f"); Q(x + 4, y + 2, 4, 24, "#e86060"); }); },
+      toolchest: () => { Q(0, 0, 64, 64, "#7f8288"); Q(8, 8, 48, 52, "#8f2f2f"); Q(10, 10, 44, 48, "#d84c4c"); for (let y = 14; y < 56; y += 10) { Q(12, y, 40, 8, "#e86060"); Q(26, y + 3, 12, 2, "#2b2b2b"); } Q(6, 58, 10, 4, "#2b2b2b"); Q(48, 58, 10, 4, "#2b2b2b"); } },
+  };
+  for (const [k, env] of Object.entries(ENV)) { const th = THEMES[k]; if (!th) continue; Object.assign(th, env); Object.entries(env).forEach(([name, fn]) => { if (typeof fn === "function" && !(name in TILES) && !["props", "decorate", "bedHead", "bedFoot", "deskPlain"].includes(name)) TILES[name] = fn; }); }
   const CAMS = [];
   let THEME = "regular", nextSloganAt = 0, transition = null;
   function themed(name) { return () => ((THEMES[THEME] && THEMES[THEME][name]) || BASE_TILES[name])(); }   // hoisted: TILES is built before this section runs
@@ -1104,7 +1159,13 @@ const office = (() => {
     DOOR = [MW - 4, 1];
     for (let x = 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
-    if (L.bossOffice) put(DOOR[0] + 1, 2, "moneyTree");                                      // 发财树 by the entrance
+    if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
+    if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
+      const taken = new Set(); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
+      BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); for (let k = 0; k < 6; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
+      const safe = (x, y, t) => { if (x <= 0 || y <= 1 || x >= MW - 1 || y >= MH - 1 || solid[y][x] || taken.has(key(x, y)) || isEntry(x, y) || (x === DOOR[0] && y <= 2) || map[y][x].length > 1) return; put(x, y, t); };
+      THEMES[THEME].props(safe, { MW, MH, yMid, mx, DOORX: DOOR[0] });
+    }
     baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
     builtFor = cap;
     applyFurniture();
@@ -1115,7 +1176,7 @@ const office = (() => {
     const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
     seats.forEach((st, i) => {
       const d = DESKS[i], b = BEDS[i]; if (!st || !d) return;
-      d.dual = DEV_ROLES.includes(st.role);
+      d.dual = !!THEMES[THEME].allDual || DEV_ROLES.includes(st.role);
       if (st.desk && d.boss) { put(d.desk[0] - 1, d.desk[1], "bossDeskMid"); put(d.desk[0], d.desk[1], "bossDeskL"); put(d.desk[0] + 1, d.desk[1], "bossDeskR"); put(d.chair[0], d.chair[1], "bossChair", false); }
       else if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
       if (st.bed && b) { put(b[0], b[1], "bedHead", false); put(b[0], b[1] + 1, "bedFoot"); }
