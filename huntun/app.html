@@ -1592,7 +1592,7 @@ const office = (() => {
       if (m && !busy && Date.now() > nextSloganAt) { m.say = CN_SLOGANS[Math.floor(Math.random() * CN_SLOGANS.length)]; m.sayStart = performance.now(); m.sayUntil = Date.now() + 10000; m.sayLoop = false; m.bang = Date.now() + 1500; nextSloganAt = Date.now() + 60000; }
     }
     const present = order.filter(c => !c.hidden), workers = present.filter(c => c.mode === "work" && !c.moving && !c.steps.length), sleepers = present.filter(c => c.wasAsleep);
-    night += ((workers.length <= 2 && sleepers.length >= 2 ? 1 : 0) - night) * Math.min(1, dt * 1.2);   // lights stay on unless it is a quiet night: at most two working, two or more asleep
+    night += ((workers.length === 2 && sleepers.length >= 2 ? 1 : 0) - night) * Math.min(1, dt * 1.2);   // lights stay on unless exactly two are working while two or more are asleep
     if (night > 0.02) drawNight(workers, night);
     for (const c of order) {
       const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
