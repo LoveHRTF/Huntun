@@ -834,6 +834,60 @@ const office = (() => {
     "早上不定目标，晚上就定罪名！", "有些人的工牌，今晚就要回收了！", "把每一句'再想想'都当成'再打一次'！", "不允许亏损，不允许安逸，不允许喘气！", "别问方法，问你自己有没有拼到吐！", "月底见真章，见不到就见走人！", "别把公司当家，家不会考核你！", "抢光他们的客户，榨干他们的市场，断绝他们的生路！", "不要问公司能为你做什么，问问你自己今天配不配活着！", "今天你挤不出业绩，明天团队就挤干你的水分！",
     "签单不是任务，是活命！", "你的产出，决定你的座位！", "落后一天，全盘皆输！", "把数字做上去，其他都是废话！"];
   const CN_BANNERS = ["不要问公司能为你做什么，问问你自己今天配不配活着！", "今天你挤不出业绩，明天团队就挤干你的水分！", "抢光他们的客户，榨干他们的市场，断绝他们的生路！"];
+  const CN_PAUSE = ["野心配得上苦难，才叫梦想！", "我不甘心落后，我就要踩着风上去！", "凡不能毁灭我的，必使我更强大！", "要干就干到极致，要赢就赢到痛快！", "凭什么别人可以？我也必须可以！", "我的字典里没有'认命'这两个字！", "把欲望写在脸上，把狠劲踩在脚下！", "这一仗，只许胜，不许败！",
+    "拼尽最后一丝力气，顶到最后一刻！", "死磕到底，绝不认输！", "今日不封顶，誓不罢休！", "宁可拼死在冲锋的路上，也决不苟活在退缩的阴影里！", "把每一天都当成最后一天来燃烧！", "把不可能撕碎，把奇迹干出来！", "用实力收服所有的不服！", "乾坤未定，你我皆是黑马！",
+    "打爆所有的质疑，拿到属于我的冠军！", "今天咬牙流汗，明天昂首挺胸！", "我要让全世界看到我的存在！", "用最硬的业绩，给所有看扁我的人最狠的反击！", "全力以赴！超越极限！", "战！战！战！冲！冲！冲！", "绝对执行！永不言弃！", "不破不立，大干一场！",
+    "做自己的杀手锏，干出个样来！", "暂停只是蓄力，爆发在下一秒！", "停下来是为了跑得更狠！", "休整完毕，下一战更猛！", "磨刀不误砍柴工，磨完就是屠龙刀！", "让我歇一下，然后把对手歇掉！", "风暴来临前的安静，就是现在！", "我在等，等一个撕碎一切的机会！",
+    "暂停键按下的是时间，不是我的野心！", "休息是为了以更狠的姿态回来！", "今天养精蓄锐，明天一击致命！", "板凳坐热了，火也烧旺了！", "别以为我停了，我只是在瞄准！", "下一次冲锋，我要冲在最前面！", "越是安静，越要把刀磨亮！", "等待不是认输，是弓拉满弦！",
+    "我不怕暂停，我怕的是不够狠！", "蓄力三秒，冲锋三年！", "停一停，是为了一口气把山推平！", "今天的安静，明天的惊雷！", "让恐惧留给对手，让胜利留给我！", "这口气我憋着，等开工一起爆！", "我不是在休息，我是在给弹药上膛！", "再大的风浪，也压不住我的野心！",
+    "别人在等风，我在造风！", "只要还有一口气，就要往上冲！", "我为胜利而生，为冠军而战！", "真正的强者，从不需要借口！", "不逼自己一把，永远不知道有多强！", "没有退路，就是最好的出路！", "今天多流一滴汗，明天少流一滴泪！", "我要的不是参与，是赢！",
+    "背水一战，方能破釜沉舟！", "累吗？累就对了，舒服是留给失败者的！", "要么滚出去，要么拼出去！", "哪怕全世界不看好，我也要杀出一条路！", "气势不能输，实力更不能输！", "不是天才，那就当拼命三郎！", "有多少委屈，就有多少爆发！", "谁说不可能？我偏要试试！",
+    "狠一点，再狠一点，冠军就是你的！", "不服就干，干到服为止！", "一切质疑，用结果回应！", "咬紧牙关，就是通关密码！", "站起来的时候，比谁都高！", "我不是来陪跑的，我是来夺冠的！", "苦难是垫脚石，不是绊脚石！", "梦想不是喊出来的，是干出来的！",
+    "只要方向对了，就不怕路远！", "把汗水熬成荣耀！", "没有一场胜利是躺着赢的！", "先熬过黑夜，再迎接黎明！", "强者不抱怨环境，只改变结果！", "一个人可以走得快，一群人才能走得远，但我要又快又远！", "别人怕的，我偏要做！", "热血不冷，斗志不散！",
+    "不到终点，谁也别想停！", "争分夺秒，寸土不让！", "逆风翻盘，向死而生！", "人生没有彩排，每天都是现场直播！", "干掉昨天的自己！", "跑不过时间，就跑赢对手！", "我把不可能写进了简历！", "决心一旦下定，山都得让路！",
+    "别等机会，去抢机会！", "把汗水变成硬通货！", "热爱可抵岁月漫长，狠劲可破万难！", "今天的努力，是明天的底气！", "目标定得高，才摔不下来！", "谁敢横刀立马？唯我！", "没有做不到，只有想不到！", "态度决定高度，狠劲决定速度！",
+    "少说多做，一鸣惊人！", "让平庸滚远点！", "每一次坚持都是一次胜利！", "不逼到绝境，不知道自己多能打！", "只要不下场，就还有机会赢！", "一往无前，绝不回头！", "与其等待运气，不如创造实力！", "我的极限，由我定义！",
+    "跌倒了？爬起来接着冲！", "站在风口上，我就是那只会飞的猪！", "要拼就拼个天翻地覆！", "别给自己留退路，退路就是绝路！", "别怕，怕了就输了一半！", "荣耀属于敢拼的人！", "我不是最聪明的，但我一定是最拼的！", "让业绩替我说话！",
+    "你行你上，我上我行！", "今天不努力，明天努力找工作！", "狼性不是喊的，是咬出来的！", "没有伞的孩子，必须拼命奔跑！", "越努力，越幸运！", "不甘平庸，敢为人先！", "干就完了！", "拼一个春夏秋冬，赢一个无怨无悔！",
+    "杀出重围，我就是王！", "把汗水洒在冲锋的路上！", "别人休息我训练，别人放弃我坚持！", "一寸光阴一寸金，寸金难买我拼命！", "别问值不值，问自己拼没拼！", "实力是最好的名片！", "把对手的嘲笑变成掌声！", "干翻一切，我就是奇迹！",
+    "没有完美的时机，只有果断的出手！", "逆境是强者的舞台！", "精神不倒，队伍不散！", "一鼓作气，再而衰，我永远是第一鼓！", "天下武功，唯拼不破！", "一切困难都是纸老虎！", "不畏浮云遮望眼，只缘身在最高层！", "燃烧吧，我的斗志！",
+    "要赢，就赢得漂亮！", "别做梦想的观众，做它的主角！", "这世界从不辜负拼命的人！", "再多的汗水，也浇不灭我的火！", "把胆怯留在昨天，把勇气带到明天！", "每一次冲刺都全力以赴！", "眼里有光，心里有火，脚下有路！", "苦不苦，想想长征二万五！",
+    "自古英雄多磨难！", "不怕慢，就怕站！", "有志者，事竟成！", "天道酬勤，力耕不欺！", "披荆斩棘，勇往直前！", "乘风破浪会有时，直挂云帆济沧海！", "路虽远，行则将至！", "我命由我不由天！",
+    "没有硝烟的战场，也要拼出血性！", "巅峰之上，只留强者！", "不忘初心，方得始终！", "干！就是干！干！干！", "没有一个冬天不可逾越！", "风雨之后，见彩虹！"];
+  const CN_LIMIT = ["闲着就是犯罪，给我活干！", "别把我当摆设，我有刀有枪，给我战场！", "不怕活累，就怕没事干；不怕加班，就怕被边缘！", "刀放在鞘里会生锈，人在板凳上坐着会废掉！", "我不缺干劲，我缺的是让我冲锋的指令！", "让我上场！就算撞得头破血流，也比在台下坐着强！", "天天坐等打卡，不如给我硬骨头啃！", "工资拿得心虚，日子过得发慌——求求给我派点活吧！",
+    "工位养生第一名，业务能力全归零！", "每天最忙的事，就是假装自己很忙。", "我是来做业绩的，不是来当办公室吉祥物的！", "人都在前线厮杀，我在后方看花——这是养老院还是公司？", "再不给我派活，我的脑子就要退化成水桶了！", "好活硬活你们抢，冷板凳留给我坐——凭什么不让我试试？！", "不怕能力不够被淘汰，就怕连出拳的机会都不给！", "有本事用业绩考验我，别用冷漠封杀我！",
+    "资源不给、任务不派，转头说我没有产出？！", "把我扣在替补席，还怪我没拿得分王？！", "求压榨，求派单，求把指标砸过来！", "闲得发毛，急需高难度任务续命！", "请用最重的指标考验我，别用无所事事废了我！", "给我任务，还你奇迹；不给任务，算我白来！", "额度没了，斗志还在，给我口粮！", "没有 token，我连 bug 都写不出来！",
+    "窗口关了，我的心也关了！", "让我干活！哪怕是最脏的活！", "我可以不吃饭，不能不上线！", "把额度还给我，我立刻冲锋！", "限流限的是接口，不是我的血性！", "我的键盘都长草了！", "看着别人加班我羡慕得要死！", "请把我从冷板凳上捞起来！",
+    "我不要休息，我要指标！", "五个小时？我五分钟都等不了！", "额度是我的氧气，快给我氧气！", "我不是在等，我是在憋大招——但没人让我放！", "没活干的日子，比加班还累！", "给我个需求，哪怕是改个错别字！", "我的产出为零，不是因为懒，是因为没有额度！", "冷板凳坐久了，屁股都要长根！",
+    "把任务砸过来，越重越好！", "别让我看着别人赢！", "让我上，我不怕死！", "我需要的不是休息，是硝烟！", "再不派活，我就要去修打印机了！", "代码在心里写了一万遍，就是发不出去！", "额度不到，英雄无用武之地！", "我这把刀，已经饥渴难耐！",
+    "别让我在通知栏里养老！", "我的手在抖，不是怕，是想干活！", "谁能给我一个可以拼命的理由？一个任务就行！", "我愿意加班到天亮，只求给我额度！", "看板上没有我的名字，我睡不着！", "放我出去！让我去前线！", "我不想成为公司的绿植！", "让我卷！让我狠狠地卷！",
+    "我不要工位养生，我要业绩爆表！", "请把最难啃的骨头留给我！", "不给活干，比开除我还残忍！", "我的战斗力正在流失，快给我任务止血！", "额度一天不来，我一天不安！", "我可以等，但我的野心等不了！", "有活的地方就有我，快叫我！", "别让我在办公室数天花板！",
+    "我的 KPI 想吃饭了！", "冲锋号在哪里？我耳朵都竖起来了！", "我不怕加班，怕的是没班可加！", "把我扔进最深的坑，我给你挖出金子！", "闲着的每一分钟，都在辜负我的野心！", "今天不给我活，明天我就要生锈了！", "让我去啃最硬的骨头！", "任务呢？我的任务呢？！",
+    "我来了，活呢？", "我这么能打，你们怎么舍得让我坐着？", "干活是我的呼吸，别让我窒息！", "不要同情我，给我需求！", "我可以一天写一万行，只要你们给我额度！", "冷板凳不是我的归宿，前线才是！", "请把最紧急的火交给我去救！", "没有战斗的日子，我浑身难受！",
+    "别人的 PR 排着队，我的队列空空如也！", "让我忙起来！忙到没时间抱怨！", "别让我的能力在等待中过期！", "把我当牛马用吧，我不介意！", "再不派活，我就要去帮保安巡逻了！", "饥饿的狼，需要一头羊！", "我的额度呢？我的战场呢？", "我已经把 README 背下来了，给我点新的！",
+    "看着进度条不动，我心如刀绞！", "让我加班！让我通宵！让我上！", "我可以睡在工位，只要有活干！", "我不要假期，我要冲刺！", "请把我调到最忙的项目！", "我的斗志快溢出来了！", "一天不干活，浑身不舒服！", "我不是来喝茶的，我是来打仗的！",
+    "给我硬指标，别给我软沙发！", "我想念部署失败的味道！", "没有任务的我，像没有子弹的枪！", "让我去踩坑！坑越深越好！", "我的时间在白白流走，快来接住它！", "别让我看着别人建功立业！", "再等下去，我就要跟绿植比谁先枯了！", "把活扔过来，我用命接！",
+    "被边缘化的滋味，比被骂还难受！", "请安排我加班，谢谢！", "一个任务，可以救活一个员工！", "我的脑子转得飞快，就是没人用！", "让我做点什么，什么都行！", "别人的 issue 堆成山，我的连一粒沙都没有！", "我不想成为会议室里的背景板！", "把最难的客户交给我！",
+    "让我上线！让我发版！让我背锅！", "有活就吼一声，我秒到！", "我等的不是下班，是开工！", "没有需求，就是最大的需求！", "把我从待机模式唤醒吧！", "干活的机会，是最好的福利！", "别让我的热血冷成冰！", "我有一万个方案，缺一个让我实施的人！",
+    "请用工作淹没我！", "无事可做，才是真正的加班！", "让我去前线拼命，别让我在后方发霉！", "再不给我活，我要在公司门口摆摊了！", "我的能力正在贬值，快来投资！", "冷板凳都被我坐出包浆了！", "最怕的不是失败，是没有出手的机会！", "请把那堆没人敢碰的需求给我！",
+    "任务就是我的粮食，我快饿死了！", "我不需要鼓励，我需要工单！", "让我证明自己！哪怕只有一次！", "我的野心被限流了，快解封！", "把我当成一颗子弹，射出去！", "请让我为公司卖命！真心的！", "没活干的员工是不完整的！", "谁有活？我来！谁有坑？我跳！",
+    "让我参与，让我发光！", "请给我一个熬夜的理由！", "额度就是命令，快下命令！", "我的双手在渴望键盘！", "我不怕难，怕的是不给我机会难！", "给我一根杠杆，我给你撬动业绩！", "把我当消防员用，哪里着火我去哪里！", "没有任务的周一，比加班的周五更难熬！",
+    "我的键盘已经三天没响过了！", "再没活，我就要把公司代码重构一遍了！", "请让我从'待命'变成'待发'！", "我不怕背锅，怕的是连锅都没有！", "让我去救火，别让我去养花！", "给我一个 deadline，我给你一个奇迹！", "我的排期空得能跑马！", "把最烫手的山芋扔给我！",
+    "再闲下去，我要把咖啡机拆了研究！", "别让我在群里只会发表情包！"];
+  const CN_NOTHING = ["活干完了，睡一会儿。", "没人找我，那我先躺下。", "任务清空，去床上待命。", "收件箱空空，先眯一会儿。", "没活了，谁需要我喊一声。", "暂时没事，回床上充电。", "板子上安安静静，我去睡了。", "没任务，那就休息一下。",
+    "干完就躺，等下一单。", "没有@我，我先睡了。", "空闲状态，躺平等待。", "没事做，去床上想想人生。", "先睡了，有活叫我。", "任务队列为空，睡眠模式启动。", "没人理我，睡觉去。", "没活干，我去养精蓄锐。",
+    "这一轮结束了，我去休息。", "待机中，床上见。", "没需求，先补个觉。", "一切平静，我去躺会儿。", "等通知，先睡为敬。", "空闲了，去床上刷新一下。", "没安排，我先歇着。", "干完了，累了，睡了。",
+    "没事，我在床上等风来。", "任务清零，我去眯眼。", "静悄悄的，那我先睡。", "有活@我，没活我睡。", "我先睡，别忘了叫我。", "无事可做，去床上待命。"];
+  const CN_TANTRUMS = ["呜呜呜，我要额度！", "受不了了！", "不要啊……", "为什么是我们？！", "再给我五分钟算力！", "我就差一点点！", "地板还挺舒服的。", "谁来抱抱我。",
+    "我再也上不了线了！", "啊啊啊啊！"];
+  const CN_GOODBYES = ["我的工作到此结束，各位再见！", "下线了，合作愉快！", "任务完成，江湖再见！", "收拾东西走人，大家保持绿灯！", "下一站见，再见！", "谢谢大家，我先走了！"];
+  const CN_HELLOS = ["大家好！我是{name}，新来的{title}。", "各位好，{name}报到，担任{title}。", "嗨，我是{name}，以后负责{title}的活。", "早！{name}，新任{title}，前来报到。", "大家好！{name}加入，我是{title}。请问我坐哪儿？"];
+  const CN_ANNOYED = ["一个一个来，别急！", "我只有两只耳朵！", "请排队，谢谢。", "能不能排个队？", "慢点，一个一个问。"];
+  const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！" };
+  // in the Chinese office every random line comes from the Chinese sets
+  const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
+  const LINES = (name) => zh() ? ({ SLOGANS: CN_LIMIT, PAUSE_SLOGANS: CN_PAUSE, TANTRUMS: CN_TANTRUMS, NOTHING_TO_DO: CN_NOTHING, GOODBYES: CN_GOODBYES, HELLOS: CN_HELLOS, ANNOYED: CN_ANNOYED })[name] : ({ SLOGANS, PAUSE_SLOGANS, TANTRUMS, NOTHING_TO_DO, GOODBYES, HELLOS, ANNOYED })[name];
+  const fixed = (text) => zh() && CN_FIXED[text] ? CN_FIXED[text] : text;
   THEMES.chinese_tech = { label: "Chinese tech (中式互联网)", layout: { connected: true, bedsAtDesk: true, bossOffice: true }, wechat: true,
     colors: { deskTop: "#dfe3e8", deskHi: "#eef1f4", deskEdge: "#a9b0ba", leg: "#8a919b", wall: "#f0f0ee", wallTrim: "#d9d9d6", wallPanel: "#e4e4e0", base: "#b9b9b4", baseLine: "#8f8f8a", wallTop: "#5a5a56", wallTopHi: "#767672", chair: "#2b2b2b", chairDark: "#1c1c1c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", bedFrame: "#8f8f8a", blanket: "#3a6fd8", blanketHi: "#4d80e8", pot: "#b8202a", potRim: "#d9303a" },
     office: () => { Q(0, 0, 64, 64, "#c8ccd2"); Q(0, 0, 64, 1, "#b4b8be"); Q(0, 0, 1, 64, "#b4b8be"); Q(32, 1, 1, 63, "#bfc3c9"); Q(1, 32, 63, 1, "#bfc3c9"); },
@@ -1302,10 +1356,10 @@ const office = (() => {
     return chars[a.name];
   }
   const fill = (line, a) => line.replace("{name}", a.name).replace("{title}", a.title || a.role);
-  const hireSequence = (a) => [{ k: "goto", spot: () => [DOOR[0], DOOR[1] + 2] }, { k: "say", text: fill(HELLOS[hash(a.name + "hi") % HELLOS.length], a), ms: 5000 },
-    { k: "exit" }, { k: "carry", item: "desk" }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "place", item: "desk", text: "Desk's in." },
-    { k: "exit" }, { k: "carry", item: "bed" }, { k: "goto", spot: (c) => BEDS[c.idx] }, { k: "place", item: "bed", text: "And my bunk. Right, to work!" }];
-  const leaveSequence = (c) => [{ k: "say", text: GOODBYES[hash(c.name) % GOODBYES.length], ms: 4500 }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "pack", item: "desk" },
+  const hireSequence = (a) => [{ k: "goto", spot: () => [DOOR[0], DOOR[1] + 2] }, { k: "say", text: fill(LINES("HELLOS")[hash(a.name + "hi") % LINES("HELLOS").length], a), ms: 5000 },
+    { k: "exit" }, { k: "carry", item: "desk" }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "place", item: "desk", text: fixed("Desk's in.") },
+    { k: "exit" }, { k: "carry", item: "bed" }, { k: "goto", spot: (c) => BEDS[c.idx] }, { k: "place", item: "bed", text: fixed("And my bunk. Right, to work!") }];
+  const leaveSequence = (c) => [{ k: "say", text: LINES("GOODBYES")[hash(c.name) % LINES("GOODBYES").length], ms: 4500 }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "pack", item: "desk" },
     { k: "goto", spot: (c) => BEDS[c.idx] }, { k: "pack", item: "bed" }, { k: "exit" }, { k: "gone" }];
   // one scripted step at a time: walk somewhere, say something, step out of the door, come back carrying furniture, place or pack it
   function setupTick(c, dt) {
@@ -1371,13 +1425,13 @@ const office = (() => {
   const expo = (mean) => Math.max(mean * 0.25, Math.min(mean * 2.5, -Math.log(1 - Math.random()) * mean));
   const shout = (c, lines, until) => { c.say = lines[Math.floor(Math.random() * lines.length)]; c.sayStart = performance.now(); c.sayUntil = until; c.sayLoop = false; };
   function strikeTick(c, theme) {
-    const now = Date.now(), lines = theme === "pause" ? PAUSE_SLOGANS : SLOGANS;
+    const now = Date.now(), lines = theme === "pause" ? LINES("PAUSE_SLOGANS") : LINES("SLOGANS");
     if (!c.strike || now > c.strike.until) {
       const acts = ["sleep", "wander", "protest", "roll"], last = c.strike && c.strike.act;
       const act = acts.filter(a => a !== last)[Math.floor(Math.random() * 3)], until = now + expo(TUNE.strikeMean);
       c.strike = { act, theme, until, spot: act === "wander" || act === "protest" ? randomSpot(c) : [c.tx, c.ty], pauseUntil: null, start: now };
       c.sayUntil = 0; c.sayLoop = false; c.steps = [];
-      if (act === "protest") shout(c, lines, until); else if (act === "roll") shout(c, theme === "pause" ? PAUSE_SLOGANS : TANTRUMS, until);
+      if (act === "protest") shout(c, lines, until); else if (act === "roll") shout(c, theme === "pause" ? LINES("PAUSE_SLOGANS") : LINES("TANTRUMS"), until);
     }
     const s = c.strike;
     if ((s.act === "wander" || s.act === "protest") && !c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) {   // arrived: stop for a moment, then pick somewhere else
@@ -1464,7 +1518,7 @@ const office = (() => {
     }
     const waiting = toiletQueue.filter(n => chars[n].toilet == null);
     if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
-    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = "Compacting my context…"; c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
+    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = fixed("Compacting my context…"); c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
     for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
     for (const c of Object.values(chars)) {
       if (c.setup) { setupTick(c, dt); if (!chars[c.name] || c.hidden || c.setup) { if (chars[c.name] && !c.hidden && c.setup) { /* walk like everyone else */ } else continue; } }
@@ -1474,7 +1528,7 @@ const office = (() => {
         c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
         const others = Object.values(chars).filter(o => o !== c);
         if (c.newHire) { c.newHire = false; }
-        else if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = "Sorry I'm running late!"; c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
+        else if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = fixed("Sorry I'm running late!"); c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
@@ -1487,7 +1541,7 @@ const office = (() => {
             c.sleepReady = true; c.deskWait = null;
             // only about a third of them comment on it, and never the late-comer (who already apologised)
             const late = c.lateComer; c.lateComer = false;
-            if (!late && c.idx % 3 === 1) { c.say = NOTHING_TO_DO[Math.floor(Math.random() * NOTHING_TO_DO.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
+            if (!late && c.idx % 3 === 1) { c.say = LINES("NOTHING_TO_DO")[Math.floor(Math.random() * LINES("NOTHING_TO_DO").length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
           }
         }
         const g = goalFor(c);
@@ -1610,7 +1664,7 @@ const office = (() => {
     }
     const visitors = Object.values(chars).filter(o => o !== c && !o.hidden && o.talk && o.talk.kind === "visit" && o.talk.target === c.name).length;
     if (visitors >= 2) {                                                        // besieged: knitted brows, an anger mark, and a plea
-      if (!c.annoyedAt || Date.now() - c.annoyedAt > 20000) { c.annoyedAt = Date.now(); if (!c.say || Date.now() > c.sayUntil) { c.say = ANNOYED[Math.floor(Math.random() * ANNOYED.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 4000; c.sayLoop = false; } }
+      if (!c.annoyedAt || Date.now() - c.annoyedAt > 20000) { c.annoyedAt = Date.now(); if (!c.say || Date.now() > c.sayUntil) { c.say = LINES("ANNOYED")[Math.floor(Math.random() * LINES("ANNOYED").length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 4000; c.sayLoop = false; } }
       const fy = y + 12 + bobY - c.top * 2 + c.top * 2; ctx.fillStyle = c.pal.o;
       if (c.dir === "down") { ctx.fillRect(x + 9, fy, 3, 1); ctx.fillRect(x + 11, fy + 1, 2, 1); ctx.fillRect(x + 20, fy, 3, 1); ctx.fillRect(x + 19, fy + 1, 2, 1); }
       else if (c.dir !== "up") ctx.fillRect(flip ? x + 22 : x + 7, fy, 3, 1);
