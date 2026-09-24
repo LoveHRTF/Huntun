@@ -900,6 +900,24 @@ const office = (() => {
     "工资是精神损失费，还不够。", "上班第一年是人，第二年是牛，第三年是马。", "我的工位风水极好，适合下葬。", "每天最快乐的时刻，是电梯关门的那一秒。", "我不是社畜，我是社畜里的燃料。", "公司福利：免费加班。",
     "'辛苦了'三个字，是我全部的报酬。", "干得好是应该的，干不好是活该的。", "我的青春喂了需求池。", "裁员名单上要是没有我，我会很失望。", "让我当个废物吧，废物不用改PPT。", "今天也没死，明天继续上班。",
     "我不是佛系，我是被抽干了。", "我的电脑都比我有休息时间。", "工牌一挂，人生停摆。", "别人的周末是生活，我的周末是恢复出厂设置。", "我把加班当锻炼，把骂当鼓励，把自己当傻子。", "我现在的理想是：明天不用醒。"];
+  const CN_SMOKE = ["一群吃干饭的脑残搁这儿指手画脚，这业务能活到现在纯靠老天瞎了眼！", "天天整那些死脑筋的KPI，正经事一件干不成，拉屎不出怪地球没引力，草！", "拍脑门决策，拍胸脯保证，拍屁股走人！留下一堆烂摊子给底下人收拾，真他妈绝了！", "整天跟个戏精一样开会表演，除了会甩锅和抢功劳，你们还会个屁啊？！", "搞一堆听不懂的人话和PPT名词，掩盖你们脑子空空的事实，真嫌不够恶心人！", "又想马儿跑，又想马儿不吃草，还要马儿自己把皮剥了给你当鞋垫？！去死吧！",
+    "少特么给我谈理想画大饼，老子来上班是来赚钱的，不是来给你当免费奴隶的！", "工资发得跟打发要饭的一样，要求提得跟选总统一样，脸呢？！还要不要脸了？！", "天天逼着大家'共克时艰'，你怎么不把你名下的豪车豪宅卖了跟公司共克？骗谁呢？！", "赶紧倒闭吧！今晚就凉透！省得天天搁这儿折磨人，早死早超生！", "庙小妖风大，池浅王八多！这破地方多待一天我都觉得是在糟蹋我自己！", "赏罚不明，是非不分，会干活的被干死，会舔的当上领导，这破公司不倒真的天理难容！",
+    "赶紧把欠老子的钱一分不少地结了，老子多看你们这群智障一眼都想吐！", "今天我就站在这儿看你们怎么塌房，等着瞧，看这艘破船什么时候彻底沉底！", "开会三小时，结论零个，脑子是拿来当摆设的吗？！", "需求一天改八遍，你们是在做产品还是在抽奖？！", "领导拍板五分钟，我们返工五星期，草！", "上面动动嘴，下面跑断腿，这破规矩谁定的？！",
+    "一句'尽快'就把人往死里逼，你倒是说清楚哪天啊！", "会做PPT的升官，会干活的背锅，天理呢？！", "把'狼性'挂嘴边的人，自己连羊都不如！", "天天喊'降本增效'，降的是我们的工资，增的是你们的年终！", "啥都不懂还要瞎指挥，你们是来搞笑的吗？！", "出了事第一时间找替罪羊，这就是你们的管理？！",
+    "三个领导五个意见，我们到底听谁的？！", "做出来的东西自己都不用，还好意思叫产品？！", "背景板一样的中层，除了传话还会啥？！", "定指标的时候你们脑子进水了吧？！", "一天开六个会，活谁干？鬼干吗？！", "天天'对齐''拉通''赋能'，你们能不能说人话！",
+    "抢功劳的时候跑得比谁都快，担责任的时候一个都找不着！", "当着老板一个样，背着老板另一个样，恶心！", "项目黄了怪执行，项目成了归领导，呸！", "让马儿跑还不给草，还要马儿写周报感恩！", "画的饼比月亮还大，发的钱比硬币还薄！", "加班不给钱还美其名曰'福报'，福你个头！",
+    "让我们感恩公司？公司先感恩一下我们的肝吧！", "一句'年轻人要多历练'，就想白嫖我三年？！", "团建就是变相加班，还要自己掏钱，绝了！", "'我们是一家人'——一家人你怎么不分我股份？！", "加班到凌晨，第二天还要笑着打卡，我笑你个鬼！", "调休调到猴年马月，你们当我傻？！",
+    "请个假跟求人一样，工资却扣得干脆利落！", "'能者多劳'，翻译一下就是'老实人多干'！", "不给资源不给人，光给压力，你们真行！", "五险一金按最低交，口号按最高喊！", "年终奖变成一封感谢信，你们脸皮真厚！", "'公司困难'四个字用了三年，困难到换了两辆新车？！",
+    "让我们自愿加班，自愿你个头！", "把人当电池用，用完就扔，早晚遭报应！", "再撑一撑？撑你个头，我肝都撑没了！", "这破船早点沉，我还能早点上岸！", "天天喊'共渡难关'，关是你们挖的坑！", "一个个都想当皇帝，可这破庙连香火都没有！",
+    "公司文化就四个字：忍气吞声！", "早倒闭早解脱，省得一天天在这儿耗命！", "走一个人换三个坑，人事也是没脑子！", "这地方待久了，人都要废！", "招聘写得天花乱坠，进来一看全是坑！", "干得越多错得越多，不干的反而升职，绝了！",
+    "这公司唯一的优点就是离地铁近！", "什么狗屁企业文化，就是压榨文化！", "天天'赋能'，能给我涨点工资吗？！", "再这样搞下去，客户都得被你们赶跑！", "别跟我讲情怀，情怀能交房租吗？！", "一天到晚'拥抱变化'，变的都是坏事！",
+    "绩效面谈就是变相威胁，谁不知道？！", "我为公司拼命，公司给我批个病假都推三阻四！", "这样的领导，猪都能当！", "谁再跟我说'年轻人吃点苦'，我就让他先吃！", "所谓'扁平化'，就是所有人都能骂我！", "啥事都'先上线再说'，上线炸了又怪我！",
+    "不发奖金还搞颁奖典礼，你们真是天才！", "开会就是领导念PPT，我们负责鼓掌！", "一年涨薪三百块，还要我写感言？！", "这公司的效率，还不如楼下的煎饼摊！", "把工位当牢房，把员工当囚犯，还想要忠诚？！", "'加班是自愿的'，不加班就'态度有问题'！",
+    "别人的老板在发钱，我们的老板在发疯！", "流程一改再改，改到最后没人知道咋干！", "抽完这根，回去继续当牛马，草！", "啥都要'闭环'，你们的脑子先闭环一下吧！", "老子今天就把话放这儿：这公司迟早完蛋！", "当初面试吹得天花乱坠，现在连打印纸都要省！",
+    "让我'主人翁精神'？主人翁怎么没分红？！", "天天讲'结果导向'，结果就是大家一起完蛋！", "天天'压力测试'，测的是我们的血压！", "一年三次组织架构调整，你们是在玩俄罗斯方块吗？！", "真想把这份报表糊到他们脸上！", "这根烟比公司的未来还有盼头！",
+    "再不发工资我就把服务器拔了！", "我这辈子的耐心都花在这破公司了！", "什么'扁平管理'，就是谁都能踩你一脚！", "领导的嘴，骗人的鬼！", "早晚有一天，我要亲眼看着这里关门！", "把'奋斗者协议'塞回你们自己嘴里！",
+    "一个破需求评审开了四个小时，脑子里装的是浆糊吗？！", "老板的表比我一年工资都贵，还好意思说没钱涨薪？！", "让员工写'感恩日记'的公司，迟早写进倒闭名单！", "连打印机都比你们这帮领导靠谱！", "一天到晚'向上管理'，向上管你个头！", "抽根烟的功夫，你们又改了三版方案，服了！",
+    "不发年终奖还要开年会，让我们给你们鼓掌？做梦！"];
   const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！" };
   // in the Chinese office every random line comes from the Chinese sets
   const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
@@ -1458,7 +1476,14 @@ const office = (() => {
   }
   // a smoke break: drift between spots within a few tiles of the entrance, standing a while at each
   const doorSpot = (c) => { const ex = DOOR[0], ey = DOOR[1] + 1, near = FLOOR.filter(([x, y]) => Math.abs(x - ex) <= 3 && Math.abs(y - ey) <= 3 && !(x === ex && y === ey) && !heldBy(x, y, c)); return near.length ? near[Math.floor(Math.random() * near.length)] : [c.tx, c.ty]; };
-  function smokeTick(c) { const s = c.smoke, now = Date.now(); if (!c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) { if (!s.pauseUntil) { s.pauseUntil = now + 6000 + Math.random() * 9000; c.dir = ["down", "left", "right"][Math.floor(Math.random() * 3)]; } else if (now > s.pauseUntil) { s.spot = doorSpot(c); s.pauseUntil = null; } } }
+  function smokeTick(c) {
+    const s = c.smoke, now = Date.now();
+    if (now > s.nextLineAt) { c.say = CN_SMOKE[Math.floor(Math.random() * CN_SMOKE.length)]; c.sayStart = performance.now(); c.sayUntil = now + 11000; c.sayLoop = false; s.nextLineAt = now + 14000 + Math.random() * 10000; }   // ranting on the way out and between drags
+    if (!c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) {
+      if (!s.pauseUntil) { s.pauseUntil = now + (s.squat ? 1e12 : 6000 + Math.random() * 9000); c.dir = ["down", "left", "right"][Math.floor(Math.random() * 3)]; }   // a squatter stays put
+      else if (now > s.pauseUntil) { s.spot = doorSpot(c); s.pauseUntil = null; }
+    }
+  }
   // despair: a free tile against a wall to bang the head on, or the own chair to lie face down; a fresh gloomy line every so often
   const wallSpot = (c) => { const isWall = (x, y) => y >= 0 && y < MH && x >= 0 && x < MW && map[y][x].some(t => t.startsWith("wall") || t.startsWith("glass")); let best = null, bd = 1e9;
     for (const [x, y] of FLOOR) { const dir = isWall(x, y - 1) ? "up" : isWall(x - 1, y) ? "left" : isWall(x + 1, y) ? "right" : null; if (!dir || heldBy(x, y, c)) continue; const d = Math.abs(x - c.tx) + Math.abs(y - c.ty); if (d < bd) { bd = d; best = { spot: [x, y], dir }; } } return best; };
@@ -1573,7 +1598,7 @@ const office = (() => {
           if (!c.deskWait) { c.deskWait = performance.now() + 2500; c.dir = DESKS[c.idx].dir; }
           else if (performance.now() > c.deskWait) {
             c.sleepReady = true; c.deskWait = null;
-            if (zh() && Math.random() < 0.5) c.smoke = { until: Date.now() + 90000 + Math.random() * 120000, spot: doorSpot(c), pauseUntil: null };   // Chinese office: a smoke break by the door, then bed
+            if (zh() && Math.random() < 0.5) c.smoke = { until: Date.now() + 90000 + Math.random() * 120000, spot: doorSpot(c), pauseUntil: null, squat: Math.random() < 0.5, nextLineAt: 0 };   // Chinese office: a smoke break by the door (half of them squat there), then bed
             // only about a third of them comment on it, and never the late-comer (who already apologised)
             const late = c.lateComer; c.lateComer = false;
             if (!late && c.idx % 3 === 1) { c.say = LINES("NOTHING_TO_DO")[Math.floor(Math.random() * LINES("NOTHING_TO_DO").length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
@@ -1673,17 +1698,23 @@ const office = (() => {
     const phone = thinking && c.thinkStyle === "phone";
     const tick = Math.floor(t * 7 + c.idx) % 2, bobY = typing && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
     const tilt = phone ? (flip ? -1 : 1) : thinking ? (Math.floor(t / 1.5 + c.idx) % 2 ? 1 : -1) : 0;   // thinking: the head leans a little
+    const squatting = c.mode === "smoke" && c.smoke && c.smoke.squat && !c.moving && !c.steps.length;
+    if (squatting) {                                                            // squatting by the door: head and body dropped, knees up, feet flat
+      const hd = c.dir === "right" ? "left" : c.dir; drawSprite(headRows(c, hd).concat(bodyRows(c, hd)), x, y + 12 - c.top * 2, flip, c.pal, c.cap, hd, c.top);
+      ctx.fillStyle = c.pal.p; ctx.fillRect(x + 5, y + 34, 9, 6); ctx.fillRect(x + 18, y + 34, 9, 6); ctx.fillStyle = c.pal.b; ctx.fillRect(x + 4, y + 40, 10, 3); ctx.fillRect(x + 18, y + 40, 10, 3);
+    }
     const dsk = DESKS[c.idx], faceDown = c.mode === "despair" && c.despair && c.despair.pose === "desk" && !c.moving && !c.steps.length && dsk && c.tx === dsk.chair[0] && c.ty === dsk.chair[1];
     if (faceDown) { const hd = c.dir === "right" ? "left" : c.dir; drawSprite(bodyRows(c, hd).concat((hd === "left" ? SIDE_LEGS : LEGS).stand), x, y + 22, flip, c.pal, null, hd, 0); return; }   // slumped: the head lies on the desk (drawn with the desk)
-    drawSprite(sprite(c, c.dir, c.frame), x + tilt, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
+    if (!squatting) drawSprite(sprite(c, c.dir, c.frame), x + tilt, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
     if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
-    if (phone) {                                                               // on the phone: handset at the ear, free hand gesturing, a chatter of little marks
-      const ear = c.dir === "down" ? [x + 23, y + 7] : [x + 25, y + 5], talk = Math.floor(t * 5 + c.idx) % 2;
-      ctx.fillStyle = c.pal.s; ctx.fillRect(ear[0] - 1, ear[1] + 5, 5, 3); ctx.fillRect(ear[0] + 2, ear[1] + 8, 3, 9);
-      ctx.fillStyle = "#23262e"; ctx.fillRect(ear[0], ear[1], 3, 7); ctx.fillStyle = "#6fc3f0"; ctx.fillRect(ear[0] + 1, ear[1] + 1, 1, 3);
-      ctx.fillStyle = c.pal.s; ctx.fillRect(x + 3, y + 20 - talk * 2, 4, 6);
-      if (c.dir === "down" && talk) { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 15, y + 17, 2, 1); }
-      ctx.fillStyle = "#ffffff"; for (let k = 0; k < 3; k++) if ((Math.floor(t * 6 + c.idx) + k) % 3) ctx.fillRect(ear[0] + 5 + k * 3, ear[1] - 3 + (k % 2), 2, 1);
+    if (phone) {                                                               // on the phone: a big handset at the ear held by a raised arm, free hand gesturing, chatter marks and a phone icon overhead
+      const ear = c.dir === "down" ? [x + 22, y + 5] : [x + 24, y + 3], talk = Math.floor(t * 5 + c.idx) % 2;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(ear[0] + 2, ear[1] + 10, 4, 10); ctx.fillRect(ear[0] - 1, ear[1] + 8, 7, 4);                  // arm up and the hand around the phone
+      ctx.fillStyle = "#1b1d22"; ctx.fillRect(ear[0], ear[1] - 2, 5, 12); ctx.fillStyle = "#6fc3f0"; ctx.fillRect(ear[0] + 1, ear[1] - 1, 3, 8); ctx.fillStyle = "#ffffff"; ctx.fillRect(ear[0] + 2, ear[1] + 1, 1, 2);
+      ctx.fillStyle = c.pal.s; ctx.fillRect(x + 2, y + 18 - talk * 3, 5, 8);
+      if (c.dir === "down") { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 14, y + 17, talk ? 4 : 2, talk ? 2 : 1); }
+      ctx.fillStyle = "#ffffff"; for (let k = 0; k < 3; k++) if ((Math.floor(t * 6 + c.idx) + k) % 3) { ctx.fillRect(ear[0] + 7 + k * 3, ear[1] - 4 + (k % 2) * 2, 2, 2); }
+      const bx = x + 16, by = y - 14 - c.top * 2; ctx.fillStyle = "#3b2a1e"; ctx.fillRect(bx - 5, by - 6, 10, 12); ctx.fillStyle = "#5cff8a"; ctx.fillRect(bx - 4, by - 5, 8, 10); ctx.fillStyle = "#1b1d22"; ctx.fillRect(bx - 2, by - 3, 4, 6);   // the "on a call" badge
     } else if (thinking) {
       ctx.fillStyle = c.pal.s;
       if (c.dir === "down") { ctx.fillRect(x + 17 + tilt, y + 20, 5, 3); ctx.fillRect(x + 22, y + 22, 4, 8); } else { ctx.fillRect(x + 24 + tilt, y + 6, 3, 5); ctx.fillRect(x + 26, y + 10, 4, 12); }
@@ -1710,10 +1741,13 @@ const office = (() => {
       if (c.carry === "desk" || c.carry === "both") { ctx.fillStyle = C.deskEdge; ctx.fillRect(x + 2, cy + bob, 28, 10); ctx.fillStyle = C.deskTop; ctx.fillRect(x + 3, cy + 1 + bob, 26, 6); ctx.fillStyle = "#23262e"; ctx.fillRect(x + 12, cy - 5 + bob, 10, 7); ctx.fillStyle = "#3c8fd0"; ctx.fillRect(x + 13, cy - 4 + bob, 8, 5); ctx.fillStyle = C.leg; ctx.fillRect(x + 4, cy + 10 + bob, 2, 3); ctx.fillRect(x + 26, cy + 10 + bob, 2, 3); }
       if (c.carry === "bed" || c.carry === "both") { const by = c.carry === "both" ? cy - 14 : cy; ctx.fillStyle = C.bedFrame; ctx.fillRect(x + 1, by + bob, 30, 11); ctx.fillStyle = C.mattress; ctx.fillRect(x + 3, by + 1 + bob, 26, 8); ctx.fillStyle = C.blanket; ctx.fillRect(x + 12, by + 2 + bob, 16, 6); ctx.fillStyle = C.pillow; ctx.fillRect(x + 4, by + 2 + bob, 6, 6); }
     }
-    if (c.mode === "smoke" && !c.moving && !c.steps.length) {                    // a cigarette at the mouth, its tip glowing, smoke drifting up
-      const mx0 = c.dir === "down" ? x + 17 : flip ? x + 22 : x + 4, my = y + 17 + bobY, dirx = c.dir === "down" || flip ? 1 : -1, glow = Math.floor(t * 3 + c.idx) % 3 === 0;
-      ctx.fillStyle = "#f4f4f4"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 4, my, 5, 1); ctx.fillStyle = glow ? "#ff7a2b" : "#c9401e"; ctx.fillRect(dirx > 0 ? mx0 + 5 : mx0 - 5, my, 1, 1);
-      const tip = dirx > 0 ? mx0 + 5 : mx0 - 5; for (let k = 0; k < 3; k++) { const ph = ((t * 0.6 + c.idx * 0.37 + k / 3) % 1); const px = tip + Math.round(Math.sin((ph + k) * 6) * 3) + dirx * 2, py = my - 2 - Math.round(ph * 16); ctx.fillStyle = "rgba(220,220,225," + (0.55 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px, py, 2 + Math.round(ph * 3), 2 + Math.round(ph * 2)); }
+    if (c.mode === "smoke" && !c.moving && !c.steps.length) {                    // a cigarette at the mouth, its tip glowing, a hand holding it, thick smoke drifting up
+      const sq = c.smoke && c.smoke.squat ? 1 : 0, my = y + 17 + bobY + sq * 12, mx0 = c.dir === "down" ? x + 17 : flip ? x + 22 : x + 4, dirx = c.dir === "down" || flip ? 1 : -1, drag = Math.floor(t * 1.5 + c.idx) % 3 === 0;
+      const tip = dirx > 0 ? mx0 + 8 : mx0 - 8;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(dirx > 0 ? mx0 + 1 : mx0 - 5, my + 1, 5, 4);                                             // the hand at the mouth
+      ctx.fillStyle = "#f7f7f7"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 8, my, 8, 2); ctx.fillStyle = "#d9a24a"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 2, my, 2, 2);
+      ctx.fillStyle = drag ? "#ffb347" : "#ff5a1f"; ctx.fillRect(tip, my - (drag ? 1 : 0), 2, drag ? 4 : 2); if (drag) { ctx.fillStyle = "rgba(255,120,40,.35)"; ctx.fillRect(tip - 2, my - 3, 6, 8); }
+      for (let k = 0; k < 5; k++) { const ph = ((t * 0.45 + c.idx * 0.37 + k / 5) % 1); const px = tip + Math.round(Math.sin((ph + k) * 5) * 5) + dirx * 3 - 2, py = my - 4 - Math.round(ph * 28), sz = 3 + Math.round(ph * 6); ctx.fillStyle = "rgba(230,230,235," + (0.7 * (1 - ph * 0.8)).toFixed(2) + ")"; ctx.fillRect(px, py, sz, sz - 1); }
     }
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
     if (working && c.dir !== "down") {                                            // back to the camera: elbows work while typing, the screen lights the desk
