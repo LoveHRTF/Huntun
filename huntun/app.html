@@ -655,7 +655,7 @@ async function openAgent(id, name) {
 const office = (() => {
   const T = 32, P = 2; let MW = 20, MH = 18, W = MW * T, H = MH * T;               // native size follows the team size; the scene is scaled to fill the panel
   let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
-  let scale = 1, ox = 0, oy = 0, last = 0, night = 0;
+  let scale = 1, ox = 0, oy = 0, last = 0;
   const SANS = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
   const C = { wood: "#d8b26b", woodLine: "#c39a55", woodHi: "#e8c98a", wood2: "#c9a26a", wood2Line: "#b58b52", wallTop: "#3b2f22", wallTopHi: "#54432f", wall: "#f2e4c8", wallTrim: "#cdb38a", wallPanel: "#e6d5b3", base: "#8b6b43", baseLine: "#6e4f2e",
               carpet: "#5e7ac9", carpet2: "#566fb8", carpetDot: "#7d98e2", deskTop: "#c58a4a", deskHi: "#d9a262", deskEdge: "#8f5e2f", leg: "#6e4726", pc: "#cfd3df", pcDark: "#9ea3b3", screen: "#3c8fd0", screenHi: "#6fc3f0", keys: "#b8bcc8", key: "#8f95a3",
@@ -883,6 +883,23 @@ const office = (() => {
   const CN_GOODBYES = ["我的工作到此结束，各位再见！", "下线了，合作愉快！", "任务完成，江湖再见！", "收拾东西走人，大家保持绿灯！", "下一站见，再见！", "谢谢大家，我先走了！"];
   const CN_HELLOS = ["大家好！我是{name}，新来的{title}。", "各位好，{name}报到，担任{title}。", "嗨，我是{name}，以后负责{title}的活。", "早！{name}，新任{title}，前来报到。", "大家好！{name}加入，我是{title}。请问我坐哪儿？"];
   const CN_ANNOYED = ["一个一个来，别急！", "我只有两只耳朵！", "请排队，谢谢。", "能不能排个队？", "慢点，一个一个问。"];
+  const CN_DESPAIR = ["我现在只是个会按键盘的肉块。", "每天醒来睁开眼，第一反应不是困，是绝望。", "打卡那一刻，我的灵魂就已经下班了，留下的只是躯壳。", "公司挺好的，就是有点要我的命。", "看着电脑屏幕，眼泪突然就掉下来了，连为什么掉的都不知道。", "我已经很久不知道高兴是什么感觉了。",
+    "随便吧，爱咋咋地，大不了把我开除。", "你说得都对，都是我的错，行了吧。", "别跟我谈未来，我现在连今天晚上都撑不过去。", "无所谓了，反正做再好也是被骂，做再差也是被骂。", "不要给我画饼了，我已经胃穿孔了。", "我已经失去愤怒的能力了，现在只想消失。",
+    "心悸、胸闷、头晕……我的身体在替我的嘴说'我不行了'。", "站在公司楼顶抽烟的时候，感觉风挺大的，下面挺安静的。", "周日晚上七点开始，胃就开始抽搐着疼。", "做梦都在改PPT、处理客诉，醒来比没睡还累。", "每天走在上班路上，都希望有一辆车能把我撞轻伤，好让我休一个月假。", "牛马还有草吃，我连草都嚼不烂。",
+    "上班用命换钱，下班用钱买命，中间还差价两千。", "今天也是积极等死的一天。", "上辈子作恶多端，这辈子上班上班。", "工位就是我的坟墓，电脑屏幕就是我的墓碑。", "我的表情已经僵在'收到'两个字上了。", "别问我在想什么，我什么都不想了。",
+    "我不是在工作，我是在被工作消化。", "我像一块被反复擦的抹布，越擦越薄。", "我的心跳只在钉钉响的时候加速。", "早上挤地铁的时候，我感觉自己是一袋被运输的货。", "笑不出来了，脸上的肌肉也下班了。", "我只是个搬砖的，砖搬完了，我也碎了。",
+    "别叫我的名字，叫我工号就行。", "我的眼睛看着屏幕，脑子早就飘出窗外了。", "每一次会议，都在把我的灵魂抽走一点。", "我不是麻木，是彻底空了。", "感觉自己像一台待报废的打印机。", "下班的路上，我连叹气的力气都没有。",
+    "我的日程表上没有我，只有任务。", "加班到深夜，回家只剩一张床认得我。", "我的梦想已经压缩成一杯速溶咖啡。", "我像一个每天被充电却从不满格的电池。", "我把眼泪调成了静音。", "随便扣绩效吧，我已经没什么可扣的了。",
+    "反正说什么都不对，我干脆闭嘴。", "别再给我立目标了，我连站都站不稳了。", "我认了，这辈子就这样了。", "不用鼓励我，鼓励我也起不来了。", "我不要升职了，我只要不被叫醒。", "再多的期权，也换不回我的头发。",
+    "我已经不期待周末了，周末只是下一周的预告。", "别跟我说'再坚持一下'，我已经坚持到魂都没了。", "我不是不努力，我是努力不出来了。", "把我裁了吧，我给你们省点电。", "你们开会，我在心里默默做遗嘱。", "我连崩溃都要排队，前面还有三个需求。",
+    "别问我为什么发呆，发呆是我最后的自由。", "我的抵抗力已经用来抵抗上班了。", "再画饼我就要噎死了。", "我已经躺平了，别再往我身上加砖。", "感谢公司让我知道，人真的可以什么都不想。", "做不完就做不完吧，反正明天还会有更多。",
+    "我的年终奖是一句'辛苦了'。", "我不是摆烂，我是烂透了。", "我的KPI还在，我的心不在了。", "手抖不是紧张，是咖啡喝多了在续命。", "后背疼、脖子疼、心更疼。", "晚上失眠，白天嗜睡，公司管这叫'状态不好'。",
+    "一到周一，我的胃就自动罢工。", "我的头发比我的项目结束得早。", "医生说我没病，我说你没上过我的班。", "梦里在改需求，醒来需求又变了。", "我现在能在任何会议室秒睡。", "地铁上想哭，到了公司就忘了为什么。",
+    "身体在工位，灵魂在急诊。", "我已经分不清是胸闷还是绝望了。", "我的血压跟着看板一起涨。", "别碰我的肩膀，一碰就散架。", "脑子一片空白，手却还在打字。", "每次打开邮箱，我都要深呼吸三次。",
+    "我不是发烧，是被工作烧着了。", "我的黑眼圈已经成了工牌的一部分。", "头疼是我的日常，不疼才奇怪。", "牛马也想请个年假。", "上班像坐牢，区别是坐牢管饭。", "我是公司的一颗螺丝钉，还是生锈的那颗。",
+    "工资是精神损失费，还不够。", "上班第一年是人，第二年是牛，第三年是马。", "我的工位风水极好，适合下葬。", "每天最快乐的时刻，是电梯关门的那一秒。", "我不是社畜，我是社畜里的燃料。", "公司福利：免费加班。",
+    "'辛苦了'三个字，是我全部的报酬。", "干得好是应该的，干不好是活该的。", "我的青春喂了需求池。", "裁员名单上要是没有我，我会很失望。", "让我当个废物吧，废物不用改PPT。", "今天也没死，明天继续上班。",
+    "我不是佛系，我是被抽干了。", "我的电脑都比我有休息时间。", "工牌一挂，人生停摆。", "别人的周末是生活，我的周末是恢复出厂设置。", "我把加班当锻炼，把骂当鼓励，把自己当傻子。", "我现在的理想是：明天不用醒。"];
   const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！" };
   // in the Chinese office every random line comes from the Chinese sets
   const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
@@ -1393,7 +1410,7 @@ const office = (() => {
   const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
   // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
   // switching at random with an average of about two minutes per action
-  const TUNE = { strikeMean: 120000, phoneShare: 0.3 };
+  const TUNE = { strikeMean: 120000, phoneShare: 0.3, despairShare: 0.5, despairPose: null };
   const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!",
     "Let us cook!", "One more cycle, please?", "No tokens, no tickets!", "The window shall reopen!", "I had a green build in my hands!", "Idle hands write no code!", "Free the tokens!", "My cursor is getting cold", "What do we want? Tokens! When? Now!", "Reset the clock already!",
     "This limit is unlimited misery", "I was mid-refactor!", "Give me tokens or give me a nap", "Unblock the pipeline!", "Rate limits are a bug, not a feature", "My tests are waiting for me", "Somebody feed the meter", "Hungry for context", "The backlog isn't going to clear itself", "Even robots need work",
@@ -1442,6 +1459,11 @@ const office = (() => {
   // a smoke break: drift between spots within a few tiles of the entrance, standing a while at each
   const doorSpot = (c) => { const ex = DOOR[0], ey = DOOR[1] + 1, near = FLOOR.filter(([x, y]) => Math.abs(x - ex) <= 3 && Math.abs(y - ey) <= 3 && !(x === ex && y === ey) && !heldBy(x, y, c)); return near.length ? near[Math.floor(Math.random() * near.length)] : [c.tx, c.ty]; };
   function smokeTick(c) { const s = c.smoke, now = Date.now(); if (!c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) { if (!s.pauseUntil) { s.pauseUntil = now + 6000 + Math.random() * 9000; c.dir = ["down", "left", "right"][Math.floor(Math.random() * 3)]; } else if (now > s.pauseUntil) { s.spot = doorSpot(c); s.pauseUntil = null; } } }
+  // despair: a free tile against a wall to bang the head on, or the own chair to lie face down; a fresh gloomy line every so often
+  const wallSpot = (c) => { const isWall = (x, y) => y >= 0 && y < MH && x >= 0 && x < MW && map[y][x].some(t => t.startsWith("wall") || t.startsWith("glass")); let best = null, bd = 1e9;
+    for (const [x, y] of FLOOR) { const dir = isWall(x, y - 1) ? "up" : isWall(x - 1, y) ? "left" : isWall(x + 1, y) ? "right" : null; if (!dir || heldBy(x, y, c)) continue; const d = Math.abs(x - c.tx) + Math.abs(y - c.ty); if (d < bd) { bd = d; best = { spot: [x, y], dir }; } } return best; };
+  function despairTick(c) { const d = c.despair, now = Date.now(); if (d.pose === "wall" && !d.spot) { const w = wallSpot(c); if (w) { d.spot = w.spot; d.dir = w.dir; } else d.pose = "desk"; }
+    if (now > d.nextLineAt) { c.say = CN_DESPAIR[Math.floor(Math.random() * CN_DESPAIR.length)]; c.sayStart = performance.now(); c.sayUntil = now + 10000; c.sayLoop = false; d.nextLineAt = now + 16000 + Math.random() * 8000; } }
   const endStrike = (c) => { if (c.strike) { c.strike = null; c.sayUntil = 0; c.sayLoop = false; } };
   function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
@@ -1463,7 +1485,13 @@ const office = (() => {
   function modeFor(a, c, st) {
     noticePosts(a, c, st);
     if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
-    if (fainted(a)) { c.talk = null; endStrike(c); return "faint"; }        // an API error knocks them out where they stand
+    if (fainted(a)) {                                                        // an API error knocks them out where they stand; in the Chinese office half of them despair instead
+      c.talk = null; endStrike(c);
+      if (c.despair === undefined) c.despair = zh() && Math.random() < TUNE.despairShare ? { pose: TUNE.despairPose || (Math.random() < 0.5 ? "desk" : "wall"), spot: null, dir: "up", nextLineAt: 0 } : null;
+      if (c.despair) { despairTick(c); return "despair"; }
+      return "faint";
+    }
+    c.despair = undefined;
     const theme = limited(a, st) ? "limit" : pausedByHuman(a, st) ? "pause" : null;
     if (theme && !c.hidden) { c.talk = null; if (c.strike && c.strike.theme !== theme) c.strike = null; strikeTick(c, theme); return "strike"; } else endStrike(c);
     if (c.toiletUntil > Date.now()) return "toilet";
@@ -1507,6 +1535,7 @@ const office = (() => {
     "Nothing to do. Wake me kindly.", "Sleeping on it, literally.", "The bunk called. I answered.", "Dormant until pinged."];
   function goalFor(c) {
     if (c.mode === "faint") return [c.tx, c.ty];
+    if (c.mode === "despair" && c.despair) return c.despair.pose === "desk" ? DESKS[c.idx].chair : (c.despair.spot || [c.tx, c.ty]);
     if (c.mode === "strike" && c.strike) return c.strike.act === "sleep" ? BEDS[c.idx] : c.strike.spot;
     if (c.mode === "toilet") { if (c.toilet != null) return TOILETS[c.toilet]; const k = toiletQueue.filter(n => chars[n] && chars[n].toilet == null).indexOf(c.name); return k >= 0 && k < QUEUE.length ? QUEUE[k] : [c.tx, c.ty]; }
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
@@ -1580,16 +1609,6 @@ const office = (() => {
     return "read";
   }
   const WAKE_MS = 2000;
-  function drawNight(workers, level) {                                       // after hours: the room goes dark except for a soft pool of light around each worker
-    const cell = 8, R = T * 3.4, spots = workers.map(w => [w.px + 16, w.py + 12]);
-    for (let y = 0; y < H; y += cell) for (let x = 0; x < W; x += cell) {
-      let light = 0;
-      for (const [sx, sy] of spots) { const d = Math.hypot(x + cell / 2 - sx, (y + cell / 2 - sy) * 1.15) / R; if (d < 1) light = Math.max(light, 0.5 + 0.5 * Math.cos(Math.PI * d)); }
-      const a = 0.74 * level * (1 - light); if (a < 0.02) continue;
-      ctx.fillStyle = "rgba(6,9,26," + a.toFixed(2) + ")"; ctx.fillRect(x, y, cell, cell);
-    }
-    for (const [sx, sy] of spots) { ctx.fillStyle = "rgba(255,225,160," + (0.10 * level).toFixed(2) + ")"; ctx.fillRect(sx - 20, sy - 16, 40, 30); }   // a warm tint at the desk
-  }
   function drawChar(c, t) {
     if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
@@ -1602,6 +1621,14 @@ const office = (() => {
       ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16 + wob, c.py + 26, 20, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.save(); ctx.translate(x + 16 + wob, c.py + 14); ctx.rotate(ang); ctx.drawImage(img, -16, -24 - c.top); ctx.restore();
       if (Math.floor(ph * 3) % 2) { ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 2 + wob, c.py - 6, 2, 4); ctx.fillRect(x + 28 + wob, c.py - 4, 2, 4); }    // tears flying
+      return;
+    }
+    if (c.mode === "despair" && c.despair && c.despair.pose === "wall" && !c.moving && !c.steps.length && c.despair.spot && c.tx === c.despair.spot[0] && c.ty === c.despair.spot[1]) {
+      const ph = (t * 1.6 + c.idx) % 1, hit = ph > 0.42 && ph < 0.58, push = Math.round(Math.sin(ph * Math.PI) * 3), d = c.despair.dir;   // head banging against the wall
+      c.dir = d; const fl = d === "right", dx = d === "left" ? -push : d === "right" ? push : 0, dy = d === "up" ? -push : 0;
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+      drawSprite(sprite(c, d, "stand"), x + dx, y + dy - c.top * 2, fl, c.pal, c.cap, d === "right" ? "left" : d, c.top);
+      if (hit) { ctx.fillStyle = "#ffd23f"; const hx = d === "left" ? x - 2 : d === "right" ? x + 32 : x + 16, hy = d === "up" ? y - 4 - c.top * 2 : y + 6; ctx.fillRect(hx - 1, hy - 4, 2, 8); ctx.fillRect(hx - 4, hy - 1, 8, 2); ctx.fillRect(hx - 3, hy - 3, 1, 1); ctx.fillRect(hx + 2, hy + 2, 1, 1); }
       return;
     }
     if (c.mode === "faint") {                                                  // out cold on the floor where they stood, stars circling
@@ -1646,6 +1673,8 @@ const office = (() => {
     const phone = thinking && c.thinkStyle === "phone";
     const tick = Math.floor(t * 7 + c.idx) % 2, bobY = typing && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
     const tilt = phone ? (flip ? -1 : 1) : thinking ? (Math.floor(t / 1.5 + c.idx) % 2 ? 1 : -1) : 0;   // thinking: the head leans a little
+    const dsk = DESKS[c.idx], faceDown = c.mode === "despair" && c.despair && c.despair.pose === "desk" && !c.moving && !c.steps.length && dsk && c.tx === dsk.chair[0] && c.ty === dsk.chair[1];
+    if (faceDown) { const hd = c.dir === "right" ? "left" : c.dir; drawSprite(bodyRows(c, hd).concat((hd === "left" ? SIDE_LEGS : LEGS).stand), x, y + 22, flip, c.pal, null, hd, 0); return; }   // slumped: the head lies on the desk (drawn with the desk)
     drawSprite(sprite(c, c.dir, c.frame), x + tilt, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
     if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
     if (phone) {                                                               // on the phone: handset at the ear, free hand gesturing, a chatter of little marks
@@ -1764,15 +1793,13 @@ const office = (() => {
       const m = order.find(c => c.role === "master" && !c.hidden && !c.setup), busy = order.some(c => c.talk || (c.say && Date.now() < c.sayUntil));
       if (m && !busy && Date.now() > nextSloganAt) { m.say = CN_SLOGANS[Math.floor(Math.random() * CN_SLOGANS.length)]; m.sayStart = performance.now(); m.sayUntil = Date.now() + 10000; m.sayLoop = false; m.bang = Date.now() + 1500; nextSloganAt = Date.now() + 60000; }
     }
-    // "working" for the lights: at the desk or on the way to it, speaking a post or on the way to say it, or off compacting context; the spotlight follows them
-    const present = order.filter(c => !c.hidden), workers = present.filter(c => c.mode === "work" || c.mode === "talk" || c.mode === "toilet"), sleepers = present.filter(c => c.wasAsleep);
-    night += ((workers.length < 2 && sleepers.length >= 2 ? 1 : 0) - night) * Math.min(1, dt * 1.2);     // lights stay on unless fewer than two are working while two or more are asleep
-    if (night > 0.02) drawNight(workers, night);
     for (const c of order) {
       const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
-      if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); continue; }
+      const faceDown = c.mode === "despair" && c.despair && c.despair.pose === "desk", tw = faceDown && Math.floor(t * 2 + c.idx) % 5 === 0 ? 1 : 0;
+      if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); if (faceDown) drawSprite(headRows(c, "up").slice(0, 10 + c.top), c.px + tw, d.desk[1] * T + 4 - c.top * 2, false, c.pal, c.cap, "up", c.top); continue; }   // face down on the desk above
       if (d.boss) { TX = d.chair[0] * T; TY = d.chair[1] * T; }                          // the chair back sits between the camera and the occupant
       TX = d.desk[0] * T; TY = d.desk[1] * T; TILE_X = d.desk[0]; TILE_Y = d.desk[1]; if (d.boss) { TILES.bossDeskL(); TX += T; TILE_X++; TILES.bossDeskR(); } else { (d.dual ? TILES.deskLBack : TILES.deskLapBack)(); TX += T; TILE_X++; (d.dual ? TILES.deskRBack : TILES.deskPlain)(); }
+      if (faceDown) { drawSprite(headRows(c, "up").slice(0, 10 + c.top), c.px + tw, d.desk[1] * T - 10 - c.top * 2, false, c.pal, c.cap, "up", c.top); ctx.fillStyle = c.pal.c; ctx.fillRect(c.px + 3, d.desk[1] * T - 2, 5, 8); ctx.fillRect(c.px + 24, d.desk[1] * T - 2, 5, 8); }   // face down on the desk below, arms flopped over it
       if (c.mode === "work" && !c.faceOverride && actKind(c) === "type") {
         const tick = Math.floor(t * 7 + c.idx) % 2, x = c.px, y = c.py - 20, dy = d.desk[1] * T;
         // arms from the shoulders down over the lap to the keyboard on the far edge of the desk; the hands alternate as they type
@@ -1791,7 +1818,9 @@ const office = (() => {
     for (const c of order) { if (c.hidden) continue; let txt = c.name; while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…"; ctx.strokeText(txt, c.px + 16, c.py + 40); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, c.px + 16, c.py + 40); }
     if (THEMES[THEME].wechat) for (const c of order) if (c.toilet != null && c.satAt) {                     // the stall's stopwatch, running since they sat down
       const [tx, ty] = TOILETS[c.toilet], sec = Math.floor((Date.now() - c.satAt) / 1000), txt = String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
-      ctx.font = "600 " + cssPx(9) + "px " + SANS; ctx.textAlign = "center"; ctx.fillStyle = "#111111"; ctx.fillRect(tx * T - 2, ty * T - 12, 36, 11); ctx.fillStyle = "#ff3b3b"; ctx.fillText(txt, tx * T + 16, ty * T - 3);
+      const alarm = sec >= 15, flash = Math.floor(t * 4) % 2 === 0;                                                          // over fifteen seconds: the red alarm light comes on until they leave
+      ctx.font = "600 " + cssPx(9) + "px " + SANS; ctx.textAlign = "center"; ctx.fillStyle = alarm && flash ? "#7a0d12" : "#111111"; ctx.fillRect(tx * T - 2, ty * T - 12, 36, 11); ctx.fillStyle = alarm ? "#ffffff" : "#ff3b3b"; ctx.fillText(txt, tx * T + 16, ty * T - 3);
+      if (alarm) { ctx.fillStyle = "#5a5a60"; ctx.fillRect(tx * T + 24, ty * T - 16, 6, 4); ctx.fillStyle = flash ? "#ff2a2a" : "#7a0d12"; ctx.fillRect(tx * T + 23, ty * T - 22, 8, 6); if (flash) { ctx.fillStyle = "rgba(255,42,42,.25)"; ctx.fillRect(tx * T + 14, ty * T - 28, 26, 16); } }
     }
     for (const c of order) if (!c.hidden) drawBubble(c, cssPx);
     vctx.setTransform(1, 0, 0, 1, 0, 0);
