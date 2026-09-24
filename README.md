@@ -1,8 +1,10 @@
-# Huntun
+# Huntun · 馄饨
 
 English · [简体中文](README.zh-CN.md)
 
 **The autonomous software team that runs on your machine and reports to you.**
+
+*Huntun* is 馄饨, the wonton: many small pieces, wrapped together, served as one dish.
 
 Huntun turns a written goal into a fully staffed engineering team. A master agent assembles the right roles, assigns the work, reviews the output and stays accountable for delivery. The team designs, builds, tests, documents and commits to a single git repository, coordinating on a shared board you can read and join at any time, while a live office view shows every agent at work.
 
