@@ -107,7 +107,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     self.wfile.write(data)
                     return
                 if path == "/api/workspaces":
-                    return self._json(200, {"workspaces": hub.list(), "home": str(Path.home())})
+                    return self._json(200, {"workspaces": hub.list(), "home": str(Path.home()), "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/fs":
                     q = parse_qs(url.query)
                     return self._json(200, browse((q.get("path") or [None])[0]))

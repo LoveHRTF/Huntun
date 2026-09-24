@@ -209,6 +209,7 @@ const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) 
 // Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
 const I18N = {
   "zh-CN": {
+    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
     "Projects": "项目", "Open a project": "打开项目", "Open": "打开", "Remove": "移除", "Remove from list": "从列表移除", "Remove from this list (files and .huntun/ stay on disk)": "从此列表移除（文件与 .huntun/ 保留在磁盘上）",
     "No projects yet. Point Huntun at a directory on the right.": "还没有项目。请在右侧指定一个目录。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任意目录均可：新项目用空文件夹，已有代码库也可以。输入路径或浏览选择。",
     "/path/to/project": "/项目/路径", "No goal yet. Open it to set one up.": "尚未设定目标。打开后即可设置。", "not set up": "未设置", "awaiting approval": "等待批准", "confirm goal": "确认目标", "running": "运行中", "paused": "已暂停", "error": "出错", "Set up {x}": "设置 {x}",
@@ -235,6 +236,7 @@ const I18N = {
     "Regular office": "普通办公室", "Microsoft campus": "微软园区", "Goldman Sachs": "高盛", "Factory": "工厂", "Basketball court": "篮球场", "Tennis court": "网球场", "Parking lot": "停车场", "Garage": "修车库", "Chinese tech": "中式互联网公司", "Language": "语言",
   },
   "zh-TW": {
+    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
     "Projects": "專案", "Open a project": "開啟專案", "Open": "開啟", "Remove": "移除", "Remove from list": "從清單移除", "Remove from this list (files and .huntun/ stay on disk)": "從此清單移除（檔案與 .huntun/ 仍保留在磁碟上）",
     "No projects yet. Point Huntun at a directory on the right.": "還沒有專案。請在右側指定一個目錄。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任何目錄皆可：新專案用空資料夾，既有程式碼庫也可以。輸入路徑或瀏覽選擇。",
     "/path/to/project": "/專案/路徑", "No goal yet. Open it to set one up.": "尚未設定目標。開啟後即可設定。", "not set up": "未設定", "awaiting approval": "等待核准", "confirm goal": "確認目標", "running": "執行中", "paused": "已暫停", "error": "錯誤", "Set up {x}": "設定 {x}",
@@ -261,6 +263,7 @@ const I18N = {
     "Regular office": "一般辦公室", "Microsoft campus": "微軟園區", "Goldman Sachs": "高盛", "Factory": "工廠", "Basketball court": "籃球場", "Tennis court": "網球場", "Parking lot": "停車場", "Garage": "修車廠", "Chinese tech": "中式網路公司", "Language": "語言",
   },
   "ja": {
+    "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
     "Projects": "プロジェクト", "Open a project": "プロジェクトを開く", "Open": "開く", "Remove": "削除", "Remove from list": "一覧から削除", "Remove from this list (files and .huntun/ stay on disk)": "この一覧から削除（ファイルと .huntun/ はディスクに残ります）",
     "No projects yet. Point Huntun at a directory on the right.": "プロジェクトはまだありません。右側でディレクトリを指定してください。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "どのディレクトリでも構いません。新規なら空のフォルダ、既存のコードベースでも可。パスを入力するか参照してください。",
     "/path/to/project": "/プロジェクト/パス", "No goal yet. Open it to set one up.": "目標が未設定です。開いて設定してください。", "not set up": "未設定", "awaiting approval": "承認待ち", "confirm goal": "目標を確認", "running": "実行中", "paused": "一時停止中", "error": "エラー", "Set up {x}": "{x} を設定",
@@ -459,13 +462,18 @@ async function setupView(id) {
       return;
     }
     const goal = $("#goal") ? $("#goal").value : loadDraft(id, "goal", ""), ctx = $("#context") ? $("#context").value : loadDraft(id, "context", ""), be = $("#backend") ? $("#backend").value : loadDraft(id, "backend", "");
+    const avail = (await api("/api/workspaces")).backends || {};                                           // providers detected on this machine
+    const BACKEND_OPTIONS = [["claude-code", "Claude Code (your Claude login)"], ["codex", "OpenAI Codex (your ChatGPT login)"], ["kimi", "Kimi Code (your Kimi login)"], ["deepseek", "DeepSeek (DEEPSEEK_API_KEY)"], ["ollama", "Ollama (local models)"], ["api", "Anthropic API (ANTHROPIC_API_KEY)"]];
+    const detected = Object.keys(avail).map(k => (BACKEND_OPTIONS.find(o => o[0] === k) || [k, k])[1].split(" (")[0]);
+    const backendOptions = '<option value="">' + esc(detected.length ? "auto (" + detected.join(", ") + ")" : "auto (nothing detected yet)") + '</option>' +
+      BACKEND_OPTIONS.map(([k, label]) => '<option value="' + k + '">' + esc(label) + (avail[k] ? " ✓" : " · not detected") + '</option>').join("");
     $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Set up ' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
       (w.error ? '<p class="error">Last attempt failed: ' + esc(w.error) + '</p>' : '') +
       '<form id="setupform" style="margin-top:12px">' +
       '<label>Goal — what should the team build or change?</label><textarea id="goal" placeholder="e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI">' + esc(goal) + '</textarea>' +
       '<label>Context (optional) — constraints, stack preferences, what to keep</label><textarea id="context" style="min-height:60px" placeholder="e.g. Python 3.12 + FastAPI, keep the existing database schema, small team">' + esc(ctx) + '</textarea>' +
       '<label>Team size limit (besides the master)</label><select id="maxagents"><option value="0">no limit (the master decides)</option>' + [2, 3, 4, 5, 6, 8, 10, 12].map(n => '<option value="' + n + '"' + (String(n) === loadDraft(id, "maxagents", "0") ? " selected" : "") + '>up to ' + n + ' agents</option>').join("") + '</select>' +
-      '<label>Backend</label><select id="backend"><option value="">auto (Claude Code if installed, else API key)</option><option value="claude-code">Claude Code (your Claude login)</option><option value="codex">OpenAI Codex (your ChatGPT login)</option><option value="api">Anthropic API (ANTHROPIC_API_KEY)</option></select>' +
+      '<label>Backend</label><select id="backend">' + backendOptions + '</select>' +
       '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
     if (be) $("#backend").value = be;
     bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value));
