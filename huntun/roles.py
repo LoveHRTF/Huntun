@@ -96,7 +96,7 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
             "Team tools (board, notes, commits, finishing a cycle) are the `huntun` MCP tools: git_commit, git_status, list_threads, read_thread, "
             "post_thread, post_comment, check_inbox, update_notes, list_agents, finish_cycle. Always commit with git_commit, never with git in Bash, and do not add Co-Authored-By trailers."
         )
-    elif backend == "codex":
+    elif backend in ("codex", "kimi"):
         file_tools = (
             "- Use your own shell and file-editing abilities for the repository and web search for research. Team tools (board, notes, commits, "
             "finishing a cycle) are the `huntun` MCP tools: git_commit, git_status, list_threads, read_thread, post_thread, post_comment, "

@@ -44,7 +44,7 @@ async def ensure_repo(workspace: Path, author: str = "master") -> None:
 
 
 DEFAULT_IGNORES = [
-    ".huntun/", ".claude/settings.local.json", ".DS_Store", ".env", "__pycache__/", "*.pyc", ".venv/", "venv/", ".pytest_cache/",
+    ".huntun/", ".claude/settings.local.json", ".kimi-code/", ".DS_Store", ".env", "__pycache__/", "*.pyc", ".venv/", "venv/", ".pytest_cache/",
     ".mypy_cache/", ".ruff_cache/", "*.egg-info/", "node_modules/", "dist/", "build/", ".next/", "coverage/", ".coverage", "*.log",
 ]
 

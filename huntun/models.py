@@ -28,12 +28,41 @@ CODEX_CATALOG: list[ModelInfo] = [
     ModelInfo(mid.strip(), mid.strip(), "codex", 0.0, 0.0, 400_000, "OpenAI Codex agent model, strong at end-to-end coding tasks (billed through your ChatGPT plan; Huntun cannot price it)", "openai")
     for mid in __import__("os").environ.get("HUNTUN_CODEX_MODELS", "gpt-5.3-codex").split(",") if mid.strip()
 ]
-MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG}
-MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG]
+def kimi_models() -> list[str]:
+    """Model aliases the local Kimi Code install knows, default first (HUNTUN_KIMI_MODELS overrides the list)."""
+    import os
+    import tomllib
+    from pathlib import Path
+
+    forced = [m.strip() for m in os.environ.get("HUNTUN_KIMI_MODELS", "").split(",") if m.strip()]
+    if forced:
+        return forced
+    home = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
+    try:
+        cfg = tomllib.loads((home / "config.toml").read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    aliases = list((cfg.get("models") or {}).keys())
+    default = cfg.get("default_model")
+    if default and default in aliases:
+        aliases.remove(default)
+        aliases.insert(0, default)
+    return aliases
+
+
+def _kimi_catalog() -> list[ModelInfo]:
+    """Kimi Code model aliases from the local install (its config.toml), or HUNTUN_KIMI_MODELS; priced at 0 like Codex."""
+    return [ModelInfo(a, a, "kimi", 0.0, 0.0, 262_144, "Kimi Code agent model alias from your Kimi Code config, strong at coding tasks (billed through your Kimi plan; Huntun cannot price it)", "moonshot")
+            for a in kimi_models()]
+
+
+KIMI_CATALOG: list[ModelInfo] = _kimi_catalog()
+MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG}
+MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG]
 
 
 def catalog_for(backend: str) -> list[ModelInfo]:
-    return CODEX_CATALOG if backend == "codex" else MODEL_CATALOG
+    return CODEX_CATALOG if backend == "codex" else KIMI_CATALOG if backend == "kimi" else MODEL_CATALOG
 
 
 def available_backends() -> dict[str, str]:
@@ -49,6 +78,9 @@ def available_backends() -> dict[str, str]:
     codex = os.environ.get("HUNTUN_CODEX_BIN") or shutil.which("codex")
     if codex and _codex_works(codex):
         out["codex"] = "OpenAI Codex login"
+    kimi = os.environ.get("HUNTUN_KIMI_BIN") or shutil.which("kimi")
+    if kimi and _codex_works(kimi) and KIMI_CATALOG:
+        out["kimi"] = "Kimi Code login"
     return out
 
 
@@ -77,6 +109,8 @@ def backend_for_model(model_id: str | None, available: dict[str, str] | None = N
         return default
     if m.vendor == "openai":
         return "codex" if "codex" in avail else default
+    if m.vendor == "moonshot":
+        return "kimi" if "kimi" in avail else default
     if "claude-code" in avail:
         return "claude-code"
     if "api" in avail:
@@ -92,6 +126,8 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "claude-code" if "claude-code" in avail else "api") for m in MODEL_CATALOG]
     if "codex" in avail:
         out += [(m, "codex") for m in CODEX_CATALOG]
+    if "kimi" in avail:
+        out += [(m, "kimi") for m in KIMI_CATALOG]
     return out
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 DEFAULT_API_MODEL = "claude-opus-5"
@@ -124,13 +160,13 @@ def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, ca
 def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
     """Rough list-price cost for a token volume: assumes 85% input (half of it cached), 15% output. Codex models price at 0."""
     m = model_info(model_id)
-    if not m or m.tier == "codex":
+    if not m or m.tier in ("codex", "kimi"):
         return 0.0
     inp, out = tokens * 0.85, tokens * 0.15
     return round((inp * 0.5 * m.input_per_m + inp * 0.5 * m.input_per_m * 0.1 + out * m.output_per_m) / 1e6, 2)
 
 
-BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex"}
+BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code"}
 
 
 def catalog_text(backend: str = "api", available: dict[str, str] | None = None) -> str:

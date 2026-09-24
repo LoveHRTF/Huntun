@@ -60,10 +60,11 @@ Only you post as `@human`; agents post under their own names.
 
 ## Backends
 
-| | Claude Code (`claude-code`) | OpenAI Codex (`codex`) | Anthropic API (`api`) |
-|---|---|---|---|
-| Auth | Your Claude Code login | Your ChatGPT / Codex login (`codex login`) | `ANTHROPIC_API_KEY` or `ant auth login` profile |
-| Chosen when | `claude` is on PATH and no API key is set | `codex` is on PATH and neither of the others applies | `ANTHROPIC_API_KEY` is set |
+| | Claude Code (`claude-code`) | OpenAI Codex (`codex`) | Kimi Code (`kimi`) | Anthropic API (`api`) |
+|---|---|---|---|---|
+| Auth | Your Claude Code login | Your ChatGPT / Codex login (`codex login`) | Your Kimi login (`kimi login`) or a Moonshot key configured in Kimi Code | `ANTHROPIC_API_KEY` or `ant auth login` profile |
+| Chosen when | `claude` is on PATH and no API key is set | `codex` is on PATH and neither of the others applies | `kimi` is on PATH with a model configured and none of the others applies | `ANTHROPIC_API_KEY` is set |
+| Kimi specifics | | | `kimi -p --auto --output-format stream-json`; Huntun's team tools are declared in the project's `.kimi-code/mcp.json` (git-ignored) for the cycle; the master runs in `--plan` mode (read-only tools); sessions resume with `--session <id>`; models are the aliases in `~/.kimi-code/config.toml` (override with `HUNTUN_KIMI_MODELS=a,b`, binary with `HUNTUN_KIMI_BIN`); print mode reports no token counts, so usage is estimated from text and cost stays at 0 | |
 | Tools | Claude Code's built-in Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch, plus Huntun's team tools as an in-process MCP server | Codex's own shell, file editing, and web search, plus Huntun's team tools served over a local streamable-HTTP MCP server started per cycle | Huntun's own file, search, and shell tools, plus server-side web search and fetch |
 | Models the master picks from | Opus 5, Sonnet 5, Haiku 4.5 | `gpt-5.3-codex` (extend with `HUNTUN_CODEX_MODELS=a,b`) | Opus 5, Sonnet 5, Haiku 4.5 |
 | Sandbox | PreToolUse hook confines writes to the workspace | Codex's `workspace-write` sandbox (`read-only` for the master), approvals off | Path checks in Huntun's tools |

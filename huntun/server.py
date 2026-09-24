@@ -216,7 +216,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     raise HttpError(409, str(ex)) from None
                 return self._json(202, self._entry(wid).summary())
             if sub == "/init":
-                backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex") else None
+                backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi") else None
                 try:
                     e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0))
                 except ValueError as ex:

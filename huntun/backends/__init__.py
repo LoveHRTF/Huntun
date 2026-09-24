@@ -3,6 +3,7 @@
 - api:         the Anthropic Messages API via the `anthropic` SDK (needs ANTHROPIC_API_KEY or an `ant auth login` profile)
 - claude-code: Claude Code via the `claude-agent-sdk` (uses your Claude Code login; no API key needed)
 - codex:       OpenAI Codex via `codex exec` (uses your ChatGPT / Codex login; no API key needed)
+- kimi:        Kimi Code via `kimi -p` (uses your Kimi login or Moonshot key; no API key needed here)
 """
 from __future__ import annotations
 
@@ -70,7 +71,11 @@ def make_backend(name: str, config: Any) -> Backend:
         from .codex import CodexBackend
 
         return CodexBackend(config)
+    if name == "kimi":
+        from .kimi import KimiBackend
+
+        return KimiBackend(config)
     raise ValueError(f"unknown backend {name!r}")
 
 
-BACKENDS = ("api", "claude-code", "codex")
+BACKENDS = ("api", "claude-code", "codex", "kimi")

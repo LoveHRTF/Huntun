@@ -226,7 +226,7 @@ class Hub:
                 config = default_config(goal)
                 config.context = context.strip()
                 config.max_agents = max(0, int(max_agents or 0))
-                if backend in ("api", "claude-code", "codex"):
+                if backend in ("api", "claude-code", "codex", "kimi"):
                     config.backend = backend
                 config.backend = resolve_backend(config)
             existing = await asyncio.to_thread(describe_workspace, e.path)
