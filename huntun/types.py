@@ -62,7 +62,7 @@ class HuntunConfig:
     # Claude Code / Codex: how many cycles an agent keeps one continuous session before starting a fresh one (0 = never reset).
     session_max_cycles: int = 25
     backend: str = "auto"
-    model: str = ""  # empty = backend default (claude-opus-5 for api, Claude Code's configured model for claude-code)
+    model: str = ""  # empty = backend default (claude-opus-5-5 for api, Claude Code's configured model for claude-code)
     lead_effort: str = "xhigh"
     worker_effort: str = "high"
     review_interval_min: float = 20

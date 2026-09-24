@@ -17,8 +17,10 @@ class ModelInfo:
 
 
 MODEL_CATALOG: list[ModelInfo] = [
+    ModelInfo("claude-opus-5-5", "Claude Opus 5.5", "frontier", 4.0, 20.0, 1_000_000,
+              "the default frontier pick: architecture, hard debugging, long agentic coding runs, leadership reviews; cheaper and faster than Opus 5"),
     ModelInfo("claude-opus-5", "Claude Opus 5", "frontier", 5.0, 25.0, 1_000_000,
-              "architecture, hard debugging, leadership reviews, anything where a wrong decision is expensive"),
+              "previous-generation frontier model (legacy); prefer Opus 5.5 unless a project needs it specifically"),
     ModelInfo("claude-sonnet-5", "Claude Sonnet 5", "strong", 2.0, 10.0, 1_000_000,
               "most engineering work: implementing well-specified features, tests, refactors, research, design docs"),
     ModelInfo("claude-haiku-4-5", "Claude Haiku 4.5", "fast", 1.0, 5.0, 200_000,
@@ -130,7 +132,7 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "kimi") for m in KIMI_CATALOG]
     return out
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
-DEFAULT_API_MODEL = "claude-opus-5"
+DEFAULT_API_MODEL = "claude-opus-5-5"
 
 
 def model_info(model_id: str | None) -> ModelInfo | None:

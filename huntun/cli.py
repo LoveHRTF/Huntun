@@ -36,7 +36,7 @@ from .store import Store
 EPILOG = """environment:
   ANTHROPIC_API_KEY              use the Anthropic API backend (or `ant auth login`)
   HUNTUN_BACKEND=api|claude-code force a backend (default: api if a key is set, else claude-code)
-  HUNTUN_MODEL (claude-opus-5)   HUNTUN_LEAD_EFFORT (xhigh)  HUNTUN_WORKER_EFFORT (high)
+  HUNTUN_MODEL (claude-opus-5-5)   HUNTUN_LEAD_EFFORT (xhigh)  HUNTUN_WORKER_EFFORT (high)
   HUNTUN_REVIEW_INTERVAL_MIN (20)  HUNTUN_IDLE_INTERVAL_SEC (90)  HUNTUN_LEAD_IDLE_INTERVAL_SEC (600)
   HUNTUN_MAX_TOOL_CALLS (60)  HUNTUN_MAX_CYCLES (0=unlimited)  HUNTUN_PORT (4747)  HUNTUN_FALLBACKS (on|off)
 """
