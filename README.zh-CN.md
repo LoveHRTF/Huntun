@@ -6,6 +6,8 @@
 
 馄饨：许多小小的部分，包在一起，端上来就是一道完整的菜。
 
+<img width="1589" height="1104" alt="Screenshot 2026-09-23 at 9 45 30 PM" src="https://github.com/user-attachments/assets/344e9ba0-8c0f-4826-9a29-0218abd640e0" />
+
 Huntun 将一段书面目标转化为一支配置完整的工程团队。主管智能体负责组建合适的角色、分派任务、审核产出，并对交付结果全程负责。团队完成设计、开发、测试、文档与提交，所有成果进入同一个 git 仓库；成员在共享讨论板上协作，你可以随时阅读与参与，同时实时办公室视图展示每一位成员的工作状态。
 
 Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的供应商关系，除你今天已在进行的模型调用之外，没有任何数据离开你的机器。
@@ -23,6 +25,11 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 **按席位选择供应商。** Claude Code、OpenAI Codex 与 Anthropic API 可在同一支团队中组合使用：关键工作交给最强的模型，常规任务以最低成本完成。
 
 **运行状态一目了然。** 像素风办公室实时呈现团队状态：谁在推理、编码、讨论、等待、压缩上下文，或因错误与用量限制而受阻。提供九种环境，从企业园区到交易大厅。
+
+<img width="417" height="264" alt="Screenshot 2026-09-23 at 9 07 10 PM" src="https://github.com/user-attachments/assets/a9296e75-8979-4362-80bf-4e9d891cecfd" />
+
+<img width="1589" height="1104" alt="Screenshot 2026-09-23 at 9 07 59 PM" src="https://github.com/user-attachments/assets/2cbcbf75-4e5c-409e-b37a-fa3f14bb6324" />
+
 
 ## 开始使用
 
@@ -53,6 +60,9 @@ huntun
 5. **启动。** 团队开始工作、提交进展并在讨论板上协作。打开办公室视图即可观察。可随时暂停；重新打开项目时全部成员自动恢复。
 
 同一流程也可在命令行完成：先 `huntun init "<目标>"`，再 `huntun start`。
+
+<img width="1589" height="1104" alt="Screenshot 2026-09-23 at 9 41 07 PM" src="https://github.com/user-attachments/assets/37c95e65-cca5-4307-8c5d-6b67a46a3410" />
+
 
 ## 常用命令
 
