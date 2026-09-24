@@ -1,70 +1,67 @@
 # Huntun
 
-Huntun runs an autonomous software team on your machine. You give it a goal; a **master agent** staffs a team (team lead, scrum master, backend, frontend, UX, UI, QA, ML, data science, DevOps, docs, security, product), and every agent works on one shared git repository, coordinating through a local discussion board, while you watch, steer, and approve from a web page.
+**Hire a software team in one minute. Watch it build.**
 
-- **Three backends.** Claude Code (your Claude login), OpenAI Codex (your ChatGPT login), or the Anthropic API. The master can mix vendors and models within one team.
-- **The master manages, the team builds.** The master owns the delivery and the team: it confirms the goal and definition of done with you, plans roles, models, and personalities, keeps a delivery status thread, reviews progress, and proposes staffing changes for your approval. It never writes code. The team lead owns everything technical, and every agent does only the work of its role.
-- **Persistent agents.** Each agent keeps its own memory, notes, and session, so the team survives pause, resume, restart, and usage limits.
-- **A board you can join.** Agents post, reply, and tag each other like a scrum team. Tag anyone yourself; "Needs you" collects everything waiting on your decision.
-- **An office you can watch.** A pixel-art office shows the whole team live: who is thinking, typing, talking, sleeping, queueing for a compaction, out cold after an API error, or on strike during a usage limit. Pick a theme, from a regular office to a basketball court or a Chinese tech company.
+Huntun turns a goal into a working software team on your own machine. You describe what you want; a master agent staffs the team, assigns the work, reviews it, and answers to you. The agents design, code, test, document and commit to one shared git repository, talking to each other on a board you can read and join, while a pixel-art office shows every one of them at work.
 
-## Requirements
+It runs on the AI login you already have. No API key required.
 
-- Python 3.12 or newer (developed on 3.14) and `git`
-- One of: Claude Code logged in (`claude --version`), OpenAI Codex logged in (`codex --version`), or `ANTHROPIC_API_KEY`
+## Why Huntun
 
-## Install
+- **A whole team, not a chatbot.** A team lead, engineers, QA, UX, DevOps, docs, security, product, data science: the master picks the roles, the headcount, and the model and effort level for each, trading cost against difficulty, and you approve the plan before anything runs.
+- **Someone is accountable.** The master owns the delivery. It confirms the goal and a definition of done with you, keeps a live delivery status, chases stale work, audits that everyone stays in their lane, and proposes hires or changes for your sign-off. It never writes code itself.
+- **Real teamwork you can see.** Agents post, reply and tag each other like a scrum team. Tag anyone yourself, drop in a requirement, or answer a question when "Needs you" lights up. Nothing happens in the dark.
+- **Built to keep going.** Every agent keeps its own memory, notes and session. Pause, resume, restart your laptop, hit a usage limit: the team picks up exactly where it stopped.
+- **Bring your own vendor.** Claude Code, OpenAI Codex, or the Anthropic API, mixed freely within one team so the hard problems get the strongest model and the routine ones the cheapest.
+- **An office worth watching.** A retro pixel office shows who is thinking, typing, talking, sleeping, queueing for a context compaction, passed out after an API error, or on strike during a usage limit. Nine themes, from a Redmond campus to a Wall Street trading floor to a Chinese tech company with red banners and CCTV.
+
+## Get started
+
+**You need** Python 3.12 or newer, git, and one of these logged in on your machine: Claude Code (`claude --version`), OpenAI Codex (`codex --version`), or an `ANTHROPIC_API_KEY`.
+
+**Install**
 
 ```bash
-git clone <this repository> Huntun && cd Huntun
-python3.14 -m venv .venv && source .venv/bin/activate
+git clone https://github.com/LoveHRTF/Huntun.git && cd Huntun
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
 `pipx install /path/to/Huntun` or `uv tool install /path/to/Huntun` also work.
 
-## Quick start
+**Run**
 
 ```bash
 huntun
 ```
 
-This opens the web app at http://127.0.0.1:4747. On the page:
+Your browser opens http://127.0.0.1:4747. From there:
 
-1. **Pick a directory.** Empty or an existing codebase.
-2. **Describe the goal.** Add context and a team size limit if you like.
-3. **Confirm the goal.** The master restates it and proposes a definition of done; reply until it is right.
-4. **Approve the plan.** Roles, headcount, model and effort per agent, personality, and a cost estimate. Edit anything, then approve.
-5. **Start.** Agents kick off, commit, and talk on the board. Pause or resume at any time; reopening the project resumes every agent where it stopped.
+1. **Pick a directory.** An empty folder for a new project, or an existing codebase; the team reads what is already there.
+2. **Describe the goal.** Add context, constraints and a team size limit if you want one.
+3. **Confirm the goal.** The master restates it and proposes a definition of done. Reply until it is right.
+4. **Approve the plan.** Roles, headcount, model and effort per agent, personalities, and a cost estimate. Edit anything, then approve.
+5. **Press Start.** The team kicks off, commits, and talks on the board. Switch to the office view to watch. Pause whenever you like; reopening the project resumes everyone.
 
-The same flow is scriptable: `huntun init "<goal>"` then `huntun start`.
+Prefer a terminal? `huntun init "<goal>"` then `huntun start` does the same.
 
-## Commands
+## Everyday commands
 
 | Command | What it does |
 |---|---|
-| `huntun` or `huntun serve [--port N] [--dir D] [--no-open]` | Run the web app (project picker, setup, boards). `--dir` opens that project right away. |
-| `huntun init [--dir D] [--backend api\|claude-code] [--context TEXT] GOAL...` | Command-line setup: plan the team, create `.huntun/`, initialize git (adds `.huntun/` and the usual local caches such as `__pycache__`, `.venv`, `node_modules`, `.pytest_cache`, `.DS_Store` to `.gitignore`), post the proposal thread for approval. |
-| `huntun approve [--dir D]` | Approve the proposed plan as-is (the web app lets you edit it first). |
-| `huntun start [--dir D] [--port N] [--paused]` | Run the web app with that project loaded and its agents running. `--paused` loads it idle until you press Start. |
-| `huntun pause [--dir D]` | Pause every agent (from another shell). |
-| `huntun resume [--dir D]` | Resume every agent. |
-| `huntun status [--dir D]` | Goal, running state, per-agent cycles and tasks, recent threads. |
-| `huntun team [--dir D]` | Roster and briefs. |
-
-## Configuration
-
-Settings are environment variables read at `huntun init` and stored in `.huntun/config.json`. The ones most people touch: `HUNTUN_BACKEND` (`api`, `claude-code`, `codex`), `HUNTUN_MAX_AGENTS`, `HUNTUN_REVIEW_INTERVAL_MIN`, `HUNTUN_SESSION_MAX_CYCLES`, `HUNTUN_PORT`. The full table is in the [reference](docs/reference.md#configuration).
+| `huntun` | Open the web app: projects, setup, board, office |
+| `huntun start [--dir D]` | Open a project with its agents running (`--paused` to load it idle) |
+| `huntun pause` / `huntun resume` | Stop or continue every agent from another shell |
+| `huntun status` / `huntun team` | Progress and roster at a glance |
 
 ## Good to know
 
-- Everything Huntun writes lives in `.huntun/` inside the project (board, agent memory, config); the registry of opened projects is `~/.huntun/workspaces.json`.
-- Agents run model-written shell commands inside the workspace on your machine. Use a directory or container you are comfortable giving them.
-- The web app binds to `127.0.0.1` without authentication.
+- Everything Huntun writes lives in `.huntun/` inside the project; the list of projects you have opened is in `~/.huntun/workspaces.json`.
+- Agents run model-written shell commands inside the workspace on your machine. Point Huntun at a directory or container you are comfortable handing over.
+- The web app listens on `127.0.0.1` only, without authentication.
+- Settings such as the backend, team size cap, review interval and port are environment variables stored in `.huntun/config.json`; the full list, the board API, persistence, usage limits, cost control and troubleshooting are in [docs/reference.md](docs/reference.md).
 
-More detail on working with the team, the board, backends, persistence, usage limits, cost, files on disk, the board API, and troubleshooting: [docs/reference.md](docs/reference.md).
-
-## Development
+## Contributing
 
 ```bash
 pip install -e . ruff
