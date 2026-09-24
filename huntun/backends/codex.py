@@ -188,7 +188,7 @@ class CodexBackend:
         return ok and code == 0
 
     async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
-                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
+                         log: Callable[[str], None] | None = None, cwd: Path | None = None) -> dict[str, Any]:
         """Uses Codex's --output-schema so the final message is JSON matching the tool's input schema."""
         errors: list[str] = []
         say = log or (lambda _t: None)
@@ -196,7 +196,7 @@ class CodexBackend:
         with tempfile.TemporaryDirectory() as d:
             schema_file, out_file = Path(d) / "schema.json", Path(d) / "last.json"
             schema_file.write_text(json.dumps(schema))
-            args = self._base_args(Path(d), model, effort, "read-only", None) + ["--ephemeral", "--output-schema", str(schema_file), "-o", str(out_file)]
+            args = self._base_args(cwd or Path(d), model, effort, "read-only", None) + ["--ephemeral", "--output-schema", str(schema_file), "-o", str(out_file)]
 
             def on_event(ev: dict[str, Any]) -> None:
                 item = ev.get("item") or {}
@@ -210,7 +210,7 @@ class CodexBackend:
                     errors.append(str(ev.get("message") or ev.get("text")))
 
             full_prompt = f"{prompt}\n\nAnswer with JSON only, matching the schema for `{tool_name}` ({description})."
-            code, _ = await self._run(args, full_prompt, Path(d), on_event, timeout=600)
+            code, _ = await self._run(args, full_prompt, cwd or Path(d), on_event, timeout=600)
             if any(looks_like_limit(e) for e in errors):
                 raise RuntimeError("Codex usage limit reached: " + "; ".join(errors)[:300])
             if not out_file.exists():

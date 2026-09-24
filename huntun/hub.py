@@ -242,7 +242,7 @@ class Hub:
             e.note(f"Workspace inspected ({len(existing)} characters of context)")
             e.progress = f"Master agent is checking the goal via {config.backend}"
             e.note(f"Asking the master via {config.backend}" + (" (revising after your reply)" if conversation else ""))
-            draft = await draft_goal(make_backend(config.backend, config), config, existing, conversation, log=e.note)
+            draft = await draft_goal(make_backend(config.backend, config), config, existing, conversation, log=e.note, workspace=e.path)
             e.note("The master drafted the goal and definition of done; over to you")
             save_config(e.path, config)
             await ensure_repo(e.path)
@@ -322,7 +322,7 @@ class Hub:
             full_context = "\n\n".join(part for part in (config.context, existing) if part)
             e.progress = f"Master agent is planning the team via {config.backend}"
             e.note(f"Asking the master to staff the team via {config.backend}")
-            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context, log=e.note)
+            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context, log=e.note, workspace=e.path)
             e.note(f"The master proposed {len(agents)} agents; over to you")
             specs = [master_spec(), *agents]
             save_team(e.path, specs)
@@ -370,7 +370,7 @@ class Hub:
             prev = "\n".join(f"- @{a.name} ({a.role}, model {a.model or 'default'}, effort {a.effort or 'default'}): {a.brief.splitlines()[0]}" for a in previous if a.role != "master")
             full_context = "\n\n".join(p for p in (config.context, existing,
                                                     f"# Previous proposal (rejected by the human)\n{prev}\n\n# Human feedback on it\n{feedback}\nRevise the plan to address the feedback.") if p)
-            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context)
+            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context, log=e.note, workspace=e.path)
             specs = [master_spec(), *agents]
             save_team(e.path, specs)
             config.estimate = estimate_for(specs, rationale.split("Estimate notes: ")[-1] if "Estimate notes: " in rationale else "")

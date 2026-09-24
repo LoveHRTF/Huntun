@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -125,7 +126,7 @@ class ApiBackend:
         return await self._send(p)
 
     async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
-                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
+                         log: Callable[[str], None] | None = None, cwd: Path | None = None) -> dict[str, Any]:
         say = log or (lambda _t: None)
         say(f"Calling {model or self._default_model()} ({PROVIDERS[self.provider]['label']}), waiting for the answer…")
         params: dict[str, Any] = {

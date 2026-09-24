@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 from ..tools import ToolContext
@@ -32,8 +33,9 @@ class Backend(Protocol):
     ) -> CycleResult: ...
 
     async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
-                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
-        """Asks the model one question and returns the arguments it passes to the given tool. `log` receives progress lines for the UI."""
+                         log: Callable[[str], None] | None = None, cwd: Path | None = None) -> dict[str, Any]:
+        """Asks the model one question and returns the arguments it passes to the given tool. `log` receives progress lines for the UI;
+        `cwd` is the project directory the question is about (the session runs there, so the model never mistakes Huntun's own cwd for it)."""
         ...
 
     async def probe(self) -> bool:

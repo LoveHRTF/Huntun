@@ -154,18 +154,26 @@ The team can only work inside this project directory. If the human describes a p
 Submit by calling the propose_goal tool."""
 
 
-def _with_log(backend: Backend, log: Callable[[str], None] | None) -> dict[str, Any]:
-    """The log kwarg, only for backends whose structured() takes one (fakes in tests may not)."""
+def _with_log(backend: Backend, log: Callable[[str], None] | None, workspace: Path | None = None) -> dict[str, Any]:
+    """The optional kwargs (progress log, project directory), only the ones this backend's structured() accepts (fakes in tests may not)."""
     import inspect
 
     try:
-        return {"log": log} if log and "log" in inspect.signature(backend.structured).parameters else {}
+        params = inspect.signature(backend.structured).parameters
     except (TypeError, ValueError):
         return {}
+    takes_any = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    out: dict[str, Any] = {}
+    if log and (takes_any or "log" in params):
+        out["log"] = log
+    if workspace and (takes_any or "cwd" in params):
+        out["cwd"] = workspace
+    return out
 
 
-async def draft_goal(backend: Backend, config: HuntunConfig, existing: str, conversation: str = "", log: Callable[[str], None] | None = None) -> dict[str, Any]:
-    draft = await backend.structured(**_with_log(backend, log),
+async def draft_goal(backend: Backend, config: HuntunConfig, existing: str, conversation: str = "", log: Callable[[str], None] | None = None,
+                     workspace: Path | None = None) -> dict[str, Any]:
+    draft = await backend.structured(**_with_log(backend, log, workspace),
         prompt=goal_prompt(config.goal, config.context, existing, conversation),
         tool_name="propose_goal",
         description="Submit the restated goal, definition of done, assumptions, and questions for the human to confirm.",
@@ -251,8 +259,9 @@ For each agent, estimate how many work cycles it needs to finish its part and th
 Submit the plan by calling the propose_team tool."""
 
 
-async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str = "", log: Callable[[str], None] | None = None) -> tuple[str, list[AgentSpec]]:
-    plan = await backend.structured(**_with_log(backend, log),
+async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str = "", log: Callable[[str], None] | None = None,
+                    workspace: Path | None = None) -> tuple[str, list[AgentSpec]]:
+    plan = await backend.structured(**_with_log(backend, log, workspace),
         prompt=plan_prompt(config, extra_context),
         tool_name="propose_team",
         description="Submit the team composition for this project.",

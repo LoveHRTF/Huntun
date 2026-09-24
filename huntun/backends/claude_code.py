@@ -149,7 +149,7 @@ class ClaudeCodeBackend:
             return False
 
     async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
-                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
+                         log: Callable[[str], None] | None = None, cwd: Path | None = None) -> dict[str, Any]:
         captured: dict[str, Any] = {}
         say = log or (lambda _t: None)
         say(f"Starting a Claude Code session ({model or 'default model'}, effort {effort})…")
@@ -169,6 +169,7 @@ class ClaudeCodeBackend:
             effort=effort if effort in ("low", "medium", "high", "xhigh", "max") else None,  # type: ignore[arg-type]
             max_turns=10,
             setting_sources=[],
+            cwd=str(cwd) if cwd else None,                                     # the project the question is about, never Huntun's own directory
             system_prompt="You answer by calling the single tool you are given, using only the information in the message. You have no file, shell, or web access here; do not try to explore.",
         )
         last_text = ""

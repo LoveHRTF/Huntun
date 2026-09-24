@@ -144,7 +144,7 @@ class KimiBackend:
         return ok and answered and code in (0, None)
 
     async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
-                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
+                         log: Callable[[str], None] | None = None, cwd: Path | None = None) -> dict[str, Any]:
         """Kimi has no output-schema flag: ask for JSON only and parse the last assistant message."""
         texts: list[str] = []
         errors: list[str] = []
@@ -161,7 +161,7 @@ class KimiBackend:
         full_prompt = (f"{prompt}\n\nAnswer with a single JSON object only, no prose and no code fence, matching this JSON schema for `{tool_name}` "
                        f"({description}):\n{json.dumps(schema)}")
         with tempfile.TemporaryDirectory() as d:
-            code, _ = await self._run(self._base_args(model, True), full_prompt, Path(d), on_event, timeout=600)
+            code, _ = await self._run(self._base_args(model, True), full_prompt, cwd or Path(d), on_event, timeout=600)
         if any(looks_like_limit(e) for e in errors):
             raise RuntimeError("Kimi usage limit reached: " + "; ".join(errors)[:300])
         if not texts:

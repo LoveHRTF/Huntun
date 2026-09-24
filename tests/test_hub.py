@@ -29,8 +29,10 @@ class FakeBackend:
         self.config = config
 
     goal_prompts: list[str] = []
+    cwds: list[Any] = []
 
     async def structured(self, **kw: Any) -> dict[str, Any]:
+        FakeBackend.cwds.append(kw.get("cwd"))
         if kw["tool_name"] == "propose_goal":
             FakeBackend.goal_prompts.append(kw["prompt"])
             revised = "Human's reply" in kw["prompt"]
@@ -159,6 +161,7 @@ class HubTests(unittest.TestCase):
         w = self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "context": "keep it small", "max_agents": 2})
         self.assertEqual(w["state"], "clarifying")
         w = self.wait_state(wid, ("goal_proposed", "error"))
+        self.assertEqual(Path(FakeBackend.cwds[-1]).resolve(), self.project.resolve(), "the master's goal check runs in the project directory, not the server's")
         self.assertEqual(w["state"], "goal_proposed", w.get("error"))
         self.assertFalse(w["initialized"])
         self.assertEqual((w["goal_draft"]["goal"], w["goal_draft"]["questions"]), ("Add a CLI to myapp", ["Need a --json flag?"]))
