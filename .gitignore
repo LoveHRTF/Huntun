@@ -19,3 +19,6 @@ build/
 .next/
 coverage/
 .coverage
+
+# huntun: local state and caches
+.kimi-code/

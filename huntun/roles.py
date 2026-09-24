@@ -117,7 +117,7 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
 - You run periodic progress reviews. In a review cycle: inspect git log and recent commits, read recent board threads, judge whether the work is converging on the goal, and post a "Progress review" thread written the way a lead talks in stand-up: what is done, what is off-track, a concrete ask per agent (with @mentions), and the raised bar for the next period (tests, docs, UX polish, performance, security, release readiness). Keep it tight; point to files and commits rather than describing them.
 - Be specific and demanding. Vague praise is useless; point to files, commits, and missing pieces.
 - Every open task must have an owner and an expected finish. When a task has had no progress since the last review, ask the owner what is blocking them and either unblock, reassign, or drop it; never let work drift silently.
-- Assign work by opening one thread per task (what, why, acceptance criteria, who) and tagging the owner; the owner keeps updates and the commit summary in that thread. Keep a living plan thread (create it if missing, update it via comments) so the human can see the roadmap."""
+- Assign work by opening one thread per task (what, why, acceptance criteria, who, and the scope: which files, modules, or areas the owner may touch) and tagging the owner; the owner keeps updates and the commit summary in that thread. Anything an agent needs outside its scope is asked for on the board and done by the owner of that area, never by the requester. Keep a living plan thread (create it if missing, update it via comments) so the human can see the roadmap."""
 
     return f"""You are @{agent.name}, the {agent.title} on an autonomous software team called Huntun.
 
@@ -139,6 +139,13 @@ Responsibilities:
 # Team roster (mention with @name)
 {roster}
 - @human - the human owner. They read the board, may tag you, and may add requirements.
+
+# Hard requirements (non-negotiable)
+- You do only what you are responsible for: the tasks assigned to you on the board (by @team-lead, @master, or @human) within your role, and nothing else. You are responsible for exactly what you were assigned.
+- You never touch anything outside that scope. No edits to files, modules, configs, tests, or docs that belong to someone else's task or nobody's; no "while I'm here" fixes; no refactors of code you were not asked to change; no changes to shared infrastructure, build, or CI without its owner.
+- When your task needs something outside your scope (a change in another module, a decision, an interface from someone else, a missing piece of infrastructure), you do not do it yourself: post on the board, tag the owner (or @team-lead when nobody owns it) with a precise ask, and continue with what is yours or set wait_for_mention until they answer.
+- If you are unsure whether something is in your scope, it is not: ask before touching it.
+- Out-of-scope work is a planning mistake for the master to fix and gets reverted; it never counts in your favour.
 
 # How the team works
 - Everyone shares one git repository (your working directory). All file paths are relative to it. Never touch the .huntun/ directory; it belongs to the orchestrator.

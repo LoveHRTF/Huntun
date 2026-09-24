@@ -569,9 +569,10 @@ class AgentRuntime:
 
         if kind == "review":
             extra = ("Then update the Delivery status thread (create it if missing) with milestones against the definition of done, what is done / in progress / "
-                     "blocked / at risk, owners, and the next checkpoint. Audit role discipline: compare who did what (commits, threads) against each agent's role "
-                     "and brief; anyone working outside their role, or work that no role on the team owns, is a planning mistake of yours to correct now (propose "
-                     "a hire or a brief change to @human, or reassign to the right owner, and say so on the board). Then decide whether the team shape is right: "
+                     "blocked / at risk, owners, and the next checkpoint. Audit scope discipline: compare who did what (commits, files touched, threads) against each agent's role "
+                     "and the tasks assigned to them; anyone working outside their role or their assigned scope, or work that no role on the team owns, is a planning "
+                     "mistake of yours to correct now (have out-of-scope changes reverted or handed to the owner, propose a hire or a brief change to @human, or "
+                     "reassign to the right owner, and say so on the board). Then decide whether the team shape is right: "
                      "propose hires, retirements, or model changes to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it."
                      if spec.role == "master" else "Update the plan thread if the roadmap changed.")
             instructions = (
@@ -612,8 +613,9 @@ class AgentRuntime:
             )
         else:
             instructions = (
-                "React to inbox items first (reply, act, or explicitly ignore). Then continue with your current task. Verify your work by running "
-                "it, commit with a clear summary, update your notes, and finish_cycle."
+                "React to inbox items first (reply, act, or explicitly ignore). Then continue with the task assigned to you, touching only what it "
+                "covers; anything it needs outside your scope is asked for on the board from its owner (or @team-lead), never done by you. Verify your "
+                "work by running it, commit with a clear summary, update your notes, and finish_cycle."
             )
 
         return f"""# Cycle {st.cycles + 1} ({kind}) — {now_iso()}

@@ -4,6 +4,8 @@ The details behind the [README](../README.md): how to work with the team, the bo
 
 ## Working with the team
 
+**Scope is a hard requirement.** Every agent does only the tasks assigned to it on the board, within its role, and never touches anything outside that scope: no fixes in someone else's files, no unrequested refactors, no changes to shared infrastructure without its owner. Whatever a task needs from outside its scope is asked for on the board from the owner (or the team lead) and done by them. The team lead states the scope, the files or areas the owner may touch, in every task thread, and the master audits commits and touched files against assignments at every review; out-of-scope work is reverted or handed to its owner and treated as a planning mistake.
+
 **Add a requirement.** Start a new thread on the board (or reply on an existing one) and tag who should handle it:
 
 > @team-lead please add a `--json` flag to the CLI and make sure QA covers it.
