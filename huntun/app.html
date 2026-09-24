@@ -2361,7 +2361,8 @@ const office = (() => {
       ctx.fillStyle = c.pal.s; ctx.fillRect(dirx > 0 ? mx0 + 1 : mx0 - 5, my + 1, 5, 4);                                             // the hand at the mouth
       ctx.fillStyle = "#f7f7f7"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 8, my, 8, 2); ctx.fillStyle = "#d9a24a"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 2, my, 2, 2);
       ctx.fillStyle = drag ? "#ffb347" : "#ff5a1f"; ctx.fillRect(tip, my - (drag ? 1 : 0), 2, drag ? 4 : 2); if (drag) { ctx.fillStyle = "rgba(255,120,40,.35)"; ctx.fillRect(tip - 2, my - 3, 6, 8); }
-      for (let k = 0; k < 5; k++) { const ph = ((t * 0.45 + c.idx * 0.37 + k / 5) % 1); const px = tip + Math.round(Math.sin((ph + k) * 5) * 5) + dirx * 3 - 2, py = my - 4 - Math.round(ph * 28), sz = 3 + Math.round(ph * 6); ctx.fillStyle = "rgba(230,230,235," + (0.7 * (1 - ph * 0.8)).toFixed(2) + ")"; ctx.fillRect(px, py, sz, sz - 1); }
+      for (let k = 0; k < 6; k++) { const ph = ((t * 0.45 + c.idx * 0.37 + k / 6) % 1); const px = tip + Math.round(Math.sin((ph + k) * 5) * 5) + dirx * 3 - 2, py = my - 4 - Math.round(ph * 30), sz = 3 + Math.round(ph * 7);   // dark, sooty smoke
+        ctx.fillStyle = "rgba(40,40,46," + (0.85 * (1 - ph * 0.7)).toFixed(2) + ")"; ctx.fillRect(px, py, sz, sz - 1); ctx.fillStyle = "rgba(110,110,118," + (0.5 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px + 1, py + 1, Math.max(1, sz - 2), Math.max(1, sz - 3)); }
     }
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
     if (working && c.dir !== "down") {                                            // back to the camera: elbows work while typing, the screen lights the desk
