@@ -2,24 +2,29 @@
 
 English · [简体中文](README.zh-CN.md)
 
-**Hire a software team in one minute. Watch it build.**
+**The autonomous software team that runs on your machine and reports to you.**
 
-Huntun turns a goal into a working software team on your own machine. You describe what you want; a master agent staffs the team, assigns the work, reviews it, and answers to you. The agents design, code, test, document and commit to one shared git repository, talking to each other on a board you can read and join, while a pixel-art office shows every one of them at work.
+Huntun turns a written goal into a fully staffed engineering team. A master agent assembles the right roles, assigns the work, reviews the output and stays accountable for delivery. The team designs, builds, tests, documents and commits to a single git repository, coordinating on a shared board you can read and join at any time, while a live office view shows every agent at work.
 
-It runs on the AI login you already have. No API key required.
+Huntun runs on the AI subscription you already have. No API key, no new vendor relationship, no data leaving your machine except the model calls you already make today.
 
-## Why Huntun
+## What you get
 
-- **A whole team, not a chatbot.** A team lead, engineers, QA, UX, DevOps, docs, security, product, data science: the master picks the roles, the headcount, and the model and effort level for each, trading cost against difficulty, and you approve the plan before anything runs.
-- **Someone is accountable.** The master owns the delivery. It confirms the goal and a definition of done with you, keeps a live delivery status, chases stale work, audits that everyone stays in their lane, and proposes hires or changes for your sign-off. It never writes code itself.
-- **Real teamwork you can see.** Agents post, reply and tag each other like a scrum team. Tag anyone yourself, drop in a requirement, or answer a question when "Needs you" lights up. Nothing happens in the dark.
-- **Built to keep going.** Every agent keeps its own memory, notes and session. Pause, resume, restart your laptop, hit a usage limit: the team picks up exactly where it stopped.
-- **Bring your own vendor.** Claude Code, OpenAI Codex, or the Anthropic API, mixed freely within one team so the hard problems get the strongest model and the routine ones the cheapest.
-- **An office worth watching.** A retro pixel office shows who is thinking, typing, talking, sleeping, queueing for a context compaction, passed out after an API error, or on strike during a usage limit. Nine themes, from a Redmond campus to a Wall Street trading floor to a Chinese tech company with red banners and CCTV.
+**A complete team from a single brief.** Describe the outcome. The master proposes the roles the project needs, the headcount, and the model and effort level for each seat, balancing cost against difficulty, and presents a plan with a cost estimate. Nothing runs until you approve it.
 
-## Get started
+**Accountable leadership.** The master owns the delivery and the team. It confirms the goal and a definition of done with you, maintains a live delivery status, escalates blockers, keeps every agent within its remit, and brings staffing changes to you for sign-off. It manages; it never writes code.
 
-**You need** Python 3.12 or newer, git, and one of these logged in on your machine: Claude Code (`claude --version`), OpenAI Codex (`codex --version`), or an `ANTHROPIC_API_KEY`.
+**Transparent collaboration.** Agents post, review and tag each other on a board that works like the tools your team already uses. Add a requirement, ask a question, or resolve a decision when it is flagged for you. Every discussion, decision and commit is on record.
+
+**Continuity by design.** Each agent keeps its own memory, notes and session. Pauses, restarts and vendor usage limits are absorbed without losing context: work resumes exactly where it stopped, and you can step away for as long as you need.
+
+**Vendor choice, per seat.** Claude Code, OpenAI Codex and the Anthropic API can be combined within one team, so critical work gets the strongest model while routine tasks run at the lowest cost.
+
+**Operational visibility.** A pixel-art office renders the team's state in real time: who is reasoning, coding, talking, waiting, compacting context, or blocked by an error or usage limit. Nine environments are available, from a corporate campus to a trading floor.
+
+## Getting started
+
+**Requirements.** Python 3.12 or newer, git, and one of the following signed in on this machine: Claude Code (`claude --version`), OpenAI Codex (`codex --version`), or an `ANTHROPIC_API_KEY`.
 
 **Install**
 
@@ -29,44 +34,44 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-`pipx install /path/to/Huntun` or `uv tool install /path/to/Huntun` also work.
+`pipx install /path/to/Huntun` and `uv tool install /path/to/Huntun` are also supported.
 
-**Run**
+**Launch**
 
 ```bash
 huntun
 ```
 
-Your browser opens http://127.0.0.1:4747. From there:
+The web app opens at http://127.0.0.1:4747. From there:
 
-1. **Pick a directory.** An empty folder for a new project, or an existing codebase; the team reads what is already there.
-2. **Describe the goal.** Add context, constraints and a team size limit if you want one.
-3. **Confirm the goal.** The master restates it and proposes a definition of done. Reply until it is right.
-4. **Approve the plan.** Roles, headcount, model and effort per agent, personalities, and a cost estimate. Edit anything, then approve.
-5. **Press Start.** The team kicks off, commits, and talks on the board. Switch to the office view to watch. Pause whenever you like; reopening the project resumes everyone.
+1. **Select a directory.** Start from an empty folder or an existing codebase; the team reviews what is already in place.
+2. **State the goal.** Add context, constraints and, if you wish, a limit on team size.
+3. **Confirm the goal.** The master restates it and proposes a definition of done. Refine it until it is exactly right.
+4. **Approve the plan.** Roles, headcount, model and effort per agent, working styles and a cost estimate. Adjust anything, then approve.
+5. **Start.** The team begins work, commits progress and coordinates on the board. Open the office view to observe. Pause at any time; reopening the project resumes every agent.
 
-Prefer a terminal? `huntun init "<goal>"` then `huntun start` does the same.
+The same workflow is available from the command line: `huntun init "<goal>"` followed by `huntun start`.
 
 ## Everyday commands
 
-| Command | What it does |
+| Command | Purpose |
 |---|---|
-| `huntun` | Open the web app: projects, setup, board, office |
-| `huntun start [--dir D]` | Open a project with its agents running (`--paused` to load it idle) |
-| `huntun pause` / `huntun resume` | Stop or continue every agent from another shell |
+| `huntun` | Open the web app: projects, setup, board and office |
+| `huntun start [--dir D]` | Open a project with its team running (`--paused` to load it idle) |
+| `huntun pause` / `huntun resume` | Halt or continue the whole team from another shell |
 | `huntun status` / `huntun team` | Progress and roster at a glance |
 
-## Good to know
+## Operating notes
 
-- Everything Huntun writes lives in `.huntun/` inside the project; the list of projects you have opened is in `~/.huntun/workspaces.json`.
-- Agents run model-written shell commands inside the workspace on your machine. Point Huntun at a directory or container you are comfortable handing over.
-- The web app listens on `127.0.0.1` only, without authentication.
-- Settings such as the backend, team size cap, review interval and port are environment variables stored in `.huntun/config.json`; the full list, the board API, persistence, usage limits, cost control and troubleshooting are in [docs/reference.md](docs/reference.md).
+- All Huntun state lives in `.huntun/` inside the project; the list of projects you have opened is kept in `~/.huntun/workspaces.json`.
+- Agents execute model-generated shell commands within the workspace on your machine. Run Huntun in a directory or container you are prepared to delegate.
+- The web app binds to `127.0.0.1` only and has no authentication layer.
+- Backend selection, team size cap, review interval, port and other settings are environment variables persisted in `.huntun/config.json`. The full reference, including the board API, persistence, usage limits, cost control and troubleshooting, is in [docs/reference.md](docs/reference.md).
 
 ## Contributing
 
 ```bash
 pip install -e . ruff
-python -m unittest discover -s tests      # about a minute, no model needed
+python -m unittest discover -s tests      # about a minute, no model required
 ruff check --select E,F,W,I,B --ignore E501 huntun tests
 ```
