@@ -1,15 +1,22 @@
 """Anthropic Messages API backend: a manual streaming tool-use loop whose message history is written
-to disk after every step so a cycle can be paused and resumed."""
+to disk after every step so a cycle can be paused and resumed.
+
+The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic) and a local
+Ollama server (http://127.0.0.1:11434). In that "compat" mode the Anthropic-only extras (betas, server-side
+fallbacks, effort, adaptive thinking, server tools, eager input streaming) are left out, and any field a provider
+still rejects with a 400 is dropped and the call retried.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
 import anthropic
 
-from ..models import DEFAULT_API_MODEL, context_limit, cost_usd
+from ..models import DEFAULT_API_MODEL, catalog_for, context_limit, cost_usd
 from ..tools import ToolContext, available_tools, execute
 from ..types import CycleResult, HuntunConfig
 from . import looks_like_limit
@@ -18,14 +25,33 @@ RETRYABLE_ATTEMPTS = 6
 COMPACT_AT = 0.6  # compact the working context when a call reports more than this fraction of the window
 
 
-def _tool_defs(ctx: ToolContext) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+PROVIDERS: dict[str, dict[str, Any]] = {
+    "api": {"label": "Anthropic API"},
+    "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com/anthropic", "key_env": "DEEPSEEK_API_KEY"},
+    "ollama": {"label": "Ollama (local)", "base_url_env": "OLLAMA_HOST", "base_url": "http://127.0.0.1:11434", "key": "ollama"},
+}
+OPTIONAL_FIELDS = ("fallbacks", "output_config", "thinking", "cache_control", "tool_choice", "eager_input_streaming")   # dropped one by one on a 400
+
+
+def _tool_defs(ctx: ToolContext, compat: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     specs = available_tools(ctx, "api")
-    defs: list[dict[str, Any]] = [
-        {"name": t.name, "description": t.description, "input_schema": t.input_schema, "eager_input_streaming": True} for t in specs
-    ]
-    defs.append({"type": "web_search_20260209", "name": "web_search", "max_uses": 8})
-    defs.append({"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8})
+    defs: list[dict[str, Any]] = [{"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in specs]
+    if not compat:
+        for d in defs:
+            d["eager_input_streaming"] = True
+        defs.append({"type": "web_search_20260209", "name": "web_search", "max_uses": 8})
+        defs.append({"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8})
     return defs, {t.name: t for t in specs}
+
+
+def _without(params: dict[str, Any], field: str) -> dict[str, Any]:
+    """A copy of the request without one optional field, wherever it lives."""
+    p = {k: v for k, v in params.items() if k != field}
+    if field == "cache_control" and isinstance(p.get("system"), list):
+        p["system"] = [{k: v for k, v in b.items() if k != "cache_control"} for b in p["system"]]
+    if field == "eager_input_streaming" and isinstance(p.get("tools"), list):
+        p["tools"] = [{k: v for k, v in t.items() if k != "eager_input_streaming"} for t in p["tools"]]
+    return p
 
 
 def _serializable(content: Any) -> list[dict[str, Any]]:
@@ -35,38 +61,97 @@ def _serializable(content: Any) -> list[dict[str, Any]]:
 
 class ApiBackend:
     name = "api"
+    provider = "api"
+    compat = False                        # True for Anthropic-compatible providers (DeepSeek, Ollama)
+    dropped: set[str]
 
-    def __init__(self, config: HuntunConfig) -> None:
+    def __init__(self, config: HuntunConfig, provider: str = "api") -> None:
         self.config = config
-        self.client = anthropic.AsyncAnthropic()
+        self.provider = provider
+        self.name = provider
+        self.compat = provider != "api"
+        self.dropped = set()
+        spec = PROVIDERS[provider]
+        if self.compat:
+            base = os.environ.get(spec.get("base_url_env", ""), "") or spec["base_url"]
+            key = os.environ.get(spec["key_env"]) if spec.get("key_env") else spec.get("key")
+            if not key:
+                raise RuntimeError(f"{spec['label']}: set {spec['key_env']}")
+            self.client = anthropic.AsyncAnthropic(api_key=key, base_url=base.rstrip("/"))
+        else:
+            self.client = anthropic.AsyncAnthropic()
+
+    def _default_model(self) -> str:
+        if not self.compat:
+            return DEFAULT_API_MODEL
+        cat = catalog_for(self.provider)
+        return cat[0].id if cat else ""
+
+    def _prepare(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Applies the provider's capabilities: compat providers get no Anthropic-only extras, plus whatever this provider already rejected."""
+        self.__dict__.setdefault("dropped", set())                                  # instances built without __init__ (tests) still work
+        p = dict(params)
+        if self.compat:
+            for f in ("output_config", "thinking", "fallbacks", "betas"):
+                p = _without(p, f)
+            if os.environ.get("HUNTUN_COMPAT_THINKING", "off").lower() in ("on", "1", "true") and "thinking" not in self.dropped:
+                p["thinking"] = {"type": "enabled", "budget_tokens": int(os.environ.get("HUNTUN_COMPAT_THINKING_BUDGET", "8192"))}
+        for f in self.dropped:
+            p = _without(p, f)
+        return p
+
+    async def _send(self, params: dict[str, Any]) -> Any:
+        """One streamed call; on a 400 that names an optional field, drop that field for good and retry."""
+        while True:
+            p = self._prepare(params)
+            try:
+                if self.compat:
+                    async with self.client.messages.stream(**p) as stream:
+                        return await stream.get_final_message()
+                async with self.client.beta.messages.stream(**p) as stream:
+                    return await stream.get_final_message()
+            except anthropic.BadRequestError as e:
+                msg = str(getattr(e, "message", e)).lower()
+                culprit = next((f for f in OPTIONAL_FIELDS if f not in self.dropped and f.replace("_", "") in msg.replace("_", "")), None)
+                if culprit is None:
+                    raise
+                self.dropped.add(culprit)
 
     async def _call(self, params: dict[str, Any], use_fallbacks: bool) -> Any:
         p = dict(params)
-        if use_fallbacks:
+        if use_fallbacks and not self.compat:
             p["betas"] = ["server-side-fallback-2026-07-01"]
             p["fallbacks"] = "default"
-        async with self.client.beta.messages.stream(**p) as stream:
-            return await stream.get_final_message()
+        return await self._send(p)
 
     async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str) -> dict[str, Any]:
-        response = await self.client.messages.create(
-            model=model or DEFAULT_API_MODEL,
-            max_tokens=16000,
-            output_config={"effort": effort},
-            tools=[{"name": tool_name, "description": description, "input_schema": schema}],
-            messages=[{"role": "user", "content": prompt}],
-        )
+        params: dict[str, Any] = {
+            "model": model or self._default_model(), "max_tokens": 16000, "output_config": {"effort": effort},
+            "tools": [{"name": tool_name, "description": description, "input_schema": schema}],
+            "tool_choice": {"type": "tool", "name": tool_name},
+            "messages": [{"role": "user", "content": prompt + ("" if not self.compat else f"\n\nCall the `{tool_name}` tool with your answer; do not answer in prose.")}],
+        }
+        response = await self._send(params)
         if response.stop_reason == "refusal":
             raise RuntimeError("The model refused this request.")
         for block in response.content:
             if block.type == "tool_use" and block.name == tool_name:
                 return dict(block.input)
         text = "\n".join(b.text for b in response.content if b.type == "text")
+        if self.compat:                                                          # some compatible models answer in text anyway: take the JSON out of it
+            start, end = text.find("{"), text.rfind("}")
+            if start >= 0 and end > start:
+                try:
+                    data = json.loads(text[start:end + 1])
+                    if isinstance(data, dict):
+                        return data
+                except json.JSONDecodeError:
+                    pass
         raise RuntimeError(f"Model did not call {tool_name}. It said: {text[:500]}")
 
     async def probe(self) -> bool:
         try:
-            await self.client.messages.create(model="claude-haiku-4-5", max_tokens=5, messages=[{"role": "user", "content": "ping"}])
+            await self.client.messages.create(model="claude-haiku-4-5" if not self.compat else self._default_model(), max_tokens=5, messages=[{"role": "user", "content": "ping"}])
             return True
         except anthropic.RateLimitError:
             return False
@@ -79,8 +164,7 @@ class ApiBackend:
         """Client-side compaction: ask the model for a handoff summary, then restart the transcript from it."""
         ask = {**params, "messages": messages + [{"role": "user", "content": "Your context is nearly full. Write a compact handoff summary for yourself: what the task is, what you have done (files, commits, decisions), what remains, and any open questions or board threads to follow up. Do not call tools."}],
                "tools": [], "max_tokens": 4000}
-        async with self.client.beta.messages.stream(**ask) as stream:
-            m = await stream.get_final_message()
+        m = await self._send(ask)
         summary = "\n".join(b.text for b in m.content if b.type == "text").strip() or "(no summary produced)"
         log(f"compacted context ({len(messages)} messages -> summary of {len(summary)} chars)")
         first = messages[0]["content"] if messages and messages[0]["role"] == "user" and isinstance(messages[0]["content"], str) else prompt
@@ -88,9 +172,9 @@ class ApiBackend:
 
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle = ctx.memory, ctx.cycle
-        defs, by_name = _tool_defs(ctx)
+        defs, by_name = _tool_defs(ctx, self.compat)
         usage = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0, "cost_usd": 0.0}
-        effective_model = model or DEFAULT_API_MODEL
+        effective_model = model or self._default_model()
 
         def result(outcome: str, error: str | None = None, resets_at: float | None = None) -> CycleResult:
             return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at)
@@ -106,7 +190,7 @@ class ApiBackend:
             if should_stop():
                 return result("paused")
             params = {
-                "model": model or DEFAULT_API_MODEL,
+                "model": effective_model,
                 "max_tokens": self.config.max_tokens,
                 "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 "tools": defs,

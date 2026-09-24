@@ -348,7 +348,7 @@ class AgentRuntime:
         b = self.orch.backend_name_for(spec)
         return {
             "backend": b,
-            "model": spec.model or cfg.model or ("claude-opus-5-5" if b == "api" else "Codex default" if b == "codex" else "Kimi default" if b == "kimi" else "Claude Code default"),
+            "model": spec.model or cfg.model or ("claude-opus-5-5" if b == "api" else "Codex default" if b == "codex" else "Kimi default" if b == "kimi" else "DeepSeek default" if b == "deepseek" else "Ollama default" if b == "ollama" else "Claude Code default"),
             "effort": spec.effort or (cfg.lead_effort if self.lead else cfg.worker_effort),
             "cycles": st.cycles,
             "reviews": st.review_count,

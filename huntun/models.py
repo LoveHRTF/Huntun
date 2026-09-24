@@ -59,12 +59,71 @@ def _kimi_catalog() -> list[ModelInfo]:
 
 
 KIMI_CATALOG: list[ModelInfo] = _kimi_catalog()
-MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG}
-MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG]
+DEEPSEEK_CATALOG: list[ModelInfo] = [
+    ModelInfo("deepseek-v4-pro", "DeepSeek V4 Pro", "strong", 1.32, 3.96, 1_000_000,
+              "DeepSeek's flagship: strong at coding and reasoning at a fraction of frontier prices (peak-hour list price; off-peak is half)", "deepseek"),
+    ModelInfo("deepseek-flash", "DeepSeek V4.1 Flash", "fast", 0.30, 1.20, 1_000_000,
+              "very cheap and fast: routine implementation, tests, docs, scrum bookkeeping (peak-hour list price; off-peak is half)", "deepseek"),
+]
+OLLAMA_CATALOG: list[ModelInfo] = []                                             # filled by refresh_ollama() from the local server
+MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG}
+MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG]
+_ollama_checked = 0.0
+
+
+def ollama_host() -> str:
+    import os
+
+    return (os.environ.get("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
+
+
+def refresh_ollama(force: bool = False) -> list[ModelInfo]:
+    """Models the local Ollama server has (GET /api/tags), or HUNTUN_OLLAMA_MODELS="name[@context],..."; cached for 30 s.
+
+    Context defaults to HUNTUN_OLLAMA_CONTEXT (32768): Ollama serves each model at its own OLLAMA_CONTEXT_LENGTH, and the
+    catalog needs the number Huntun should assume for the context gauge and compaction.
+    """
+    import json
+    import os
+    import time
+    import urllib.request
+
+    global _ollama_checked
+    if OLLAMA_CATALOG and not force and time.time() - _ollama_checked < 30:
+        return OLLAMA_CATALOG
+    _ollama_checked = time.time()
+    default_ctx = int(os.environ.get("HUNTUN_OLLAMA_CONTEXT", "32768"))
+    names: list[tuple[str, int]] = []
+    forced = os.environ.get("HUNTUN_OLLAMA_MODELS", "")
+    if forced.strip():
+        for item in forced.split(","):
+            if item.strip():
+                n, _, c = item.strip().partition("@")
+                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
+    else:
+        try:
+            with urllib.request.urlopen(ollama_host() + "/api/tags", timeout=1.5) as r:
+                data = json.loads(r.read().decode())
+            names = [(str(m.get("name") or m.get("model")), default_ctx) for m in data.get("models") or [] if m.get("name") or m.get("model")]
+        except Exception:
+            names = []
+    found = [ModelInfo(n, n, "ollama", 0.0, 0.0, c, "local model served by Ollama on this machine (no per-token cost; speed and quality depend on the hardware)", "ollama") for n, c in names]
+    OLLAMA_CATALOG[:] = found
+    for m in found:
+        MODEL_BY_ID[m.id] = m
+    return OLLAMA_CATALOG
 
 
 def catalog_for(backend: str) -> list[ModelInfo]:
-    return CODEX_CATALOG if backend == "codex" else KIMI_CATALOG if backend == "kimi" else MODEL_CATALOG
+    if backend == "codex":
+        return CODEX_CATALOG
+    if backend == "kimi":
+        return KIMI_CATALOG
+    if backend == "deepseek":
+        return DEEPSEEK_CATALOG
+    if backend == "ollama":
+        return refresh_ollama()
+    return MODEL_CATALOG
 
 
 def available_backends() -> dict[str, str]:
@@ -83,6 +142,10 @@ def available_backends() -> dict[str, str]:
     kimi = os.environ.get("HUNTUN_KIMI_BIN") or shutil.which("kimi")
     if kimi and _codex_works(kimi) and KIMI_CATALOG:
         out["kimi"] = "Kimi Code login"
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        out["deepseek"] = "DeepSeek API key"
+    if refresh_ollama():
+        out["ollama"] = "Ollama server with models"
     return out
 
 
@@ -113,6 +176,10 @@ def backend_for_model(model_id: str | None, available: dict[str, str] | None = N
         return "codex" if "codex" in avail else default
     if m.vendor == "moonshot":
         return "kimi" if "kimi" in avail else default
+    if m.vendor == "deepseek":
+        return "deepseek" if "deepseek" in avail else default
+    if m.vendor == "ollama":
+        return "ollama" if "ollama" in avail else default
     if "claude-code" in avail:
         return "claude-code"
     if "api" in avail:
@@ -130,6 +197,10 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "codex") for m in CODEX_CATALOG]
     if "kimi" in avail:
         out += [(m, "kimi") for m in KIMI_CATALOG]
+    if "deepseek" in avail:
+        out += [(m, "deepseek") for m in DEEPSEEK_CATALOG]
+    if "ollama" in avail:
+        out += [(m, "ollama") for m in refresh_ollama()]
     return out
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 DEFAULT_API_MODEL = "claude-opus-5-5"
@@ -162,13 +233,13 @@ def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, ca
 def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
     """Rough list-price cost for a token volume: assumes 85% input (half of it cached), 15% output. Codex models price at 0."""
     m = model_info(model_id)
-    if not m or m.tier in ("codex", "kimi"):
+    if not m or m.tier in ("codex", "kimi", "ollama"):
         return 0.0
     inp, out = tokens * 0.85, tokens * 0.15
     return round((inp * 0.5 * m.input_per_m + inp * 0.5 * m.input_per_m * 0.1 + out * m.output_per_m) / 1e6, 2)
 
 
-BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code"}
+BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)"}
 
 
 def catalog_text(backend: str = "api", available: dict[str, str] | None = None) -> str:

@@ -64,7 +64,7 @@ def default_config(goal: str) -> HuntunConfig:
 def resolve_backend(config: HuntunConfig) -> str:
     """Picks the model backend: an explicit setting wins, otherwise API key -> api, Claude Code CLI -> claude-code."""
     choice = os.environ.get("HUNTUN_BACKEND") or config.backend
-    if choice in ("api", "claude-code", "codex", "kimi"):
+    if choice in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama"):
         return choice
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return "api"
@@ -77,9 +77,14 @@ def resolve_backend(config: HuntunConfig) -> str:
         return "codex"
     if "kimi" in avail:
         return "kimi"
+    if "deepseek" in avail:
+        return "deepseek"
+    if "ollama" in avail:
+        return "ollama"
     raise RuntimeError(
         "No model backend available. Set ANTHROPIC_API_KEY (backend 'api'), or install and log in to Claude Code "
-        "(`claude` on PATH, backend 'claude-code'), OpenAI Codex (`codex` on PATH, backend 'codex') or Kimi Code (`kimi` on PATH, backend 'kimi'). Force one with --backend or HUNTUN_BACKEND."
+        "(`claude` on PATH, backend 'claude-code'), OpenAI Codex (`codex` on PATH, backend 'codex'), Kimi Code (`kimi` on PATH, backend 'kimi'), "
+        "DeepSeek (DEEPSEEK_API_KEY, backend 'deepseek') or a local Ollama server with models (backend 'ollama'). Force one with --backend or HUNTUN_BACKEND."
     )
 
 

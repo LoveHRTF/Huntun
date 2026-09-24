@@ -4,6 +4,8 @@
 - claude-code: Claude Code via the `claude-agent-sdk` (uses your Claude Code login; no API key needed)
 - codex:       OpenAI Codex via `codex exec` (uses your ChatGPT / Codex login; no API key needed)
 - kimi:        Kimi Code via `kimi -p` (uses your Kimi login or Moonshot key; no API key needed here)
+- deepseek:    DeepSeek's Anthropic-compatible API (DEEPSEEK_API_KEY), driven by the api backend's loop
+- ollama:      a local Ollama server's Anthropic-compatible API (OLLAMA_HOST, default http://127.0.0.1:11434), same loop
 """
 from __future__ import annotations
 
@@ -75,7 +77,11 @@ def make_backend(name: str, config: Any) -> Backend:
         from .kimi import KimiBackend
 
         return KimiBackend(config)
+    if name in ("deepseek", "ollama"):
+        from .api import ApiBackend
+
+        return ApiBackend(config, provider=name)
     raise ValueError(f"unknown backend {name!r}")
 
 
-BACKENDS = ("api", "claude-code", "codex", "kimi")
+BACKENDS = ("api", "claude-code", "codex", "kimi", "deepseek", "ollama")

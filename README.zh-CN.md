@@ -22,7 +22,7 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 
 **为持续运行而设计。** 每位成员拥有独立的记忆、笔记与会话。暂停、重启以及供应商用量限制都不会丢失上下文：工作从中断处精确恢复，你可以离开任意时长。
 
-**按席位选择供应商。** Claude Code、OpenAI Codex、Kimi Code 与 Anthropic API 可在同一支团队中组合使用：关键工作交给最强的模型，常规任务以最低成本完成。
+**按席位选择供应商。** Claude Code、OpenAI Codex、Kimi Code、DeepSeek、通过 Ollama 运行的本地模型与 Anthropic API 可在同一支团队中组合使用：关键工作交给最强的模型，常规任务以最低成本完成。
 
 **运行状态一目了然。** 像素风办公室实时呈现团队状态：谁在推理、编码、讨论、等待、压缩上下文，或因错误与用量限制而受阻。提供九种环境，从企业园区到交易大厅。
 
@@ -33,7 +33,7 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 
 ## 开始使用
 
-**环境要求。** Python 3.12 或更新版本、git，以及以下任意一项已在本机登录：Claude Code（`claude --version`）、OpenAI Codex（`codex --version`）、Kimi Code（`kimi --version`）或环境变量 `ANTHROPIC_API_KEY`。
+**环境要求。** Python 3.12 或更新版本、git，以及以下任意一项已在本机登录：Claude Code（`claude --version`）、OpenAI Codex（`codex --version`）、Kimi Code（`kimi --version`）、环境变量 `DEEPSEEK_API_KEY`、本地已加载模型的 Ollama 服务，或环境变量 `ANTHROPIC_API_KEY`。
 
 **安装**
 

@@ -25,13 +25,13 @@ Huntun runs on the AI subscription you already have. No API key, no new vendor r
 
 **Continuity by design.** Each agent keeps its own memory, notes and session. Pauses, restarts and vendor usage limits are absorbed without losing context: work resumes exactly where it stopped, and you can step away for as long as you need.
 
-**Vendor choice, per seat.** Claude Code, OpenAI Codex, Kimi Code and the Anthropic API can be combined within one team, so critical work gets the strongest model while routine tasks run at the lowest cost.
+**Vendor choice, per seat.** Claude Code, OpenAI Codex, Kimi Code, DeepSeek, local models through Ollama and the Anthropic API can be combined within one team, so critical work gets the strongest model while routine tasks run at the lowest cost.
 
 **Operational visibility.** A pixel-art office renders the team's state in real time: who is reasoning, coding, talking, waiting, compacting context, or blocked by an error or usage limit. Nine environments are available, from a corporate campus to a trading floor.
 
 ## Getting started
 
-**Requirements.** Python 3.12 or newer, git, and one of the following signed in on this machine: Claude Code (`claude --version`), OpenAI Codex (`codex --version`), Kimi Code (`kimi --version`), or an `ANTHROPIC_API_KEY`.
+**Requirements.** Python 3.12 or newer, git, and one of the following signed in on this machine: Claude Code (`claude --version`), OpenAI Codex (`codex --version`), Kimi Code (`kimi --version`), a `DEEPSEEK_API_KEY`, a local Ollama server with models, or an `ANTHROPIC_API_KEY`.
 
 **Install**
 
