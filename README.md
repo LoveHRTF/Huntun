@@ -1,5 +1,7 @@
 # Huntun
 
+English · [简体中文](README.zh-CN.md)
+
 **Hire a software team in one minute. Watch it build.**
 
 Huntun turns a goal into a working software team on your own machine. You describe what you want; a master agent staffs the team, assigns the work, reviews it, and answers to you. The agents design, code, test, document and commit to one shared git repository, talking to each other on a board you can read and join, while a pixel-art office shows every one of them at work.
