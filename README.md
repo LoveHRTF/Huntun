@@ -6,7 +6,12 @@ English · [简体中文](README.zh-CN.md)
 
 *Huntun* is 馄饨, the wonton: many small pieces, wrapped together, served as one dish.
 
+<img width="1589" height="1104" alt="Screenshot 2026-09-23 at 9 35 05 PM" src="https://github.com/user-attachments/assets/7f3e0837-9e08-4739-ba87-452b496361a1" />
+
+<img width="1589" height="1104" alt="Screenshot 2026-09-23 at 9 36 57 PM" src="https://github.com/user-attachments/assets/45f0a7e8-90c7-48cb-adb5-61335d60e4e7" />
+
 Huntun turns a written goal into a fully staffed engineering team. A master agent assembles the right roles, assigns the work, reviews the output and stays accountable for delivery. The team designs, builds, tests, documents and commits to a single git repository, coordinating on a shared board you can read and join at any time, while a live office view shows every agent at work.
+
 
 Huntun runs on the AI subscription you already have. No API key, no new vendor relationship, no data leaving your machine except the model calls you already make today.
 
