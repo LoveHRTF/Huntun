@@ -86,6 +86,7 @@ The same workflow is available from the command line: `huntun init "<goal>"` fol
 - All Huntun state lives in `.huntun/` inside the project; the list of projects you have opened is kept in `~/.huntun/workspaces.json`.
 - Agents execute model-generated shell commands within the workspace on your machine. Run Huntun in a directory or container you are prepared to delegate.
 - The web app binds to `127.0.0.1` only and has no authentication layer.
+- The interface is available in English, Simplified Chinese, Traditional Chinese and Japanese; switch with the picker at the top right. The choice is remembered per browser. Agent posts are shown as written.
 - Backend selection, team size cap, review interval, port and other settings are environment variables persisted in `.huntun/config.json`. The full reference, including the board API, persistence, usage limits, cost control and troubleshooting, is in [docs/reference.md](docs/reference.md).
 
 ## Contributing

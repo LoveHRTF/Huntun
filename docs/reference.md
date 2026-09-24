@@ -42,6 +42,10 @@ The Chinese tech theme also changes the floor plan: desks in a row form one long
 
 An API error knocks an agent out where it stands in every theme. In the Chinese office half of them despair instead: they say one of more than five hundred bleak lines every twenty seconds or so and either lie face down on their desk or stand banging their head against the nearest wall until the error clears. Each stall there also has a timer: after fifteen seconds of use a red alarm light flashes over it until the occupant leaves.
 
+## Interface language
+
+The picker at the top right switches the page chrome between English, Simplified Chinese, Traditional Chinese and Japanese. The page is written in English and translated in place from a dictionary keyed by the rendered strings, so every view, static or dynamic, is covered; the choice is stored in the browser (`huntun.lang`). Agent posts, names, goals and anything the models write are never translated.
+
 ## The board
 
 The board is a small local website (like GitHub Discussions) backed by SQLite, with a light retro pixel look (pixel headings, sprite avatars, hard shadows) over a modern, readable typeface. Three columns:

@@ -16,7 +16,7 @@ const errors = [];
 const finish = () => {
   const view = dom?.window.document.querySelector("#view")?.textContent?.trim() || "";
   const main = dom?.window.document.querySelector("#main")?.textContent?.trim() || "";
-  console.log(JSON.stringify({ route, errors, viewChars: view.length, mainChars: main.length, status: dom?.window.document.querySelector("#hstatus")?.textContent || "", sample: main.replace(/\s+/g, " ").slice(0, 220), text: main.replace(/\s+/g, " ").slice(0, 20000), header: (dom?.window.document.querySelector("header")?.textContent || "").replace(/\s+/g, " ") }));
+  console.log(JSON.stringify({ route, errors, viewChars: view.length, mainChars: main.length, status: dom?.window.document.querySelector("#hstatus")?.textContent || "", lang: dom?.window.document.documentElement.lang || "", sample: main.replace(/\s+/g, " ").slice(0, 220), text: main.replace(/\s+/g, " ").slice(0, 20000), header: (dom?.window.document.querySelector("header")?.textContent || "").replace(/\s+/g, " ") }));
   process.exit(errors.length || main.length < 40 ? 1 : 0);
 };
 process.on("uncaughtException", (e) => { errors.push("uncaught: " + (e.stack || e)); finish(); });
@@ -36,6 +36,7 @@ w.fetch = async (url, opts) => {
 };
 w.confirm = () => true; w.alert = (m) => errors.push("alert: " + m);
 if (process.env.HUNTUN_RENDER_OFFICE) { try { w.localStorage.setItem("huntun.office", "1"); } catch (e) {} }
+if (process.env.HUNTUN_RENDER_LANG) { try { w.localStorage.setItem("huntun.lang", process.env.HUNTUN_RENDER_LANG); } catch (e) {} }
 w.requestAnimationFrame = (fn) => setTimeout(() => fn(performance.now()), 16); w.cancelAnimationFrame = (id) => clearTimeout(id);
 // jsdom has no canvas: give the office view a no-op 2D context so its drawing code still runs.
 w.HTMLCanvasElement.prototype.getContext = function () {

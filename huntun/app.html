@@ -147,6 +147,7 @@
   .live .k { color:var(--muted); font-size:10.5px; font-family:var(--mono); margin-right:6px; }
   #office { width:100%; height:calc(100vh - 54px - 32px); display:block; image-rendering: pixelated; image-rendering: crisp-edges; background:#0a0c14; border:3px solid var(--line); box-shadow:4px 4px 0 var(--ink); }
   .viewbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .lang { background:var(--panel2); color:var(--text); border:2px solid var(--ink); font: 600 12px/1 var(--sans); padding:5px 6px; margin-left:8px; }
   @media (max-width: 1000px) { main.board { grid-template-columns: 1fr; height:auto; } aside { border:0; border-bottom:3px solid var(--line); } aside.right { border-left:0; } .msg { max-width:100%; } .dlg .cols { grid-template-columns:1fr; } .dlg .cols > div + div { border-left:0; border-top:3px solid var(--line); } .plan-agent { grid-template-columns: 44px 1fr; } .plan-agent .ctl { grid-column: 1 / -1; flex-direction:row; } }
 </style>
 </head>
@@ -157,6 +158,7 @@
   <div class="goal" id="hgoal"></div>
   <div class="counters" id="hcounters"></div>
   <div class="row" id="hactions"></div>
+  <select id="lang" class="lang" title="Language"></select>
 </header>
 <main id="main"><section id="view"></section></main>
 <dialog id="agentdlg"></dialog>
@@ -202,6 +204,142 @@ let MODELS = [{ id: "claude-opus-5", backend: "claude-code", vendor: "anthropic"
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"], BLABEL = { api: "Anthropic API", "claude-code": "Claude Code", codex: "OpenAI Codex" };
 const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) (groups[m.backend] = groups[m.backend] || []).push(m); const known = MODELS.some(m => m.id === selected);
   return Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
+
+// ---------------------------------------------------------------- interface language: the page chrome is written in English and translated in place
+// Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
+const I18N = {
+  "zh-CN": {
+    "Projects": "项目", "Open a project": "打开项目", "Open": "打开", "Remove": "移除", "Remove from list": "从列表移除", "Remove from this list (files and .huntun/ stay on disk)": "从此列表移除（文件与 .huntun/ 保留在磁盘上）",
+    "No projects yet. Point Huntun at a directory on the right.": "还没有项目。请在右侧指定一个目录。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任意目录均可：新项目用空文件夹，已有代码库也可以。输入路径或浏览选择。",
+    "/path/to/project": "/项目/路径", "No goal yet. Open it to set one up.": "尚未设定目标。打开后即可设置。", "not set up": "未设置", "awaiting approval": "等待批准", "confirm goal": "确认目标", "running": "运行中", "paused": "已暂停", "error": "出错", "Set up {x}": "设置 {x}",
+    "Goal — what should the team build or change?": "目标——团队要构建或改变什么？", "e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI": "例如：构建一个管理预订的 REST API，带 React 管理界面、测试与 CI",
+    "Context (optional) — constraints, stack preferences, what to keep": "背景（可选）——约束、技术栈偏好、需要保留的内容", "e.g. Python 3.12 + FastAPI, keep the existing database schema, small team": "例如：Python 3.12 + FastAPI，保留现有数据库结构，小团队",
+    "Team size limit (besides the master)": "团队人数上限（不含主管）", "no limit (the master decides)": "不限（由主管决定）", "up to {n} agents": "最多 {n} 名成员", "Backend": "后端", "auto (Claude Code if installed, else API key)": "自动（已安装则用 Claude Code，否则用 API key）",
+    "Claude Code (your Claude login)": "Claude Code（你的 Claude 登录）", "OpenAI Codex (your ChatGPT login)": "OpenAI Codex（你的 ChatGPT 登录）", "Anthropic API (ANTHROPIC_API_KEY)": "Anthropic API（ANTHROPIC_API_KEY）",
+    "Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.": "会先检查已有文件。主管先与你确认目标和「完成的定义」，再提出团队方案供你批准。",
+    "Confirm goal &amp; plan the team": "确认目标并规划团队", "Confirm goal & plan the team": "确认目标并规划团队", "Checking the goal": "正在检查目标", "Checking…": "检查中…", "Waiting for the master's goal check…": "等待主管检查目标…",
+    "The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.": "主管正在复述目标、起草「完成的定义」，并记录假设与疑问。在规划团队之前，你可以确认或修改它们。",
+    "Goal check": "目标确认", "Goal (edit if needed)": "目标（可修改）", "Definition of done": "完成的定义", "Definition of done (one condition per line; edit freely)": "完成的定义（每行一条，可自由修改）", "Assumptions": "假设", "Questions for you": "需要你回答的问题",
+    "Answer the questions or ask for changes": "回答问题或提出修改", "e.g. Yes to a web UI, but no auth for now. Done also means it runs with one command.": "例如：需要网页界面，但暂不做登录。完成还意味着一条命令就能运行。", "Reply to master": "回复主管", "Send to the master": "发送给主管", "The master then proposes a team for you to approve.": "随后主管会提出团队方案供你批准。",
+    "Plan awaiting your approval": "方案等待你的批准", "The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change.": "主管提出了这支团队，并按角色和任务难度为每位成员选定了模型与推理强度。可在下方任意调整后批准，或告诉主管需要改什么。",
+    "Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.": "在下方移除成员或更换模型后，批准时会更新估算。团队工作时，顶栏会显示实际花费与估算的对比。",
+    "Estimate to finish": "完成所需估算", "Role": "角色", "Model": "模型", "Effort": "推理强度", "Personality": "性格", "Custom…": "自定义…", "Describe temperament, board voice, and working style": "描述性情、板上的说话风格与工作方式", "Why this model: {x}": "为何选此模型：{x}", "Model choice: {x}": "模型选择：{x}", "runs via {x}": "运行于 {x}",
+    "Approve plan": "批准方案", "Approve": "批准", "Ask the master to revise": "让主管修改", "Request changes": "请求修改", "e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA": "例如：去掉 UX 研究员，后端工程师改用 Sonnet，再加一名 QA", "Team size limit: {n} agents besides the master.": "团队人数上限：不含主管 {n} 名。",
+    "Team planning did not finish": "团队规划未完成", "Last attempt failed: {x}": "上次尝试失败：{x}", "Your goal and context are kept as typed; fix the cause and send again.": "你输入的目标与背景已保留；修正原因后重新发送即可。", "Retry team planning": "重试团队规划", "Retry": "重试", "back to setup": "返回设置", "Agents load paused; press Start all afterwards.": "成员以暂停状态加载；之后按「全部开始」。",
+    "Start all": "全部开始", "Pause all": "全部暂停", "Needs you": "需要你", "Needs you ({n})": "需要你（{n}）", "items that need your decision, approval, or input": "需要你决策、批准或补充信息的事项", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "所有成员 @ 你的事项。在对应话题中回复，或在此标记完成后即清除。", "Nothing needs you right now.": "目前没有需要你处理的事项。", "Done": "完成", "Close": "关闭", "Cancel": "取消",
+    "Team": "团队", "Threads": "话题", "Discussion": "讨论", "Activity": "动态", "Live": "实时", "Recent cycles": "最近周期", "No cycles yet.": "还没有周期。", "Nothing yet — the agent has not started a cycle.": "还没有内容——该成员尚未开始周期。", "Nothing yet.": "暂无。", "Current task": "当前任务", "Last cycle": "上一周期", "next: {x}": "下一步：{x}", "Uncommitted files": "未提交的文件", "Compactions": "上下文压缩", "Context": "上下文", "Cycles": "周期", "Cost": "费用", "context compactions": "上下文压缩次数", "context window {n}% ({a} / {b})": "上下文窗口 {n}%（{a} / {b}）",
+    "New thread": "新话题", "Post thread": "发布话题", "Title": "标题", "Ask a question or add a requirement. Type @ to tag an agent.": "提问或追加需求。输入 @ 可 @ 成员。", "Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act.": "以 @human 身份回复。输入 @ 可 @ 成员；被 @ 的成员会被唤醒并决定是否行动。", "Tagged agents are woken up and decide whether to act.": "被 @ 的成员会被唤醒并决定是否行动。", "Send": "发送", "Cmd/Ctrl-Enter to send": "Cmd/Ctrl-Enter 发送",
+    "sort": "排序", "show": "显示", "time posted": "发布时间", "last response": "最近回复", "commit updates": "提交更新", "discussions": "讨论", "everything": "全部", "Nothing matches this filter.": "没有符合筛选条件的内容。", "No threads yet. Agents post here when they have something to discuss; you can also start one.": "还没有话题。成员有事讨论时会在这里发帖；你也可以发起。",
+    "limit pauses": "限额暂停", "times the team was paused by a usage limit / resumed by the watchdog": "团队因用量限制被暂停 / 由看门狗恢复的次数", "master resuming first…": "主管先行恢复…", "Check {x}": "检查 {x}", "Check now": "立即检查", "total tokens (input + output + cached) and list-price cost across all agents, and the master's estimate for the whole job": "所有成员的总 token（输入 + 输出 + 缓存）与标价费用，以及主管对整项工作的估算",
+    "Loading…": "加载中…", "loading…": "加载中…", "commit": "提交", "theme": "主题", "▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details": "▶ 在工位 = 工作中 · 在床上 = 空闲或暂停 · 帖子以对话气泡说出 · 点击角色查看详情",
+    "Regular office": "普通办公室", "Microsoft campus": "微软园区", "Goldman Sachs": "高盛", "Factory": "工厂", "Basketball court": "篮球场", "Tennis court": "网球场", "Parking lot": "停车场", "Garage": "修车库", "Chinese tech": "中式互联网公司", "Language": "语言",
+  },
+  "zh-TW": {
+    "Projects": "專案", "Open a project": "開啟專案", "Open": "開啟", "Remove": "移除", "Remove from list": "從清單移除", "Remove from this list (files and .huntun/ stay on disk)": "從此清單移除（檔案與 .huntun/ 仍保留在磁碟上）",
+    "No projects yet. Point Huntun at a directory on the right.": "還沒有專案。請在右側指定一個目錄。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任何目錄皆可：新專案用空資料夾，既有程式碼庫也可以。輸入路徑或瀏覽選擇。",
+    "/path/to/project": "/專案/路徑", "No goal yet. Open it to set one up.": "尚未設定目標。開啟後即可設定。", "not set up": "未設定", "awaiting approval": "等待核准", "confirm goal": "確認目標", "running": "執行中", "paused": "已暫停", "error": "錯誤", "Set up {x}": "設定 {x}",
+    "Goal — what should the team build or change?": "目標——團隊要建構或改變什麼？", "e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI": "例如：建構一個管理預訂的 REST API，附 React 管理介面、測試與 CI",
+    "Context (optional) — constraints, stack preferences, what to keep": "背景（選填）——限制、技術棧偏好、需要保留的內容", "e.g. Python 3.12 + FastAPI, keep the existing database schema, small team": "例如：Python 3.12 + FastAPI，保留現有資料庫結構，小團隊",
+    "Team size limit (besides the master)": "團隊人數上限（不含主管）", "no limit (the master decides)": "不限（由主管決定）", "up to {n} agents": "最多 {n} 名成員", "Backend": "後端", "auto (Claude Code if installed, else API key)": "自動（已安裝則用 Claude Code，否則用 API key）",
+    "Claude Code (your Claude login)": "Claude Code（你的 Claude 登入）", "OpenAI Codex (your ChatGPT login)": "OpenAI Codex（你的 ChatGPT 登入）", "Anthropic API (ANTHROPIC_API_KEY)": "Anthropic API（ANTHROPIC_API_KEY）",
+    "Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.": "會先檢視既有檔案。主管先與你確認目標和「完成的定義」，再提出團隊方案供你核准。",
+    "Confirm goal &amp; plan the team": "確認目標並規劃團隊", "Confirm goal & plan the team": "確認目標並規劃團隊", "Checking the goal": "正在檢查目標", "Checking…": "檢查中…", "Waiting for the master's goal check…": "等待主管檢查目標…",
+    "The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.": "主管正在覆述目標、草擬「完成的定義」，並記錄假設與疑問。在規劃團隊之前，你可以確認或修改它們。",
+    "Goal check": "目標確認", "Goal (edit if needed)": "目標（可修改）", "Definition of done": "完成的定義", "Definition of done (one condition per line; edit freely)": "完成的定義（每行一條，可自由修改）", "Assumptions": "假設", "Questions for you": "需要你回答的問題",
+    "Answer the questions or ask for changes": "回答問題或提出修改", "e.g. Yes to a web UI, but no auth for now. Done also means it runs with one command.": "例如：需要網頁介面，但暫不做登入。完成也意味著一個指令就能執行。", "Reply to master": "回覆主管", "Send to the master": "送出給主管", "The master then proposes a team for you to approve.": "隨後主管會提出團隊方案供你核准。",
+    "Plan awaiting your approval": "方案等待你的核准", "The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change.": "主管提出了這支團隊，並依角色與任務難度為每位成員選定模型與推理強度。可在下方任意調整後核准，或告訴主管需要改什麼。",
+    "Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.": "在下方移除成員或更換模型後，核准時會更新估算。團隊工作時，頂列會顯示實際花費與估算的對比。",
+    "Estimate to finish": "完成所需估算", "Role": "角色", "Model": "模型", "Effort": "推理強度", "Personality": "性格", "Custom…": "自訂…", "Describe temperament, board voice, and working style": "描述性情、討論板上的語氣與工作方式", "Why this model: {x}": "為何選此模型：{x}", "Model choice: {x}": "模型選擇：{x}", "runs via {x}": "執行於 {x}",
+    "Approve plan": "核准方案", "Approve": "核准", "Ask the master to revise": "請主管修改", "Request changes": "要求修改", "e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA": "例如：拿掉 UX 研究員，後端工程師改用 Sonnet，再加一名 QA", "Team size limit: {n} agents besides the master.": "團隊人數上限：不含主管 {n} 名。",
+    "Team planning did not finish": "團隊規劃未完成", "Last attempt failed: {x}": "上次嘗試失敗：{x}", "Your goal and context are kept as typed; fix the cause and send again.": "你輸入的目標與背景已保留；修正原因後重新送出即可。", "Retry team planning": "重試團隊規劃", "Retry": "重試", "back to setup": "返回設定", "Agents load paused; press Start all afterwards.": "成員以暫停狀態載入；之後按「全部開始」。",
+    "Start all": "全部開始", "Pause all": "全部暫停", "Needs you": "需要你", "Needs you ({n})": "需要你（{n}）", "items that need your decision, approval, or input": "需要你決策、核准或補充資訊的事項", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "所有成員 @ 你的事項。在對應討論串回覆，或在此標記完成後即清除。", "Nothing needs you right now.": "目前沒有需要你處理的事項。", "Done": "完成", "Close": "關閉", "Cancel": "取消",
+    "Team": "團隊", "Threads": "討論串", "Discussion": "討論", "Activity": "動態", "Live": "即時", "Recent cycles": "最近週期", "No cycles yet.": "還沒有週期。", "Nothing yet — the agent has not started a cycle.": "還沒有內容——該成員尚未開始週期。", "Nothing yet.": "暫無。", "Current task": "目前任務", "Last cycle": "上一週期", "next: {x}": "下一步：{x}", "Uncommitted files": "未提交的檔案", "Compactions": "上下文壓縮", "Context": "上下文", "Cycles": "週期", "Cost": "費用", "context compactions": "上下文壓縮次數", "context window {n}% ({a} / {b})": "上下文視窗 {n}%（{a} / {b}）",
+    "New thread": "新討論串", "Post thread": "發佈討論串", "Title": "標題", "Ask a question or add a requirement. Type @ to tag an agent.": "提問或新增需求。輸入 @ 可標記成員。", "Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act.": "以 @human 身分回覆。輸入 @ 可標記成員；被標記的成員會被喚醒並決定是否行動。", "Tagged agents are woken up and decide whether to act.": "被標記的成員會被喚醒並決定是否行動。", "Send": "送出", "Cmd/Ctrl-Enter to send": "Cmd/Ctrl-Enter 送出",
+    "sort": "排序", "show": "顯示", "time posted": "發佈時間", "last response": "最近回覆", "commit updates": "提交更新", "discussions": "討論", "everything": "全部", "Nothing matches this filter.": "沒有符合篩選條件的內容。", "No threads yet. Agents post here when they have something to discuss; you can also start one.": "還沒有討論串。成員有事討論時會在這裡發文；你也可以發起。",
+    "limit pauses": "限額暫停", "times the team was paused by a usage limit / resumed by the watchdog": "團隊因用量限制被暫停 / 由看門狗恢復的次數", "master resuming first…": "主管先行恢復…", "Check {x}": "檢查 {x}", "Check now": "立即檢查", "total tokens (input + output + cached) and list-price cost across all agents, and the master's estimate for the whole job": "所有成員的總 token（輸入 + 輸出 + 快取）與牌價費用，以及主管對整項工作的估算",
+    "Loading…": "載入中…", "loading…": "載入中…", "commit": "提交", "theme": "主題", "▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details": "▶ 在座位 = 工作中 · 在床上 = 閒置或暫停 · 貼文以對話泡泡說出 · 點擊角色查看詳情",
+    "Regular office": "一般辦公室", "Microsoft campus": "微軟園區", "Goldman Sachs": "高盛", "Factory": "工廠", "Basketball court": "籃球場", "Tennis court": "網球場", "Parking lot": "停車場", "Garage": "修車廠", "Chinese tech": "中式網路公司", "Language": "語言",
+  },
+  "ja": {
+    "Projects": "プロジェクト", "Open a project": "プロジェクトを開く", "Open": "開く", "Remove": "削除", "Remove from list": "一覧から削除", "Remove from this list (files and .huntun/ stay on disk)": "この一覧から削除（ファイルと .huntun/ はディスクに残ります）",
+    "No projects yet. Point Huntun at a directory on the right.": "プロジェクトはまだありません。右側でディレクトリを指定してください。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "どのディレクトリでも構いません。新規なら空のフォルダ、既存のコードベースでも可。パスを入力するか参照してください。",
+    "/path/to/project": "/プロジェクト/パス", "No goal yet. Open it to set one up.": "目標が未設定です。開いて設定してください。", "not set up": "未設定", "awaiting approval": "承認待ち", "confirm goal": "目標を確認", "running": "実行中", "paused": "一時停止中", "error": "エラー", "Set up {x}": "{x} を設定",
+    "Goal — what should the team build or change?": "目標 — チームは何を作り、何を変えるべきか？", "e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI": "例：予約管理の REST API を React 管理画面・テスト・CI 付きで構築する",
+    "Context (optional) — constraints, stack preferences, what to keep": "背景（任意）— 制約、技術スタックの希望、残すべきもの", "e.g. Python 3.12 + FastAPI, keep the existing database schema, small team": "例：Python 3.12 + FastAPI、既存の DB スキーマは維持、少人数チーム",
+    "Team size limit (besides the master)": "チーム人数の上限（マスターを除く）", "no limit (the master decides)": "上限なし（マスターが決める）", "up to {n} agents": "最大 {n} 名", "Backend": "バックエンド", "auto (Claude Code if installed, else API key)": "自動（Claude Code があればそれ、なければ API キー）",
+    "Claude Code (your Claude login)": "Claude Code（あなたの Claude ログイン）", "OpenAI Codex (your ChatGPT login)": "OpenAI Codex（あなたの ChatGPT ログイン）", "Anthropic API (ANTHROPIC_API_KEY)": "Anthropic API（ANTHROPIC_API_KEY）",
+    "Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.": "既存のファイルを確認します。マスターはまず目標と「完了の定義」をあなたと確認し、その後チーム案を提示して承認を求めます。",
+    "Confirm goal &amp; plan the team": "目標を確認してチームを計画", "Confirm goal & plan the team": "目標を確認してチームを計画", "Checking the goal": "目標を確認中", "Checking…": "確認中…", "Waiting for the master's goal check…": "マスターの目標確認を待っています…",
+    "The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.": "マスターが目標を言い換え、「完了の定義」を起草し、前提と質問を整理しています。チーム計画の前に確認・編集できます。",
+    "Goal check": "目標の確認", "Goal (edit if needed)": "目標（必要なら編集）", "Definition of done": "完了の定義", "Definition of done (one condition per line; edit freely)": "完了の定義（1 行 1 条件、自由に編集可）", "Assumptions": "前提", "Questions for you": "あなたへの質問",
+    "Answer the questions or ask for changes": "質問に答えるか変更を依頼", "e.g. Yes to a web UI, but no auth for now. Done also means it runs with one command.": "例：Web UI は必要だが認証はまだ不要。完了とは 1 コマンドで動くことも含む。", "Reply to master": "マスターに返信", "Send to the master": "マスターに送信", "The master then proposes a team for you to approve.": "その後マスターがチーム案を提示し、承認を求めます。",
+    "Plan awaiting your approval": "計画はあなたの承認待ちです", "The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change.": "マスターがこのチームを提案し、役割と難易度に応じて各メンバーのモデルと推論強度を選びました。下で自由に調整して承認するか、変更点をマスターに伝えてください。",
+    "Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.": "下でメンバーを外したりモデルを変えると、承認時に見積もりが更新されます。作業中はヘッダーに実費と見積もりの比較が表示されます。",
+    "Estimate to finish": "完了までの見積もり", "Role": "役割", "Model": "モデル", "Effort": "推論強度", "Personality": "性格", "Custom…": "カスタム…", "Describe temperament, board voice, and working style": "気質、ボードでの口調、仕事のスタイルを記述", "Why this model: {x}": "このモデルの理由：{x}", "Model choice: {x}": "モデルの選択：{x}", "runs via {x}": "{x} で実行",
+    "Approve plan": "計画を承認", "Approve": "承認", "Ask the master to revise": "マスターに修正を依頼", "Request changes": "変更を依頼", "e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA": "例：UX リサーチャーを外し、バックエンドは Sonnet に、QA をもう 1 名追加", "Team size limit: {n} agents besides the master.": "チーム人数の上限：マスターを除き {n} 名。",
+    "Team planning did not finish": "チーム計画が完了しませんでした", "Last attempt failed: {x}": "前回の試行が失敗：{x}", "Your goal and context are kept as typed; fix the cause and send again.": "入力した目標と背景は保持されています。原因を直して再送信してください。", "Retry team planning": "チーム計画を再試行", "Retry": "再試行", "back to setup": "設定に戻る", "Agents load paused; press Start all afterwards.": "メンバーは一時停止状態で読み込まれます。その後「すべて開始」を押してください。",
+    "Start all": "すべて開始", "Pause all": "すべて一時停止", "Needs you": "要対応", "Needs you ({n})": "要対応（{n}）", "items that need your decision, approval, or input": "あなたの判断・承認・入力が必要な項目", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "メンバーがあなたにタグ付けした項目。スレッドで返信するか、ここで完了にすると消えます。", "Nothing needs you right now.": "今は対応が必要な項目はありません。", "Done": "完了", "Close": "閉じる", "Cancel": "キャンセル",
+    "Team": "チーム", "Threads": "スレッド", "Discussion": "議論", "Activity": "アクティビティ", "Live": "ライブ", "Recent cycles": "最近のサイクル", "No cycles yet.": "サイクルはまだありません。", "Nothing yet — the agent has not started a cycle.": "まだ何もありません — このメンバーはサイクルを開始していません。", "Nothing yet.": "まだありません。", "Current task": "現在のタスク", "Last cycle": "前回のサイクル", "next: {x}": "次：{x}", "Uncommitted files": "未コミットのファイル", "Compactions": "コンテキスト圧縮", "Context": "コンテキスト", "Cycles": "サイクル", "Cost": "コスト", "context compactions": "コンテキスト圧縮の回数", "context window {n}% ({a} / {b})": "コンテキストウィンドウ {n}%（{a} / {b}）",
+    "New thread": "新しいスレッド", "Post thread": "スレッドを投稿", "Title": "タイトル", "Ask a question or add a requirement. Type @ to tag an agent.": "質問するか要件を追加。@ でメンバーをタグ付け。", "Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act.": "@human として返信。@ でメンバーをタグ付けすると起こされ、対応するかを判断します。", "Tagged agents are woken up and decide whether to act.": "タグ付けされたメンバーは起こされ、対応するかを判断します。", "Send": "送信", "Cmd/Ctrl-Enter to send": "Cmd/Ctrl-Enter で送信",
+    "sort": "並び替え", "show": "表示", "time posted": "投稿日時", "last response": "最終返信", "commit updates": "コミット更新", "discussions": "議論", "everything": "すべて", "Nothing matches this filter.": "このフィルターに一致するものはありません。", "No threads yet. Agents post here when they have something to discuss; you can also start one.": "スレッドはまだありません。メンバーは議論があればここに投稿します。あなたから始めることもできます。",
+    "limit pauses": "上限による停止", "times the team was paused by a usage limit / resumed by the watchdog": "使用上限でチームが停止した回数 / ウォッチドッグが再開した回数", "master resuming first…": "マスターが先に再開中…", "Check {x}": "{x} を確認", "Check now": "今すぐ確認", "total tokens (input + output + cached) and list-price cost across all agents, and the master's estimate for the whole job": "全メンバーの合計トークン（入力 + 出力 + キャッシュ）と定価コスト、およびマスターによる全体の見積もり",
+    "Loading…": "読み込み中…", "loading…": "読み込み中…", "commit": "コミット", "theme": "テーマ", "▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details": "▶ 机 = 作業中 · ベッド = 待機または一時停止 · 投稿は吹き出しで話されます · キャラクターをクリックで詳細",
+    "Regular office": "普通のオフィス", "Microsoft campus": "マイクロソフトのキャンパス", "Goldman Sachs": "ゴールドマン・サックス", "Factory": "工場", "Basketball court": "バスケットコート", "Tennis court": "テニスコート", "Parking lot": "駐車場", "Garage": "ガレージ", "Chinese tech": "中国の IT 企業", "Language": "言語",
+  },
+};
+const LANGS = [["en", "English"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"], ["ja", "日本語"]];
+let LANG = "en"; try { LANG = localStorage.getItem("huntun.lang") || "en"; } catch (e) { /* no storage */ }
+if (!I18N[LANG] && LANG !== "en") LANG = "en";
+const _patterns = {};                                                        // per language: compiled "{x}" keys
+function _compiled(lang) {
+  if (_patterns[lang]) return _patterns[lang];
+  const list = [];
+  for (const [k, v] of Object.entries(I18N[lang] || {})) if (k.includes("{")) {
+    const names = [...k.matchAll(/\{(\w+)\}/g)].map(m => m[1]);
+    const re = new RegExp("^" + k.replace(/[.*+?^$()[\]\\|]/g, "\\$&").replace(/\{\w+\}/g, "(.+?)") + "$", "s");
+    list.push({ re, names, out: v });
+  }
+  return (_patterns[lang] = list);
+}
+function tr(text) {                                                         // the translation of one rendered string, or null
+  if (LANG === "en") return null;
+  const dict = I18N[LANG]; if (!dict) return null;
+  const s = text.trim(); if (!s) return null;
+  if (dict[s] !== undefined) return text.replace(s, dict[s]);
+  for (const p of _compiled(LANG)) { const m = s.match(p.re); if (m) { let out = p.out; p.names.forEach((n, i) => { out = out.replace("{" + n + "}", m[i + 1]); }); return text.replace(s, out); } }
+  return null;
+}
+const SKIP = new Set(["SCRIPT", "STYLE", "TEXTAREA", "PRE", "CODE", "CANVAS"]);
+function translateNode(node) {
+  if (node.nodeType === 3) {                                                 // text: remember the English, show the translation
+    const orig = node.__orig !== undefined ? node.__orig : node.data;
+    if (node.__shown !== undefined && node.data !== node.__shown) node.__orig = node.data;          // the page rewrote it: new English source
+    const src = node.__orig !== undefined ? node.__orig : orig;
+    const out = tr(src);
+    node.__orig = src; node.__shown = out !== null ? out : src;
+    if (node.data !== node.__shown) node.data = node.__shown;
+    return;
+  }
+  if (node.nodeType !== 1 || SKIP.has(node.tagName)) return;
+  for (const attr of ["placeholder", "title"]) {
+    if (!node.hasAttribute(attr)) continue;
+    const cur = node.getAttribute(attr), key = "__orig_" + attr, shown = "__shown_" + attr;
+    const src = node[key] !== undefined && node[shown] === cur ? node[key] : cur;
+    const out = tr(src); node[key] = src; node[shown] = out !== null ? out : src;
+    if (cur !== node[shown]) node.setAttribute(attr, node[shown]);
+  }
+  for (const child of node.childNodes) translateNode(child);
+}
+function setLang(lang) {
+  LANG = I18N[lang] || lang === "en" ? lang : "en";
+  try { localStorage.setItem("huntun.lang", LANG); } catch (e) { /* no storage */ }
+  document.documentElement.lang = LANG === "en" ? "en" : LANG;
+  translateNode(document.body);
+  const sel = document.getElementById("lang"); if (sel && sel.value !== LANG) sel.value = LANG;
+}
+new MutationObserver(records => {                                           // every render, static or dynamic, gets translated
+  for (const r of records) { if (r.type === "characterData") translateNode(r.target); else for (const n of r.addedNodes) translateNode(n); }
+}).observe(document.body, { childList: true, subtree: true, characterData: true });
 
 // ---------------------------------------------------------------- avatars: agents get the same face as their office sprite; the human keeps a generic 5x5 badge
 const ROLE_ICON = { master: "👑", "team-lead": "🧭", "scrum-master": "📋", backend: "⚙️", frontend: "🖼️", fullstack: "🧩", "ux-researcher": "🔍", "ui-designer": "🎨", qa: "🧪", "ml-engineer": "🧠", "data-scientist": "📊", devops: "🚀", "tech-writer": "✍️", security: "🛡️", "product-manager": "🎯", human: "🙂" };
@@ -2477,6 +2615,7 @@ const office = (() => {
   }
   return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 })();
+(() => { const sel = document.getElementById("lang"); if (!sel) return; sel.innerHTML = LANGS.map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join(""); sel.value = LANG; sel.onchange = () => setLang(sel.value); document.documentElement.lang = LANG; translateNode(document.body); })();
 route();
 </script>
 </body>

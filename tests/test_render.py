@@ -35,11 +35,11 @@ def jsdom_path() -> str | None:
 class RenderTests(HubTests):
     """Reuses the hub test fixture (fake backend, HTTP server) to produce real page states, then renders each."""
 
-    def render(self, route: str, responses: dict, office: bool = False) -> dict:
+    def render(self, route: str, responses: dict, office: bool = False, lang: str = "") -> dict:
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(responses, f)
         try:
-            env = {**os.environ, "NODE_PATH": jsdom_path() or "", "HUNTUN_RENDER_OFFICE": "1" if office else ""}
+            env = {**os.environ, "NODE_PATH": jsdom_path() or "", "HUNTUN_RENDER_OFFICE": "1" if office else "", "HUNTUN_RENDER_LANG": lang}
             proc = subprocess.run(["node", str(HARNESS), route, f.name], capture_output=True, text=True, timeout=60, env=env)
         finally:
             os.unlink(f.name)
@@ -90,6 +90,17 @@ class RenderTests(HubTests):
         self.assertIn("Threads", out["text"], "office view toggled on shows the switch-back button")
 
     # the inherited hub tests already run in test_hub; skip them here
+    def test_interface_language_switch(self) -> None:
+        """The page chrome renders in the chosen language; agent content is untouched."""
+        canned = {"/api/workspaces": {"workspaces": [], "home": "/"}, "/api/fs": {"path": "/", "exists": True, "parent": None, "dirs": [], "files": 0, "initialized": False}, "*": {}}
+        en = self.render("#/", canned)
+        self.assertIn("Open a project", en["text"])
+        for lang, expect in (("zh-CN", "打开项目"), ("zh-TW", "開啟專案"), ("ja", "プロジェクトを開く")):
+            out = self.render("#/", canned, lang=lang)
+            self.assertEqual(out["lang"], lang)
+            self.assertIn(expect, out["text"], f"{lang}: {out['text'][:300]}")
+            self.assertNotIn("Open a project", out["text"])
+
     def test_web_flow_open_plan_run_pause(self) -> None:
         pass
 
