@@ -187,9 +187,12 @@ class CodexBackend:
                 return False
         return ok and code == 0
 
-    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str) -> dict[str, Any]:
+    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
+                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
         """Uses Codex's --output-schema so the final message is JSON matching the tool's input schema."""
         errors: list[str] = []
+        say = log or (lambda _t: None)
+        say(f"Starting a Codex session ({model or 'default model'}, effort {effort})…")
         with tempfile.TemporaryDirectory() as d:
             schema_file, out_file = Path(d) / "schema.json", Path(d) / "last.json"
             schema_file.write_text(json.dumps(schema))
@@ -197,6 +200,10 @@ class CodexBackend:
 
             def on_event(ev: dict[str, Any]) -> None:
                 item = ev.get("item") or {}
+                if item.get("type") == "agent_message" and str(item.get("text") or "").strip():
+                    say(str(item.get("text")).strip()[:400])
+                elif item.get("type") == "reasoning" and str(item.get("text") or "").strip():
+                    say("thinking: " + str(item.get("text")).strip()[:300])
                 if item.get("type") == "error":
                     errors.append(str(item.get("message")))
                 if ev.get("type") in ("error", "stderr"):

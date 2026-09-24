@@ -124,7 +124,10 @@ class ApiBackend:
             p["fallbacks"] = "default"
         return await self._send(p)
 
-    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str) -> dict[str, Any]:
+    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
+                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
+        say = log or (lambda _t: None)
+        say(f"Calling {model or self._default_model()} ({PROVIDERS[self.provider]['label']}), waiting for the answer…")
         params: dict[str, Any] = {
             "model": model or self._default_model(), "max_tokens": 16000, "output_config": {"effort": effort},
             "tools": [{"name": tool_name, "description": description, "input_schema": schema}],
@@ -135,7 +138,11 @@ class ApiBackend:
         if response.stop_reason == "refusal":
             raise RuntimeError("The model refused this request.")
         for block in response.content:
+            if block.type == "text" and getattr(block, "text", "").strip():
+                say(block.text.strip()[:400])
+        for block in response.content:
             if block.type == "tool_use" and block.name == tool_name:
+                say(f"Answer received via {tool_name}")
                 return dict(block.input)
         text = "\n".join(b.text for b in response.content if b.type == "text")
         if self.compat:                                                          # some compatible models answer in text anyway: take the JSON out of it

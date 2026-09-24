@@ -147,6 +147,8 @@
   .live .k { color:var(--muted); font-size:10.5px; font-family:var(--mono); margin-right:6px; }
   #office { width:100%; height:calc(100vh - 54px - 32px); display:block; image-rendering: pixelated; image-rendering: crisp-edges; background:#0a0c14; border:3px solid var(--line); box-shadow:4px 4px 0 var(--ink); }
   .viewbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .livelog { background:#070a12; border:2px solid var(--line); padding:8px 10px; font: 11.5px/1.5 var(--mono); max-height:56vh; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text); margin-top:10px; }
+  .livelog .t { color:var(--muted); margin-right:8px; } .livelog .l { display:block; }
   .lang { background:var(--panel2); color:var(--text); border:2px solid var(--ink); font: 600 12px/1 var(--sans); padding:5px 6px; margin-left:8px; }
   @media (max-width: 1000px) { main.board { grid-template-columns: 1fr; height:auto; } aside { border:0; border-bottom:3px solid var(--line); } aside.right { border-left:0; } .msg { max-width:100%; } .dlg .cols { grid-template-columns:1fr; } .dlg .cols > div + div { border-left:0; border-top:3px solid var(--line); } .plan-agent { grid-template-columns: 44px 1fr; } .plan-agent .ctl { grid-column: 1 / -1; flex-direction:row; } }
 </style>
@@ -209,6 +211,7 @@ const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) 
 // Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
 const I18N = {
   "zh-CN": {
+    "Master agent log": "主管实时日志", "No output yet.": "暂无输出。",
     "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
     "Projects": "项目", "Open a project": "打开项目", "Open": "打开", "Remove": "移除", "Remove from list": "从列表移除", "Remove from this list (files and .huntun/ stay on disk)": "从此列表移除（文件与 .huntun/ 保留在磁盘上）",
     "No projects yet. Point Huntun at a directory on the right.": "还没有项目。请在右侧指定一个目录。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任意目录均可：新项目用空文件夹，已有代码库也可以。输入路径或浏览选择。",
@@ -236,6 +239,7 @@ const I18N = {
     "Regular office": "普通办公室", "Microsoft campus": "微软园区", "Goldman Sachs": "高盛", "Factory": "工厂", "Basketball court": "篮球场", "Tennis court": "网球场", "Parking lot": "停车场", "Garage": "修车库", "Chinese tech": "中式互联网公司", "Language": "语言",
   },
   "zh-TW": {
+    "Master agent log": "主管即時日誌", "No output yet.": "尚無輸出。",
     "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
     "Projects": "專案", "Open a project": "開啟專案", "Open": "開啟", "Remove": "移除", "Remove from list": "從清單移除", "Remove from this list (files and .huntun/ stay on disk)": "從此清單移除（檔案與 .huntun/ 仍保留在磁碟上）",
     "No projects yet. Point Huntun at a directory on the right.": "還沒有專案。請在右側指定一個目錄。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任何目錄皆可：新專案用空資料夾，既有程式碼庫也可以。輸入路徑或瀏覽選擇。",
@@ -263,6 +267,7 @@ const I18N = {
     "Regular office": "一般辦公室", "Microsoft campus": "微軟園區", "Goldman Sachs": "高盛", "Factory": "工廠", "Basketball court": "籃球場", "Tennis court": "網球場", "Parking lot": "停車場", "Garage": "修車廠", "Chinese tech": "中式網路公司", "Language": "語言",
   },
   "ja": {
+    "Master agent log": "マスターのライブログ", "No output yet.": "まだ出力はありません。",
     "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
     "Projects": "プロジェクト", "Open a project": "プロジェクトを開く", "Open": "開く", "Remove": "削除", "Remove from list": "一覧から削除", "Remove from this list (files and .huntun/ stay on disk)": "この一覧から削除（ファイルと .huntun/ はディスクに残ります）",
     "No projects yet. Point Huntun at a directory on the right.": "プロジェクトはまだありません。右側でディレクトリを指定してください。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "どのディレクトリでも構いません。新規なら空のフォルダ、既存のコードベースでも可。パスを入力するか参照してください。",
@@ -366,6 +371,16 @@ function avatar(name, size, working) {
 const isWorking = (st) => /^(working|resuming)/.test(st || "");
 
 let timer = null;
+// the waiting screens during a goal check or planning: elapsed seconds and the master's live log
+const waitPanel = (w, fallback) => '<p><span class="blink">▮</span> <span id="waitmsg">' + esc(w.progress || fallback) + '</span> … <span id="waitsec">' + (w.elapsed || 0) + '</span>s</p>' +
+  '<div class="hint">Master agent log</div><pre class="livelog" id="livelog">' + logLines(w) + '</pre>';
+const logLines = (w) => (w.log && w.log.length ? w.log.map(l => '<span class="l"><span class="t">' + esc(l.at) + '</span>' + esc(l.text) + '</span>').join("") : '<span class="hint">No output yet.</span>');
+function updateWait(w, fallback) {                                            // refresh in place so the log keeps its scroll position
+  const sec = $("#waitsec"), msg = $("#waitmsg"), box = $("#livelog"); if (!sec || !box) return false;
+  sec.textContent = String(w.elapsed || 0); msg.textContent = w.progress || fallback;
+  const html = logLines(w); if (box.innerHTML !== html) { const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 8; box.innerHTML = html; if (stick) box.scrollTop = box.scrollHeight; }
+  return true;
+}
 function route() {
   clearInterval(timer); office.stop();
   const h = location.hash || "#/";
@@ -456,9 +471,11 @@ async function setupView(id) {
     $("#hgoal").textContent = w.path;
     if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend", "maxagents"]); location.hash = "#/w/" + id; return; }
     if (w.state === "clarifying") {
+      if (updateWait(w, "Checking the goal")) return;
       $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
-        '<p><span class="blink">▮</span> ' + esc(w.progress || "Checking the goal") + ' … ' + w.elapsed + 's</p>' +
-        '<p class="hint">The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.</p></div>';
+        '<p class="hint">The master agent is restating the goal, drafting a definition of done, and noting its assumptions and questions. You will confirm or edit them before any team is planned.</p>' +
+        waitPanel(w, "Checking the goal") + '</div>';
+      const box = $("#livelog"); if (box) box.scrollTop = box.scrollHeight;
       return;
     }
     const goal = $("#goal") ? $("#goal").value : loadDraft(id, "goal", ""), ctx = $("#context") ? $("#context").value : loadDraft(id, "context", ""), be = $("#backend") ? $("#backend").value : loadDraft(id, "backend", "");
@@ -482,7 +499,7 @@ async function setupView(id) {
     $("#forgetbtn").addEventListener("click", () => forget(id));
   };
   await draw();
-  timer = setInterval(async () => { if (location.hash.endsWith("/setup")) { const w = await api("/api/workspaces/" + id); if (w.state !== "new") draw(); } }, 2000);
+  timer = setInterval(async () => { if (location.hash.endsWith("/setup")) { const w = await api("/api/workspaces/" + id); if (w.state !== "new") draw(); } }, 1000);
 }
 async function startPlanning(e, id) {
   e.preventDefault();
@@ -615,7 +632,7 @@ function drawGoal(id) {
   const key = w.state + ":" + JSON.stringify(d);
   if (key === goalKey) return;
   goalKey = key;
-  if (w.state === "clarifying" || w.state === "planning") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(w.progress || "Master is working") + ' … ' + w.elapsed + 's</p></div>'; return; }
+  if (w.state === "clarifying" || w.state === "planning") { if (!updateWait(w, "Master is working")) { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card">' + waitPanel(w, "Master is working") + '</div>'; const lg = $("#livelog"); if (lg) lg.scrollTop = lg.scrollHeight; } return; }
   if (!d) { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card">' + (w.error ? '<p class="error">' + esc(w.error) + '</p>' : '<p class="hint">Waiting for the master\'s goal check…</p>') + '<p><a href="#/w/' + id + '/setup">back to setup</a></p></div>'; return; }
   const draftGoal = $("#cgoal") ? $("#cgoal").value : loadDraft(id, "cgoal:" + d.goal, d.goal), draftDod = $("#cdod") ? $("#cdod").value : loadDraft(id, "cdod:" + d.goal, d.definition_of_done.join("\n")), draftReply = $("#goalreply") ? $("#goalreply").value : loadDraft(id, "goalreply", "");
   box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Goal check</h3><div class="who" style="margin:8px 0">' + avatar("master") + '<b>@master</b></div><div class="md">' + md(d.message) + '</div>' +
@@ -640,7 +657,7 @@ function drawApproval(id) {
   const key = state.workspace.state + ":" + state.agents.map(a => a.name + a.model + a.effort).join(",");
   if (key === approvalKey) return;
   approvalKey = key;
-  if (state.workspace.state === "planning" || state.workspace.state === "clarifying") { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><p><span class="blink">▮</span> ' + esc(state.workspace.progress || "Master is revising the plan") + ' … ' + state.workspace.elapsed + 's</p></div>'; return; }
+  if (state.workspace.state === "planning" || state.workspace.state === "clarifying") { if (!updateWait(state.workspace, "Master is revising the plan")) { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card">' + waitPanel(state.workspace, "Master is revising the plan") + '</div>'; const lg = $("#livelog"); if (lg) lg.scrollTop = lg.scrollHeight; } return; }
   if (!state.workspace.initialized) {
     box.innerHTML = '<div class="card"><h3>Team planning did not finish</h3><p class="error">' + esc(state.workspace.error || "No team plan has been saved yet.") + '</p><button id="retryplan">Retry team planning</button></div>';
     $("#retryplan").onclick = async () => {

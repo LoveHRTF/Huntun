@@ -12,7 +12,7 @@ import json
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +64,11 @@ class WorkspaceEntry:
     orchestrator: Any = None
     last_used: str = ""
     store: Store | None = None
+    log: list[dict[str, Any]] = field(default_factory=list)   # what the master is doing during a goal check or a planning run
+
+    def note(self, text: str) -> None:
+        self.log.append({"at": time.strftime("%H:%M:%S"), "text": str(text)[:2000]})
+        del self.log[:-300]
 
     def open_store(self) -> Store:
         if self.orchestrator is not None:
@@ -118,7 +123,8 @@ class WorkspaceEntry:
             "state": self.state,
             "error": self.error,
             "progress": self.progress,
-            "elapsed": round(time.time() - self.started_at) if self.started_at and self.state in ("planning", "loading") else 0,
+            "elapsed": round(time.time() - self.started_at) if self.started_at and self.state in ("planning", "loading", "clarifying") else 0,
+            "log": self.log[-200:],
             "initialized": is_initialized(self.path),
             "exists": self.path.is_dir(),
             "goal": goal,
@@ -219,9 +225,12 @@ class Hub:
         """The master restates the goal, proposes a definition of done, and asks the human to confirm."""
         e = self.workspaces[wid]
         e.state, e.error, e.started_at = "clarifying", None, e.started_at or time.time()
+        e.log.clear()
+        e.note("Inspecting the directory")
         try:
             if config_exists(e.path):
                 config = load_config(e.path)
+                config.backend = resolve_backend(config)
             else:
                 config = default_config(goal)
                 config.context = context.strip()
@@ -230,8 +239,11 @@ class Hub:
                     config.backend = backend
                 config.backend = resolve_backend(config)
             existing = await asyncio.to_thread(describe_workspace, e.path)
+            e.note(f"Workspace inspected ({len(existing)} characters of context)")
             e.progress = f"Master agent is checking the goal via {config.backend}"
-            draft = await draft_goal(make_backend(config.backend, config), config, existing, conversation)
+            e.note(f"Asking the master via {config.backend}" + (" (revising after your reply)" if conversation else ""))
+            draft = await draft_goal(make_backend(config.backend, config), config, existing, conversation, log=e.note)
+            e.note("The master drafted the goal and definition of done; over to you")
             save_config(e.path, config)
             await ensure_repo(e.path)
             store = e.open_store()
@@ -249,6 +261,7 @@ class Hub:
             e.progress, e.state = "", "goal_proposed"
         except Exception as ex:
             e.state, e.error, e.progress = "error", f"{type(ex).__name__}: {ex}", ""
+            e.note(f"Error: {type(ex).__name__}: {ex}")
         return e
 
     async def goal_reply(self, wid: str, message: str) -> WorkspaceEntry:
@@ -299,6 +312,8 @@ class Hub:
         """Plans the team for a workspace whose goal is confirmed. Runs on the event loop."""
         e = self.workspaces[wid]
         e.state, e.error, e.started_at = "planning", None, e.started_at or time.time()
+        e.log.clear()
+        e.note("Inspecting the directory")
         try:
             config = load_config(e.path)
             if not config.goal_confirmed:
@@ -306,7 +321,9 @@ class Hub:
             existing = await asyncio.to_thread(describe_workspace, e.path)
             full_context = "\n\n".join(part for part in (config.context, existing) if part)
             e.progress = f"Master agent is planning the team via {config.backend}"
-            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context)
+            e.note(f"Asking the master to staff the team via {config.backend}")
+            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context, log=e.note)
+            e.note(f"The master proposed {len(agents)} agents; over to you")
             specs = [master_spec(), *agents]
             save_team(e.path, specs)
             config.estimate = estimate_for(specs, rationale.split("Estimate notes: ")[-1] if "Estimate notes: " in rationale else "")

@@ -148,8 +148,11 @@ class ClaudeCodeBackend:
         except Exception:
             return False
 
-    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str) -> dict[str, Any]:
+    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
+                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
         captured: dict[str, Any] = {}
+        say = log or (lambda _t: None)
+        say(f"Starting a Claude Code session ({model or 'default model'}, effort {effort})…")
 
         async def handler(args: dict[str, Any]) -> dict[str, Any]:
             captured.update(args or {})
@@ -176,6 +179,14 @@ class ClaudeCodeBackend:
                     for b in msg.content:
                         if isinstance(b, TextBlock):
                             last_text = b.text
+                            if b.text.strip():
+                                say(b.text.strip()[:400])
+                        elif isinstance(b, ToolUseBlock):
+                            say(f"→ {b.name.removeprefix('mcp__huntun__')}" + (": submitting the answer" if b.name.endswith(tool_name) else ""))
+                        elif isinstance(b, ThinkingBlock) and (b.thinking or "").strip():
+                            say("thinking: " + b.thinking.strip()[:300])
+                elif isinstance(msg, ResultMessage) and not msg.is_error:
+                    say(f"Session finished ({msg.num_turns or 0} turns, ${msg.total_cost_usd or 0:.3f})")
                 elif isinstance(msg, ResultMessage) and msg.is_error:
                     detail = msg.result or getattr(msg, "subtype", "") or ""
                     extra = getattr(msg, "permission_denials", None)

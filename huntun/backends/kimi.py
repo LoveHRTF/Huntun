@@ -143,14 +143,18 @@ class KimiBackend:
                 return False
         return ok and answered and code in (0, None)
 
-    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str) -> dict[str, Any]:
+    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
+                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
         """Kimi has no output-schema flag: ask for JSON only and parse the last assistant message."""
         texts: list[str] = []
         errors: list[str] = []
+        say = log or (lambda _t: None)
+        say(f"Starting a Kimi Code session ({model or 'default model'})…")
 
         def on_event(ev: dict[str, Any]) -> None:
             if ev.get("role") == "assistant" and ev.get("content"):
                 texts.append(str(ev["content"]))
+                say(str(ev["content"]).strip()[:400])
             if ev.get("type") == "stderr":
                 errors.append(str(ev.get("text")))
 

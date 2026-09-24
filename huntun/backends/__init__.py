@@ -31,8 +31,9 @@ class Backend(Protocol):
         log: Callable[[str], None],
     ) -> CycleResult: ...
 
-    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str) -> dict[str, Any]:
-        """Asks the model one question and returns the arguments it passes to the given tool."""
+    async def structured(self, *, prompt: str, tool_name: str, description: str, schema: dict[str, Any], model: str, effort: str,
+                         log: Callable[[str], None] | None = None) -> dict[str, Any]:
+        """Asks the model one question and returns the arguments it passes to the given tool. `log` receives progress lines for the UI."""
         ...
 
     async def probe(self) -> bool:
