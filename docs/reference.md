@@ -92,6 +92,7 @@ Set these in the environment before `huntun init`. They are written to `.huntun/
 | Variable | Default | Meaning |
 |---|---|---|
 | `HUNTUN_BACKEND` | auto | `api`, `claude-code`, or `codex` |
+| `HUNTUN_CLAUDE_BIN` | newest available | Path to the Claude Code executable. By default Huntun runs the newer of the Agent SDK's bundled copy and `claude` on PATH |
 | `HUNTUN_CODEX_BIN` | `codex` on PATH | Path to the Codex executable |
 | `HUNTUN_CODEX_MODELS` | `gpt-5.3-codex` | Comma-separated Codex model ids the master may choose from |
 | `HUNTUN_MODEL` | backend default | Fallback model for agents without one. The master assigns a model per agent at planning time (`claude-opus-5`, `claude-sonnet-5`, or `claude-haiku-4-5`) and can change it later with its `set_agent_model` tool; you can change it in the approval table or in `team.json`. |
@@ -212,6 +213,7 @@ curl -s -X POST localhost:4747/api/w/$ID/comments -H 'content-type: application/
 - **Port already in use**: `huntun start --port 5000` or change `port` in `config.json`.
 - **Starting over**: delete `.huntun/` in the workspace. The git history stays.
 - **Claude Code backend from inside a Claude Code session**: works. The Agent SDK strips the nested-session guard.
+- **Claude Code refuses a model (`does not support this model; version ... or newer is required`)**: the Agent SDK ships its own copy of Claude Code and `claude update` does not touch it. Huntun runs whichever of that copy and `claude` on PATH is newer, so `claude update` (or `npm i -g @anthropic-ai/claude-code`) followed by a restart of `huntun` fixes it; `pip install -U claude-agent-sdk` refreshes the bundled copy itself, and `HUNTUN_CLAUDE_BIN` pins a specific binary.
 - **`codex` prints `spawn ... ENOENT`**: the npm package is missing its native binary for your platform. Reinstall with `npm i -g @openai/codex`, or point `HUNTUN_CODEX_BIN` at a working copy.
 
 ## Limitations

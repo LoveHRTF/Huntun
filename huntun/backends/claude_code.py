@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import re
+import shutil
+import subprocess
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +38,39 @@ from ..models import context_limit
 from ..tools import ToolContext, ToolSpec, available_tools, execute, rel_path
 from ..types import CycleResult, HuntunConfig
 from . import continue_session, looks_like_limit
+
+
+@lru_cache(maxsize=8)
+def _cli_version(path: str) -> tuple[int, ...]:
+    try:
+        out = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return ()
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
+    return tuple(int(x) for x in m.groups()) if m else ()
+
+
+def claude_cli_path(bundled: Path | None = None, system: str | None = None) -> str | None:
+    """The Claude Code binary to run, or None to let the SDK use its own.
+
+    The SDK ships a copy of Claude Code and always prefers it, so `claude update` never reaches the binary Huntun runs:
+    a newly released model can be refused by the bundled copy while the installed CLI already supports it. Huntun runs
+    `HUNTUN_CLAUDE_BIN` when set, otherwise whichever of the bundled copy and `claude` on PATH is newer.
+    """
+    override = os.environ.get("HUNTUN_CLAUDE_BIN")
+    if override:
+        return override
+    if bundled is None:
+        import claude_agent_sdk
+
+        bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / ("claude.exe" if os.name == "nt" else "claude")
+    system = system or shutil.which("claude")
+    if not system:
+        return None
+    if not bundled.exists():
+        return system
+    return system if _cli_version(system) > _cli_version(str(bundled)) else None
+
 
 BUILTIN_TOOLS = ["Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Grep", "Glob", "WebSearch", "WebFetch", "TodoWrite"]
 RESUME_PROMPT = (
@@ -132,13 +170,14 @@ class ClaudeCodeBackend:
             max_turns=max_turns,
             setting_sources=["project"],
             resume=resume,
+            cli_path=claude_cli_path(),
         )
 
     async def probe(self) -> bool:
         """One tiny turn on the cheapest model; False when the CLI reports the limit is still in force."""
         try:
             options = ClaudeAgentOptions(allowed_tools=[], disallowed_tools=BUILTIN_TOOLS + ["Task", "Agent"], max_turns=1, model="haiku",
-                                         permission_mode="default", setting_sources=[], system_prompt="Reply with the single word OK.")
+                                         permission_mode="default", setting_sources=[], system_prompt="Reply with the single word OK.", cli_path=claude_cli_path())
             async for msg in query(prompt="OK?", options=options):
                 if isinstance(msg, RateLimitEvent) and msg.rate_limit_info.status == "rejected":
                     return False
@@ -168,6 +207,7 @@ class ClaudeCodeBackend:
             model=model or None,
             effort=effort if effort in ("low", "medium", "high", "xhigh", "max") else None,  # type: ignore[arg-type]
             max_turns=10,
+            cli_path=claude_cli_path(),
             setting_sources=[],
             cwd=str(cwd) if cwd else None,                                     # the project the question is about, never Huntun's own directory
             system_prompt="You answer by calling the single tool you are given, using only the information in the message. You have no file, shell, or web access here; do not try to explore.",
