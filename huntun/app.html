@@ -1439,6 +1439,9 @@ const office = (() => {
       else if (now > s.pauseUntil) { s.spot = randomSpot(c); s.pauseUntil = null; if (s.act === "protest") shout(c, lines, s.until); }
     }
   }
+  // a smoke break: drift between spots within a few tiles of the entrance, standing a while at each
+  const doorSpot = (c) => { const ex = DOOR[0], ey = DOOR[1] + 1, near = FLOOR.filter(([x, y]) => Math.abs(x - ex) <= 3 && Math.abs(y - ey) <= 3 && !(x === ex && y === ey) && !heldBy(x, y, c)); return near.length ? near[Math.floor(Math.random() * near.length)] : [c.tx, c.ty]; };
+  function smokeTick(c) { const s = c.smoke, now = Date.now(); if (!c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) { if (!s.pauseUntil) { s.pauseUntil = now + 6000 + Math.random() * 9000; c.dir = ["down", "left", "right"][Math.floor(Math.random() * 3)]; } else if (now > s.pauseUntil) { s.spot = doorSpot(c); s.pauseUntil = null; } } }
   const endStrike = (c) => { if (c.strike) { c.strike = null; c.sayUntil = 0; c.sayLoop = false; } };
   function noticePosts(a, c, st) {
     const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && Date.now() - new Date(e.created_at) < 90000);
@@ -1463,7 +1466,8 @@ const office = (() => {
     if (fainted(a)) { c.talk = null; endStrike(c); return "faint"; }        // an API error knocks them out where they stand
     const theme = limited(a, st) ? "limit" : pausedByHuman(a, st) ? "pause" : null;
     if (theme && !c.hidden) { c.talk = null; if (c.strike && c.strike.theme !== theme) c.strike = null; strikeTick(c, theme); return "strike"; } else endStrike(c);
-    if (c.toiletUntil > Date.now()) return "toilet";                          // compacting context: off to the toilet
+    if (c.toiletUntil > Date.now()) return "toilet";
+    if (c.smoke && baseMode(a) === "sleep" && Date.now() < c.smoke.until && !(c.talk && c.talk.kind !== "here")) { smokeTick(c); return "smoke"; } else c.smoke = null;                          // compacting context: off to the toilet
     if (c.talk && c.talk.kind !== "here") return "talk";
     return baseMode(a);
   }
@@ -1507,6 +1511,7 @@ const office = (() => {
     if (c.mode === "toilet") { if (c.toilet != null) return TOILETS[c.toilet]; const k = toiletQueue.filter(n => chars[n] && chars[n].toilet == null).indexOf(c.name); return k >= 0 && k < QUEUE.length ? QUEUE[k] : [c.tx, c.ty]; }
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
+    if (c.mode === "smoke" && c.smoke) return c.smoke.spot;
     return c.sleepReady ? BEDS[c.idx] : DESKS[c.idx].chair;                 // idle agents check their desk first, then go to bed
   }
   function stepChars(dt) {
@@ -1539,6 +1544,7 @@ const office = (() => {
           if (!c.deskWait) { c.deskWait = performance.now() + 2500; c.dir = DESKS[c.idx].dir; }
           else if (performance.now() > c.deskWait) {
             c.sleepReady = true; c.deskWait = null;
+            if (zh() && Math.random() < 0.5) c.smoke = { until: Date.now() + 90000 + Math.random() * 120000, spot: doorSpot(c), pauseUntil: null };   // Chinese office: a smoke break by the door, then bed
             // only about a third of them comment on it, and never the late-comer (who already apologised)
             const late = c.lateComer; c.lateComer = false;
             if (!late && c.idx % 3 === 1) { c.say = LINES("NOTHING_TO_DO")[Math.floor(Math.random() * LINES("NOTHING_TO_DO").length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 8000; c.sayLoop = false; }
@@ -1674,6 +1680,11 @@ const office = (() => {
       const cy = y - 14 - c.top * 2, bob = c.moving ? Math.floor(t * 8) % 2 : 0; ctx.fillStyle = c.pal.s; ctx.fillRect(x + 6, cy + 10 + bob, 3, 8); ctx.fillRect(x + 23, cy + 10 + bob, 3, 8);
       if (c.carry === "desk" || c.carry === "both") { ctx.fillStyle = C.deskEdge; ctx.fillRect(x + 2, cy + bob, 28, 10); ctx.fillStyle = C.deskTop; ctx.fillRect(x + 3, cy + 1 + bob, 26, 6); ctx.fillStyle = "#23262e"; ctx.fillRect(x + 12, cy - 5 + bob, 10, 7); ctx.fillStyle = "#3c8fd0"; ctx.fillRect(x + 13, cy - 4 + bob, 8, 5); ctx.fillStyle = C.leg; ctx.fillRect(x + 4, cy + 10 + bob, 2, 3); ctx.fillRect(x + 26, cy + 10 + bob, 2, 3); }
       if (c.carry === "bed" || c.carry === "both") { const by = c.carry === "both" ? cy - 14 : cy; ctx.fillStyle = C.bedFrame; ctx.fillRect(x + 1, by + bob, 30, 11); ctx.fillStyle = C.mattress; ctx.fillRect(x + 3, by + 1 + bob, 26, 8); ctx.fillStyle = C.blanket; ctx.fillRect(x + 12, by + 2 + bob, 16, 6); ctx.fillStyle = C.pillow; ctx.fillRect(x + 4, by + 2 + bob, 6, 6); }
+    }
+    if (c.mode === "smoke" && !c.moving && !c.steps.length) {                    // a cigarette at the mouth, its tip glowing, smoke drifting up
+      const mx0 = c.dir === "down" ? x + 17 : flip ? x + 22 : x + 4, my = y + 17 + bobY, dirx = c.dir === "down" || flip ? 1 : -1, glow = Math.floor(t * 3 + c.idx) % 3 === 0;
+      ctx.fillStyle = "#f4f4f4"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 4, my, 5, 1); ctx.fillStyle = glow ? "#ff7a2b" : "#c9401e"; ctx.fillRect(dirx > 0 ? mx0 + 5 : mx0 - 5, my, 1, 1);
+      const tip = dirx > 0 ? mx0 + 5 : mx0 - 5; for (let k = 0; k < 3; k++) { const ph = ((t * 0.6 + c.idx * 0.37 + k / 3) % 1); const px = tip + Math.round(Math.sin((ph + k) * 6) * 3) + dirx * 2, py = my - 2 - Math.round(ph * 16); ctx.fillStyle = "rgba(220,220,225," + (0.55 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px, py, 2 + Math.round(ph * 3), 2 + Math.round(ph * 2)); }
     }
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
     if (working && c.dir !== "down") {                                            // back to the camera: elbows work while typing, the screen lights the desk
