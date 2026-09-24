@@ -31,7 +31,20 @@ Huntun runs on the AI subscription you already have. No API key, no new vendor r
 
 ## Getting started
 
-**Requirements.** Python 3.12 or newer, git, and one of the following signed in on this machine: Claude Code (`claude --version`), OpenAI Codex (`codex --version`), Kimi Code (`kimi --version`), a `DEEPSEEK_API_KEY`, a local Ollama server with models, or an `ANTHROPIC_API_KEY`.
+**Requirements.** Python 3.12 or newer, git, and at least one model provider set up on this machine (see below). Huntun detects every provider that is ready and lets the master mix them within one team.
+
+**Set up a provider** (any one is enough; more gives the master more choice):
+
+| Provider | Setup | How Huntun finds it |
+|---|---|---|
+| Claude Code | Install Claude Code and sign in: `npm i -g @anthropic-ai/claude-code`, then run `claude` once and log in. | `claude` on PATH |
+| OpenAI Codex | `npm i -g @openai/codex`, then `codex login`. | `codex` on PATH |
+| Kimi Code | `npm i -g @moonshot-ai/kimi-code` (or `brew install kimi-code`), then `kimi login` and pick a model. | `kimi` on PATH with a model configured |
+| DeepSeek | Create an API key at platform.deepseek.com and export it: `export DEEPSEEK_API_KEY=sk-...`. | `DEEPSEEK_API_KEY` set |
+| Ollama (local) | Install Ollama 0.14 or newer, pull a model that supports tools, and run the server with a context that fits your memory: `ollama pull qwen3:27b`, then `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Optionally pin the models and contexts Huntun should use: `export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`. | A server answering at `OLLAMA_HOST` (default `http://127.0.0.1:11434`) with models |
+| Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...`. | `ANTHROPIC_API_KEY` set |
+
+Force a particular provider with `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|api` or pick it on the setup page.
 
 **Install**
 

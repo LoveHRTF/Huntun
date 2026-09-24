@@ -33,7 +33,20 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 
 ## 开始使用
 
-**环境要求。** Python 3.12 或更新版本、git，以及以下任意一项已在本机登录：Claude Code（`claude --version`）、OpenAI Codex（`codex --version`）、Kimi Code（`kimi --version`）、环境变量 `DEEPSEEK_API_KEY`、本地已加载模型的 Ollama 服务，或环境变量 `ANTHROPIC_API_KEY`。
+**环境要求。** Python 3.12 或更新版本、git，以及至少一个已在本机配置好的模型提供方（见下表）。Huntun 会自动检测所有可用的提供方，主管可以在同一支团队中混合使用它们。
+
+**配置提供方**（任选其一即可；配置得越多，主管的选择越多）：
+
+| 提供方 | 配置方法 | Huntun 如何检测 |
+|---|---|---|
+| Claude Code | 安装并登录：`npm i -g @anthropic-ai/claude-code`，然后运行一次 `claude` 完成登录。 | PATH 中存在 `claude` |
+| OpenAI Codex | `npm i -g @openai/codex`，然后 `codex login`。 | PATH 中存在 `codex` |
+| Kimi Code | `npm i -g @moonshot-ai/kimi-code`（或 `brew install kimi-code`），然后 `kimi login` 并选择模型。 | PATH 中存在 `kimi` 且已配置模型 |
+| DeepSeek | 在 platform.deepseek.com 创建 API key 并导出：`export DEEPSEEK_API_KEY=sk-...`。 | 已设置 `DEEPSEEK_API_KEY` |
+| Ollama（本地） | 安装 Ollama 0.14 或更新版本，拉取一个支持工具调用的模型，并用适合内存的上下文长度启动服务：`ollama pull qwen3:27b`，然后 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`。可选：指定 Huntun 使用的模型与上下文：`export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`。 | `OLLAMA_HOST`（默认 `http://127.0.0.1:11434`）上有可响应且已加载模型的服务 |
+| Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...`。 | 已设置 `ANTHROPIC_API_KEY` |
+
+可用 `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|api` 强制指定提供方，或在设置页面选择。
 
 **安装**
 
