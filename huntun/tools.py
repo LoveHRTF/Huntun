@@ -10,7 +10,7 @@ import asyncio
 import os
 import shlex
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ from .config import now_iso
 from .gitops import GitError, commit, recent_log
 from .gitops import status as git_status
 from .memory import AgentMemory
-from .models import EFFORTS, MODEL_IDS
+from .models import EFFORTS, MODEL_IDS, model_ids
 from .store import Store
 from .types import ROLE_KEYS, AgentSpec, CycleState, HuntunConfig, InboxItem
 
@@ -487,9 +487,21 @@ def validate(schema: dict[str, Any], data: Any) -> str | None:
 MASTER_EXCLUDED = {"write_file", "edit_file", "git_commit"}  # the master leads; it does not build or commit
 
 
+def _with_models(spec: ToolSpec, ids: list[str]) -> ToolSpec:
+    """The spec with its model enum set to `ids`: local servers' models (Ollama, vLLM) are only known at run time."""
+    props = spec.input_schema.get("properties", {})
+    if "enum" not in props.get("model", {}):
+        return spec
+    return replace(spec, input_schema={**spec.input_schema, "properties": {**props, "model": {**props["model"], "enum": ids}}})
+
+
 def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
     is_master = ctx.agent.role == "master"
-    return [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama", "vllm") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
+    specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama", "vllm") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
+    if is_master:                                                                          # only the master's tools (hire, set model) name models
+        ids = model_ids()
+        specs = [_with_models(t, ids) for t in specs]
+    return specs
 
 
 async def execute(spec: ToolSpec, data: Any, ctx: ToolContext) -> tuple[str, bool]:

@@ -335,6 +335,61 @@ class StructuredTests(VllmTestCase):
         self.assertTrue(asyncio.run(b.probe()))
 
 
+class ModelChoiceTests(VllmTestCase):
+    """Local models are discovered at run time, so the model enums the master sees must include them."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["HUNTUN_VLLM_MODELS"] = "qwen3@32768"
+        models.refresh_vllm(force=True)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ws = Path(self.tmp.name)
+        self.config.backend = "vllm"
+        self.store = Store(db_path(self.ws))
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+        super().tearDown()
+
+    def test_master_tools_offer_local_models(self) -> None:
+        from huntun.tools import TOOLS, available_tools, validate
+
+        ctx = ToolContext(agent=master_spec(), team=lambda: [master_spec()], workspace=self.ws, store=self.store,
+                          memory=AgentMemory(agents_dir(self.ws), "master"), config=self.config, cycle=CycleState())
+        specs = {t.name: t for t in available_tools(ctx, "vllm")}
+        for name in ("hire_agent", "set_agent_model"):
+            enum = specs[name].input_schema["properties"]["model"]["enum"]
+            self.assertIn("qwen3", enum)
+            self.assertIn("claude-opus-5-5", enum)
+        self.assertIsNone(validate(specs["set_agent_model"].input_schema, {"name": "dev-1", "model": "qwen3", "confirmation_thread_id": 1}))
+        static = next(t for t in TOOLS if t.name == "set_agent_model")
+        self.assertNotIn("qwen3", static.input_schema["properties"]["model"]["enum"])      # the shared definition is left alone
+
+    def test_team_plan_can_put_agents_on_the_vllm_server(self) -> None:
+        from huntun.master import PLAN_SCHEMA, plan_team
+
+        agent = {"name": "team-lead", "role": "team-lead", "title": "Lead", "brief": "b", "model": "qwen3", "effort": "high", "why": "local",
+                 "personality": "", "personality_note": "", "estimated_cycles": 2, "tokens_per_cycle": 20000}
+        self.server.script = [completion(None, [("propose_team", {"rationale": "r", "agents": [agent], "estimate_notes": "n"})])]
+        _, agents = asyncio.run(plan_team(make_backend("vllm", self.config), self.config))
+        lead = next(a for a in agents if a.role == "team-lead")
+        self.assertEqual((lead.model, lead.backend), ("qwen3", "vllm"))
+        sent = self.server.requests[0]["tools"][0]["function"]["parameters"]
+        self.assertIn("qwen3", sent["properties"]["agents"]["items"]["properties"]["model"]["enum"])   # guided decoding may pick it
+        self.assertNotIn("qwen3", PLAN_SCHEMA["properties"]["agents"]["items"]["properties"]["model"]["enum"])
+
+    def test_only_the_anthropic_api_promises_web_tools(self) -> None:
+        from huntun.roles import build_system_prompt
+
+        dev = AgentSpec("dev-1", "backend", "Dev", "dev")
+        for b in ("deepseek", "ollama", "vllm"):
+            text = build_system_prompt(dev, self.config, [dev], b)
+            self.assertNotIn("web_search", text)
+            self.assertIn("no web search", text)
+        self.assertIn("web_search", build_system_prompt(dev, self.config, [dev], "api"))
+
+
 class HelperTests(unittest.TestCase):
     def test_split_think(self) -> None:
         self.assertEqual(_split_think("<think>a</think>b"), ("a", "b"))

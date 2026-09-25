@@ -17,6 +17,7 @@ from .models import (
     catalog_for,
     catalog_text,
     estimate_cost_usd,
+    model_ids,
 )
 from .personalities import PERSONALITY_IDS, personality_text
 from .personalities import catalog_text as personality_catalog
@@ -56,6 +57,15 @@ PLAN_SCHEMA: dict[str, Any] = {
 }
 PLAN_SCHEMA["properties"]["estimate_notes"] = {"type": "string", "description": "Two or three sentences on how you estimated the effort and what could make it larger"}
 PLAN_SCHEMA["required"].append("estimate_notes")
+
+
+def plan_schema() -> dict[str, Any]:
+    """PLAN_SCHEMA with the model enum listing the models known now (a local server's models are discovered at run time;
+    a backend that enforces the schema, like vLLM's guided decoding, could otherwise never pick them)."""
+    agents = PLAN_SCHEMA["properties"]["agents"]
+    item = agents["items"]
+    item = {**item, "properties": {**item["properties"], "model": {**item["properties"]["model"], "enum": model_ids()}}}
+    return {**PLAN_SCHEMA, "properties": {**PLAN_SCHEMA["properties"], "agents": {**agents, "items": item}}}
 
 
 def estimate_for(team: list[AgentSpec], notes: str = "", master_cycles: int = 8, master_tokens: int = 120_000) -> dict[str, Any]:
@@ -265,7 +275,7 @@ async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str =
         prompt=plan_prompt(config, extra_context),
         tool_name="propose_team",
         description="Submit the team composition for this project.",
-        schema=PLAN_SCHEMA,
+        schema=plan_schema(),
         model=config.model,
         effort=config.lead_effort,
     )

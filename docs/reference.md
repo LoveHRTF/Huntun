@@ -94,7 +94,7 @@ Set these in the environment before `huntun init`. They are written to `.huntun/
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `HUNTUN_BACKEND` | auto | `api`, `claude-code`, or `codex` |
+| `HUNTUN_BACKEND` | auto | `api`, `claude-code`, `codex`, `kimi`, `deepseek`, `ollama`, or `vllm` |
 | `HUNTUN_CLAUDE_BIN` | newest available | Path to the Claude Code executable. By default Huntun runs the newer of the Agent SDK's bundled copy and `claude` on PATH |
 | `HUNTUN_CODEX_BIN` | `codex` on PATH | Path to the Codex executable |
 | `HUNTUN_CODEX_MODELS` | `gpt-5.3-codex` | Comma-separated Codex model ids the master may choose from |

@@ -35,7 +35,8 @@ from .store import Store
 
 EPILOG = """environment:
   ANTHROPIC_API_KEY              use the Anthropic API backend (or `ant auth login`)
-  HUNTUN_BACKEND=api|claude-code force a backend (default: api if a key is set, else claude-code)
+  HUNTUN_BACKEND                 force a backend: api|claude-code|codex|kimi|deepseek|ollama|vllm (default: auto-detect)
+  VLLM_BASE_URL (http://127.0.0.1:8000/v1)  VLLM_API_KEY  HUNTUN_VLLM_MODELS   local vLLM server (backend vllm)
   HUNTUN_MODEL (claude-opus-5-5)   HUNTUN_LEAD_EFFORT (xhigh)  HUNTUN_WORKER_EFFORT (high)
   HUNTUN_REVIEW_INTERVAL_MIN (20)  HUNTUN_IDLE_INTERVAL_SEC (90)  HUNTUN_LEAD_IDLE_INTERVAL_SEC (600)
   HUNTUN_MAX_TOOL_CALLS (60)  HUNTUN_MAX_CYCLES (0=unlimited)  HUNTUN_PORT (4747)  HUNTUN_FALLBACKS (on|off)
