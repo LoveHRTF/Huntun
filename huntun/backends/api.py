@@ -187,7 +187,9 @@ class ApiBackend:
         def result(outcome: str, error: str | None = None, resets_at: float | None = None) -> CycleResult:
             return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at)
 
-        messages = memory.load_transcript() or [{"role": "user", "content": prompt}]
+        saved = memory.load_transcript()
+        foreign = saved and any(m.get("role") not in ("user", "assistant") or "tool_calls" in m for m in saved)   # left by the vllm backend (OpenAI format)
+        messages = saved if saved and not foreign else [{"role": "user", "content": prompt}]
         memory.save_transcript(messages)
         use_fallbacks = self.config.fallbacks
         pause_continuations = 0

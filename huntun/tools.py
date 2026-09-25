@@ -489,7 +489,7 @@ MASTER_EXCLUDED = {"write_file", "edit_file", "git_commit"}  # the master leads;
 
 def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
     is_master = ctx.agent.role == "master"
-    return [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
+    return [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama", "vllm") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
 
 
 async def execute(spec: ToolSpec, data: Any, ctx: ToolContext) -> tuple[str, bool]:

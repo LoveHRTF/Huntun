@@ -103,6 +103,8 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
             "finishing a cycle) are the `huntun` MCP tools: git_commit, git_status, list_threads, read_thread, post_thread, post_comment, "
             "check_inbox, update_notes, list_agents, finish_cycle. Always commit with git_commit, never with git in the shell."
         )
+    elif backend == "vllm":
+        file_tools = "- Use read_file / write_file / edit_file / list_files / search_files / run_command for the repository and shell. You have no web search or fetch tools."
     else:
         file_tools = "- Use read_file / write_file / edit_file / list_files / search_files / run_command for the repository and shell, and web_search / web_fetch for research."
     personality_section = ""

@@ -6,6 +6,7 @@
 - kimi:        Kimi Code via `kimi -p` (uses your Kimi login or Moonshot key; no API key needed here)
 - deepseek:    DeepSeek's Anthropic-compatible API (DEEPSEEK_API_KEY), driven by the api backend's loop
 - ollama:      a local Ollama server's Anthropic-compatible API (OLLAMA_HOST, default http://127.0.0.1:11434), same loop
+- vllm:        a local vLLM server's OpenAI-compatible Chat Completions API (VLLM_BASE_URL, default http://127.0.0.1:8000/v1)
 """
 from __future__ import annotations
 
@@ -84,7 +85,11 @@ def make_backend(name: str, config: Any) -> Backend:
         from .api import ApiBackend
 
         return ApiBackend(config, provider=name)
+    if name == "vllm":
+        from .vllm import VllmBackend
+
+        return VllmBackend(config)
     raise ValueError(f"unknown backend {name!r}")
 
 
-BACKENDS = ("api", "claude-code", "codex", "kimi", "deepseek", "ollama")
+BACKENDS = ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm")

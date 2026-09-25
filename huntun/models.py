@@ -66,9 +66,11 @@ DEEPSEEK_CATALOG: list[ModelInfo] = [
               "very cheap and fast: routine implementation, tests, docs, scrum bookkeeping (peak-hour list price; off-peak is half)", "deepseek"),
 ]
 OLLAMA_CATALOG: list[ModelInfo] = []                                             # filled by refresh_ollama() from the local server
+VLLM_CATALOG: list[ModelInfo] = []                                               # filled by refresh_vllm() from the local server
 MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG}
 MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG]
 _ollama_checked = 0.0
+_vllm_checked = 0.0
 
 
 def ollama_host() -> str:
@@ -114,6 +116,60 @@ def refresh_ollama(force: bool = False) -> list[ModelInfo]:
     return OLLAMA_CATALOG
 
 
+def vllm_base_url() -> str:
+    """The OpenAI-compatible endpoint root, ending in /v1 (VLLM_BASE_URL may be given with or without it)."""
+    import os
+
+    base = (os.environ.get("VLLM_BASE_URL") or "http://127.0.0.1:8000/v1").rstrip("/")
+    return base if base.endswith("/v1") else base + "/v1"
+
+
+def vllm_api_key() -> str:
+    """VLLM_API_KEY: the key the server was started with (`--api-key`), sent as a Bearer token; empty when it checks none."""
+    import os
+
+    return os.environ.get("VLLM_API_KEY", "")
+
+
+def refresh_vllm(force: bool = False) -> list[ModelInfo]:
+    """Models the vLLM server serves (GET /v1/models), or HUNTUN_VLLM_MODELS="name[@context],..."; cached for 30 s.
+
+    vLLM reports each model's max_model_len, which becomes its context; HUNTUN_VLLM_CONTEXT (32768) covers servers that
+    do not report one (other OpenAI-compatible servers) and forced names without @context.
+    """
+    import json
+    import os
+    import time
+    import urllib.request
+
+    global _vllm_checked
+    if VLLM_CATALOG and not force and time.time() - _vllm_checked < 30:
+        return VLLM_CATALOG
+    _vllm_checked = time.time()
+    default_ctx = int(os.environ.get("HUNTUN_VLLM_CONTEXT", "32768"))
+    names: list[tuple[str, int]] = []
+    forced = os.environ.get("HUNTUN_VLLM_MODELS", "")
+    if forced.strip():
+        for item in forced.split(","):
+            if item.strip():
+                n, _, c = item.strip().partition("@")
+                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
+    else:
+        try:
+            key = vllm_api_key()
+            req = urllib.request.Request(vllm_base_url() + "/models", headers={"Authorization": f"Bearer {key}"} if key else {})
+            with urllib.request.urlopen(req, timeout=1.5) as r:
+                data = json.loads(r.read().decode())
+            names = [(m["id"], int(m.get("max_model_len") or default_ctx)) for m in data.get("data") or [] if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
+        except Exception:
+            names = []
+    found = [ModelInfo(n, n, "vllm", 0.0, 0.0, c, "local model served by vLLM (no per-token cost; speed and quality depend on the hardware and the model's tool calling)", "vllm") for n, c in names]
+    VLLM_CATALOG[:] = found
+    for m in found:
+        MODEL_BY_ID[m.id] = m
+    return VLLM_CATALOG
+
+
 def catalog_for(backend: str) -> list[ModelInfo]:
     if backend == "codex":
         return CODEX_CATALOG
@@ -123,6 +179,8 @@ def catalog_for(backend: str) -> list[ModelInfo]:
         return DEEPSEEK_CATALOG
     if backend == "ollama":
         return refresh_ollama()
+    if backend == "vllm":
+        return refresh_vllm()
     return MODEL_CATALOG
 
 
@@ -146,6 +204,8 @@ def available_backends() -> dict[str, str]:
         out["deepseek"] = "DeepSeek API key"
     if refresh_ollama():
         out["ollama"] = "Ollama server with models"
+    if refresh_vllm():
+        out["vllm"] = "vLLM server with models"
     return out
 
 
@@ -180,6 +240,8 @@ def backend_for_model(model_id: str | None, available: dict[str, str] | None = N
         return "deepseek" if "deepseek" in avail else default
     if m.vendor == "ollama":
         return "ollama" if "ollama" in avail else default
+    if m.vendor == "vllm":
+        return "vllm" if "vllm" in avail else default
     if "claude-code" in avail:
         return "claude-code"
     if "api" in avail:
@@ -201,6 +263,8 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "deepseek") for m in DEEPSEEK_CATALOG]
     if "ollama" in avail:
         out += [(m, "ollama") for m in refresh_ollama()]
+    if "vllm" in avail:
+        out += [(m, "vllm") for m in refresh_vllm()]
     return out
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 DEFAULT_API_MODEL = "claude-opus-5-5"
@@ -233,13 +297,13 @@ def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, ca
 def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
     """Rough list-price cost for a token volume: assumes 85% input (half of it cached), 15% output. Codex models price at 0."""
     m = model_info(model_id)
-    if not m or m.tier in ("codex", "kimi", "ollama"):
+    if not m or m.tier in ("codex", "kimi", "ollama", "vllm"):
         return 0.0
     inp, out = tokens * 0.85, tokens * 0.15
     return round((inp * 0.5 * m.input_per_m + inp * 0.5 * m.input_per_m * 0.1 + out * m.output_per_m) / 1e6, 2)
 
 
-BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)"}
+BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)", "vllm": "vLLM (local)"}
 
 
 def catalog_text(backend: str = "api", available: dict[str, str] | None = None) -> str:
@@ -248,6 +312,7 @@ def catalog_text(backend: str = "api", available: dict[str, str] | None = None) 
         pairs = [(m, backend) for m in catalog_for(backend)]
     lines = []
     for m, b in pairs:
-        price = f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m else "billed through the ChatGPT plan, no per-token price"
+        price = (f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m else "runs locally, no per-token price" if m.vendor in ("ollama", "vllm")
+                 else "billed through the ChatGPT plan, no per-token price")
         lines.append(f"- {m.id} ({m.label}; vendor {m.vendor}; runs via {BACKEND_LABEL.get(b, b)}; {price}; {m.context // 1000}k context): {m.use_for}")
     return "\n".join(lines)
