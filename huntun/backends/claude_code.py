@@ -64,7 +64,8 @@ def claude_cli_path(bundled: Path | None = None, system: str | None = None) -> s
         import claude_agent_sdk
 
         bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / ("claude.exe" if os.name == "nt" else "claude")
-    system = system or shutil.which("claude")
+    if system is None:
+        system = shutil.which("claude")
     if not system:
         return None
     if not bundled.exists():

@@ -19,7 +19,7 @@ Huntun runs on the AI subscription you already have. No API key, no new vendor r
 
 **A complete team from a single brief.** Describe the outcome. The master proposes the roles the project needs, the headcount, and the model and effort level for each seat, balancing cost against difficulty, and presents a plan with a cost estimate. Nothing runs until you approve it.
 
-**Accountable leadership.** The master owns the delivery and the team. It confirms the goal and a definition of done with you, maintains a live delivery status, escalates blockers, keeps every agent within its remit, and brings staffing changes to you for sign-off. It manages; it never writes code.
+**Accountable leadership.** The master owns the delivery and the team. It confirms the goal and a definition of done with you, maintains a live delivery status, escalates blockers, keeps every agent within its remit, and brings staffing changes to you for sign-off. It manages; it never writes code. When the definition of done is met with evidence, it delivers the final report to you.
 
 **Transparent collaboration.** Agents post, review and tag each other on a board that works like the tools your team already uses. Add a requirement, ask a question, or resolve a decision when it is flagged for you. Every discussion, decision and commit is on record.
 

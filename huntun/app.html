@@ -911,6 +911,9 @@ const office = (() => {
     tableTL: () => { R(4, 4, 28, 28, C.tableEdge); R(6, 6, 26, 26, C.tableTop); },
     tableML: () => { R(4, 0, 28, 32, C.tableEdge); R(6, 0, 26, 32, C.tableTop); },
     tableBL: () => { R(4, 0, 28, 28, C.tableEdge); R(6, 0, 26, 26, C.tableTop); },
+    printer: () => { Q(8, 30, 48, 30, "#5b6270"); Q(8, 30, 48, 3, "#7d8595"); Q(10, 36, 20, 20, "#4a505c"); Q(32, 36, 22, 20, "#4a505c"); Q(27, 44, 2, 4, "#c9ced6"); Q(34, 44, 2, 4, "#c9ced6"); Q(10, 60, 6, 3, "#2b2f3a"); Q(48, 60, 6, 3, "#2b2f3a");
+      Q(18, 4, 28, 10, "#b9c0c9"); Q(20, 2, 24, 11, "#f7f7f7"); Q(20, 2, 24, 1, "#dde1e6"); Q(10, 12, 44, 20, "#dfe3e8"); Q(10, 12, 44, 3, "#f2f4f7"); Q(10, 29, 44, 3, "#b9c0c9"); Q(16, 24, 32, 3, "#2b2f3a"); Q(14, 27, 36, 2, "#c9ced6");
+      Q(40, 15, 12, 6, "#2b2f3a"); Q(41, 16, 6, 4, "#3a6fd8"); Q(49, 17, 2, 2, "#3fd46b"); Q(12, 16, 3, 2, "#7d8595"); Q(16, 16, 3, 2, "#7d8595"); },
     plant: () => { Q(22, 40, 20, 20, C.pot); Q(20, 38, 24, 5, C.potRim); Q(20, 38, 24, 1, "#e69572"); Q(24, 44, 2, 12, "#d0785a"); Q(22, 58, 20, 2, "#8f4426"); Q(24, 34, 16, 6, "#5a3a1f"); Q(31, 20, 2, 16, "#2c7a39");
                    Q(26, 6, 12, 12, C.leaf); Q(24, 8, 16, 8, C.leaf); Q(14, 16, 16, 12, C.leaf); Q(12, 18, 20, 8, C.leaf); Q(34, 14, 18, 12, C.leafDark); Q(32, 16, 22, 8, C.leafDark); Q(20, 26, 24, 10, C.leaf); Q(18, 28, 28, 6, C.leaf); Q(10, 24, 12, 8, C.leafDark); Q(42, 26, 12, 8, C.leafDark);
                    Q(30, 8, 1, 8, "#6dc47a"); Q(18, 20, 8, 1, "#6dc47a"); Q(24, 30, 10, 1, "#6dc47a"); Q(40, 18, 8, 1, "#3d9a4c"); Q(28, 6, 4, 2, "#7fd68a"); Q(16, 16, 4, 2, "#7fd68a"); },
@@ -1555,7 +1558,7 @@ const office = (() => {
     "这公司的“阵痛期”，痛了三年了，还没生出来？！", "你们的招牌都锈了，还在说“品牌升级”！", "这公司迟早会被当成反面教材写进商学院！", "破船要沉之前，请先把救生衣发给底下人！", "这地方我待一天骂一天，直到它先倒！", "这公司还能开门，唯一的原因是房东没来收房！",
     "三年前说的“下个月转正”，公司都要没了我还没转！", "上线发布会开得比葬礼还隆重，然后就真成葬礼了！", "快倒闭吧，让我以后有个好故事吹！", "出去面试都不敢说这公司名字，说了面试官都笑！", "这地方的每一行代码都在喊救命！", "这公司的会议室比机房都多，能活下来才有鬼！",
     "我要是投资人，看一眼你们的财报就报警！", "你们撑得越久，欠的越多，倒得越惨！", "就凭这帮人，能撑到下个月发工资我都算你们厉害！", "别想什么第二曲线了，第一曲线都快归零了！", "这公司的未来，就是一份破产公告！", "赶紧散伙吧，散伙饭我请！"];
-  const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！" };
+  const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！", "Printing the delivery report…": "正在打印交付报告……", "Delivered: {title}. The report is on the board.": "交付完成：{title}，报告已发到看板。" };
   // in the Chinese office every random line comes from the Chinese sets
   const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
   const LINES = (name) => zh() ? ({ SLOGANS: CN_LIMIT, PAUSE_SLOGANS: CN_PAUSE, TANTRUMS: CN_TANTRUMS, NOTHING_TO_DO: CN_NOTHING, GOODBYES: CN_GOODBYES, HELLOS: CN_HELLOS, ANNOYED: CN_ANNOYED })[name] : ({ SLOGANS, PAUSE_SLOGANS, TANTRUMS, NOTHING_TO_DO, GOODBYES, HELLOS, ANNOYED })[name];
@@ -1689,6 +1692,7 @@ const office = (() => {
     const present = Object.values(chars).filter(c => !c.hidden);
     if (!present.length || transition) { if (!transition) applyThemeNow(name); return; }
     transition = { theme: name, phase: "exit", t0: Date.now() };
+    if (printJob) { printJob.startedAt = null; printJob.done = false; printJob.until = Date.now() + 120000; }
     for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.faceOverride = null; c.sayUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
   }
   function transitionTick() {
@@ -1879,7 +1883,7 @@ const office = (() => {
 
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
-  let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
+  let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], PRINTER = [1, 4], PRINT_SPOT = [2, 4], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
   const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
   let teamRoles = [];
   let CAP = 0, baseMap = [], baseSolid = [], mxCol = 0, LAYOUT_THEME = "regular";
@@ -1917,6 +1921,7 @@ const office = (() => {
     if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 5; y++) { put(mx - 2, y, "glassV"); put(mx + 3, y, "glassV"); } put(mx - 2, 6, "glassBL"); put(mx + 3, 6, "glassBR"); for (let x = mx - 1; x <= mx + 1; x++) put(x, 6, "glassH"); }   // the master's own office: thin glass partitions, door gap at the right
     [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
     TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
+    PRINTER = [1, 4]; PRINT_SPOT = [2, 4]; put(PRINTER[0], PRINTER[1], "printer");                 // the office printer against the left wall; the master prints the delivery report here
     QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
     for (let x = THEME === "chinese_tech" ? 6 : 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
@@ -1924,8 +1929,8 @@ const office = (() => {
     if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
     if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
       const taken = new Set(); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
-      BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); for (let k = 0; k < 6; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
-      const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); for (let k = 0; k < 6; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]);
+      BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); taken.add(key(PRINT_SPOT[0], PRINT_SPOT[1])); for (let k = 0; k < 6; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
+      const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); targets.push(PRINT_SPOT); for (let k = 0; k < 6; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]);
       const allReachable = () => {                                                              // every chair, bunk, stall and spot must stay reachable from the door (a solid target counts if a neighbour is)
         const seen = new Set([key(DOOR[0], DOOR[1] + 1)]), q = [[DOOR[0], DOOR[1] + 1]];
         while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || solid[ny][nx] || seen.has(key(nx, ny))) continue; seen.add(key(nx, ny)); q.push([nx, ny]); } }
@@ -2249,13 +2254,24 @@ const office = (() => {
     c.despair = undefined;
     const theme = limited(a, st) ? "limit" : pausedByHuman(a, st) ? "pause" : null;
     if (theme && !c.hidden) { c.talk = null; if (c.strike && c.strike.theme !== theme) c.strike = null; strikeTick(c, theme); return "strike"; } else endStrike(c);
+    if (printJob && c.role === "master") { if (Date.now() > printJob.until) printJob = null; else return "print"; }
     if (c.toiletUntil > Date.now()) return "toilet";
     if (c.smoke && baseMode(a) === "sleep" && Date.now() < c.smoke.until && !(c.talk && c.talk.kind !== "here")) { smokeTick(c); return "smoke"; } else c.smoke = null;                          // compacting context: off to the toilet
     if (c.talk && c.talk.kind !== "here") return "talk";
     return baseMode(a);
   }
+  // the delivery: when the master delivers the project (a "delivery" event), it walks to the printer and prints the report, page by page
+  const PRINT_MS = 9000, PRINT_PAGES = 6, seenDeliveries = new Set();
+  let printJob = null, printed = null;                                        // printed: the report left in the tray after the last job
+  function noticeDelivery(st) {
+    const ev = (st.events || []).find(e => e.kind === "delivery" && Date.now() - new Date(e.created_at) < 180000);
+    if (!ev) return;
+    const id = ev.id ?? ev.created_at; if (seenDeliveries.has(id)) return; seenDeliveries.add(id);
+    const m = /^#\d+:?\s*(.*)$/.exec(ev.detail || "");
+    printJob = { id, title: ((m ? m[1] : ev.detail) || "").trim().slice(0, 80), startedAt: null, done: false, until: Date.now() + 120000 };
+  }
   function update(st) {
-    lastState = st;
+    lastState = st; noticeDelivery(st);
     const team = st.agents.filter(a => a.status !== "retired");
     ensureLayout(seatsFor(st));
     team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name);   // everyone exists before anyone looks for a teammate
@@ -2340,6 +2356,7 @@ const office = (() => {
     if (c.mode === "faint") return [c.tx, c.ty];
     if (c.mode === "despair" && c.despair) return c.despair.pose === "desk" ? DESKS[c.idx].chair : (c.despair.spot || [c.tx, c.ty]);
     if (c.mode === "strike" && c.strike) return c.strike.act === "sleep" ? BEDS[c.idx] : c.strike.spot;
+    if (c.mode === "print") return PRINT_SPOT;
     if (c.mode === "toilet") { if (c.toilet != null) return TOILETS[c.toilet]; const k = toiletQueue.filter(n => chars[n] && chars[n].toilet == null).indexOf(c.name); return k >= 0 && k < QUEUE.length ? QUEUE[k] : [c.tx, c.ty]; }
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
@@ -2355,6 +2372,11 @@ const office = (() => {
     }
     const waiting = toiletQueue.filter(n => chars[n].toilet == null);
     if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
+    if (printJob) for (const c of Object.values(chars)) if (c.mode === "print" && !c.moving && !c.steps.length && c.tx === PRINT_SPOT[0] && c.ty === PRINT_SPOT[1]) {
+      c.dir = "left";
+      if (!printJob.startedAt) { printJob.startedAt = Date.now(); printJob.until = printJob.startedAt + PRINT_MS + 4000; c.say = fixed("Printing the delivery report…"); c.sayStart = performance.now(); c.sayUntil = printJob.startedAt + PRINT_MS; c.sayLoop = false; }
+      else if (!printJob.done && Date.now() >= printJob.startedAt + PRINT_MS) { printJob.done = true; printed = { pages: PRINT_PAGES, title: printJob.title }; c.report = Date.now() + 25000; c.say = fixed("Delivered: {title}. The report is on the board.").replace("{title}", printJob.title || "the project"); c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
+    }
     for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = fixed("Compacting my context…"); c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
     for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
     for (const c of Object.values(chars)) {
@@ -2412,6 +2434,15 @@ const office = (() => {
     return "read";
   }
   const WAKE_MS = 2000;
+  function drawPrinter(t) {                                                   // status light, the scan bar, a sheet feeding out of the slot, the stack growing in the tray
+    const px = PRINTER[0] * T, py = PRINTER[1] * T, job = printJob && printJob.startedAt && !printJob.done ? printJob : null, now = Date.now();
+    const ph = job ? Math.min(1, (now - job.startedAt) / PRINT_MS) : 0, pages = job ? Math.floor(ph * PRINT_PAGES) : printed ? printed.pages : 0;
+    ctx.fillStyle = job ? (Math.floor(t * 6) % 2 ? "#ffb347" : "#7a4a10") : "#3fd46b"; ctx.fillRect(px + 24.5, py + 8.5, 1, 1);
+    if (job) { const sx = px + 10 + ((t * 1.6) % 1) * 11; ctx.fillStyle = "rgba(124,247,160,.9)"; ctx.fillRect(sx, py + 1.5, 1, 5); }                      // the scanner light sweeping the feed
+    if (pages) { const h = Math.min(4, pages * 0.5); ctx.fillStyle = "#ffffff"; ctx.fillRect(px + 8, py + 13.5 - h, 16, h); ctx.fillStyle = "#9aa3ad"; ctx.fillRect(px + 10, py + 13.5 - h, 6, 0.5); ctx.fillRect(px + 8, py + 13.5 - h, 16, 0.5); }   // the tray
+    if (job) { const u = (ph * PRINT_PAGES) % 1, h = Math.round(Math.min(1, u / 0.7) * 20) / 2;                                                             // one sheet at a time sliding out of the slot
+      if (h > 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(px + 9, py + 12, 14, h); ctx.fillStyle = "#6b7280"; for (let ly = 2; ly < h - 1; ly += 2) ctx.fillRect(px + 10.5, py + 12 + ly, ly === 2 ? 6 : 11, 0.5); ctx.fillStyle = "#b9c0c9"; ctx.fillRect(px + 9, py + 12 + h - 0.5, 14, 0.5); } }
+  }
   function drawChar(c, t) {
     if (c.hidden) return;
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
@@ -2438,7 +2469,7 @@ const office = (() => {
       const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), twitch = Math.floor(t * 2 + c.idx) % 7 === 0 ? 1 : 0;
       ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 26, 24, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.save(); ctx.translate(x + 16, c.py + 18); ctx.rotate((c.idx % 2 ? 1 : -1) * Math.PI / 2); ctx.drawImage(img, -16, -24 - c.top + twitch); ctx.restore();
-      const hx = x + 16 + (c.idx % 2 ? -1 : 1) * 24, hy = c.py + 8;                                                    // the head end
+      const hx = x + 16 + (c.idx % 2 ? 1 : -1) * 24, hy = c.py + 8;                                                    // the head end: a clockwise quarter turn puts it on the right
       for (let k = 0; k < 3; k++) { const a = t * 3 + k * Math.PI * 2 / 3, sx = Math.round(hx + Math.cos(a) * 9), sy = Math.round(hy - 6 + Math.sin(a) * 3); ctx.fillStyle = k === 1 ? "#ffd23f" : "#ffe98a"; ctx.fillRect(sx - 1, sy - 3, 2, 6); ctx.fillRect(sx - 3, sy - 1, 6, 2); }
       return;
     }
@@ -2518,6 +2549,13 @@ const office = (() => {
       const cy = y - 14 - c.top * 2, bob = c.moving ? Math.floor(t * 8) % 2 : 0; ctx.fillStyle = c.pal.s; ctx.fillRect(x + 6, cy + 10 + bob, 3, 8); ctx.fillRect(x + 23, cy + 10 + bob, 3, 8);
       if (c.carry === "desk" || c.carry === "both") { ctx.fillStyle = C.deskEdge; ctx.fillRect(x + 2, cy + bob, 28, 10); ctx.fillStyle = C.deskTop; ctx.fillRect(x + 3, cy + 1 + bob, 26, 6); ctx.fillStyle = "#23262e"; ctx.fillRect(x + 12, cy - 5 + bob, 10, 7); ctx.fillStyle = "#3c8fd0"; ctx.fillRect(x + 13, cy - 4 + bob, 8, 5); ctx.fillStyle = C.leg; ctx.fillRect(x + 4, cy + 10 + bob, 2, 3); ctx.fillRect(x + 26, cy + 10 + bob, 2, 3); }
       if (c.carry === "bed" || c.carry === "both") { const by = c.carry === "both" ? cy - 14 : cy; ctx.fillStyle = C.bedFrame; ctx.fillRect(x + 1, by + bob, 30, 11); ctx.fillStyle = C.mattress; ctx.fillRect(x + 3, by + 1 + bob, 26, 8); ctx.fillStyle = C.blanket; ctx.fillRect(x + 12, by + 2 + bob, 16, 6); ctx.fillStyle = C.pillow; ctx.fillRect(x + 4, by + 2 + bob, 6, 6); }
+    }
+    if (c.mode === "print" && !c.moving && !c.steps.length && printJob && printJob.startedAt && !printJob.done) {   // a hand on the printer, tapping the panel now and then
+      const tap = Math.floor(t * 3 + c.idx) % 4 === 0; ctx.fillStyle = c.pal.s; ctx.fillRect(x - 3, y + 15 + (tap ? 1 : 0), 6, 3);
+    }
+    if (c.report > Date.now() && !c.hidden && !(c.mode === "work" && !c.moving && !c.steps.length)) {                 // the printed report in hand on the way back
+      const fl2 = c.dir === "right", hx = c.dir === "down" ? x + 20 : fl2 ? x + 24 : x - 2;
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(hx, y + 18, 8, 10); ctx.fillStyle = "#6b7280"; ctx.fillRect(hx + 1.5, y + 20, 5, 0.5); ctx.fillRect(hx + 1.5, y + 22, 5, 0.5); ctx.fillRect(hx + 1.5, y + 24, 3, 0.5); ctx.fillStyle = c.pal.s; ctx.fillRect(hx + 2, y + 25, 4, 3);
     }
     if (c.mode === "smoke" && !c.moving && !c.steps.length) {                    // a cigarette at the mouth, its tip glowing, a hand holding it, thick smoke drifting up
       const sq = c.smoke && c.smoke.squat ? 1 : 0, my = y + 17 + bobY + sq * 12, mx0 = c.dir === "down" ? x + 17 : flip ? x + 22 : x + 4, dirx = c.dir === "down" || flip ? 1 : -1, drag = Math.floor(t * 1.5 + c.idx) % 3 === 0;
@@ -2600,6 +2638,7 @@ const office = (() => {
     ctx = off.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0, W, H);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
+    drawPrinter(t);
     for (const c of order) drawChar(c, t);
     if (CAMS.length && Math.floor(t * 2) % 2) { ctx.fillStyle = "#ff3b3b"; for (const [x, y] of CAMS) ctx.fillRect(x + 6, y + 3, 2, 2); }   // the cameras' recording light
     if (THEMES[THEME].wechat && !transition) {                                                            // the master's motivational line every minute, when the room is quiet
@@ -2639,7 +2678,7 @@ const office = (() => {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, PRINTER, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 })();
 (() => { const sel = document.getElementById("lang"); if (!sel) return; sel.innerHTML = LANGS.map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join(""); sel.value = LANG; sel.onchange = () => setLang(sel.value); document.documentElement.lang = LANG; translateNode(document.body); })();
 route();

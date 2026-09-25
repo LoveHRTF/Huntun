@@ -195,6 +195,22 @@ class CoreTests(unittest.TestCase):
         self.run_tool(ctx, "update_notes", notes="n")
         self.assertEqual(ctx.memory.read_activity()[0][-1]["kind"], "result")
 
+    def test_master_delivers_the_project_once_with_a_report_for_the_human(self) -> None:
+        master = self.ctx(self.team[0])
+        self.assertIn("deliver_project", {t.name for t in available_tools(master, "api")})
+        self.assertNotIn("deliver_project", {t.name for t in available_tools(self.ctx(self.team[1]), "claude-code")}, "only the master delivers")
+        out, err = self.run_tool(master, "deliver_project", title="ATM v1.0", report="All five items of the definition of done are met; run `make demo`.")
+        self.assertFalse(err, out)
+        self.assertIn("Delivered", out)
+        threads = self.store.list_threads(5)
+        self.assertEqual(threads[0]["title"], "Delivery report: ATM v1.0")
+        self.assertTrue(threads[0]["body"].startswith("@human "), "the report is addressed to the human")
+        ev = self.store.list_events(0, 5)[0]
+        self.assertEqual((ev["agent"], ev["kind"], ev["detail"]), ("master", "delivery", f"#{threads[0]['id']}: ATM v1.0"))
+        self.assertEqual(self.store.get_control("delivery_thread", ""), str(threads[0]["id"]))
+        self.assertTrue(self.store.get_control("delivered_at", ""))
+        self.assertTrue(self.run_tool(master, "deliver_project", title="x", report="  ")[1], "an empty report is refused")
+
     def test_master_changes_need_human_confirmation(self) -> None:
         from huntun.tools import ToolHooks
 

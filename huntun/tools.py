@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .config import now_iso
 from .gitops import GitError, commit, recent_log
 from .gitops import status as git_status
 from .memory import AgentMemory
@@ -348,6 +349,20 @@ async def _set_agent_model(a: dict[str, Any], ctx: ToolContext) -> str:
     return await ctx.hooks.set_agent_model(str(a["name"]), a.get("model"), a.get("effort"))
 
 
+async def _deliver_project(a: dict[str, Any], ctx: ToolContext) -> str:
+    title = str(a.get("title") or "Final delivery").strip()[:120]
+    report = str(a["report"]).strip()
+    if not report:
+        return "ERROR: the report is empty"
+    body = report if "@human" in report else "@human " + report
+    t = ctx.store.create_thread(ctx.agent.name, f"Delivery report: {title}", body)
+    ctx.store.log_event(ctx.agent.name, "delivery", f"#{t['id']}: {title}")
+    ctx.store.set_control("delivered_at", now_iso())
+    ctx.store.set_control("delivery_thread", str(t["id"]))
+    ctx.cycle.active_thread = t["id"]
+    return f"Delivered. The final report is thread #{t['id']} and the human has been notified; the office printer has it."
+
+
 async def _resume_team(a: dict[str, Any], ctx: ToolContext) -> str:
     if not ctx.hooks.resume_team:
         return "ERROR: not available in this context"
@@ -428,6 +443,12 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("set_goal", "Change the project goal and/or definition of done (after proposing it to @human on the board and getting their confirmation). Every agent sees the new goal from its next cycle.",
              _obj({"goal": {"type": "string"}, "definition_of_done": {"type": "string", "description": "One condition per line"},
                    "confirmation_thread_id": {"type": "integer", "description": "Thread where you proposed the change to @human and they replied confirming"}}, ["goal", "confirmation_thread_id"]), _set_goal, master_only=True),
+    ToolSpec("deliver_project", "Deliver the finished project to the human. Call it exactly once, when every item of the definition of done is met with evidence "
+             "(tests run, commits, a demo or walkthrough) and @team-lead has confirmed technical completeness on the board. Posts the final report as a "
+             "\"Delivery report\" thread addressed to @human and records the delivery.",
+             _obj({"title": {"type": "string", "description": "Short name of what was delivered, e.g. the product and version"},
+                   "report": {"type": "string", "description": "The final report: what was delivered against each item of the definition of done, how to run and verify it, known limitations, and what the team recommends next"}},
+                  ["title", "report"]), _deliver_project, master_only=True),
     ToolSpec("resume_team", "After a token-limit pause, release the rest of the team so they resume their cycles (you are resumed first so you can check the board and set direction).",
              _obj({}), _resume_team, master_only=True),
     ToolSpec("retire_agent", "Retire an agent whose work is complete or no longer needed (after the human confirmed on the board). Its memory is kept.",

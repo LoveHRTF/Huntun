@@ -573,7 +573,8 @@ class AgentRuntime:
                      "and the tasks assigned to them; anyone working outside their role or their assigned scope, or work that no role on the team owns, is a planning "
                      "mistake of yours to correct now (have out-of-scope changes reverted or handed to the owner, propose a hire or a brief change to @human, or "
                      "reassign to the right owner, and say so on the board). Then decide whether the team shape is right: "
-                     "propose hires, retirements, or model changes to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it."
+                     "propose hires, retirements, or model changes to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it. "
+                     "If every item of the definition of done is now met with evidence and @team-lead has confirmed it, this review ends in delivery: call deliver_project with the final report."
                      if spec.role == "master" else "Update the plan thread if the roadmap changed.")
             instructions = (
                 f"This is a scheduled PROGRESS REVIEW (#{st.review_count}). Inspect the git log and recent commits (git show / diff as needed), "
