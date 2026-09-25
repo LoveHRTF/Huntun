@@ -170,6 +170,12 @@ def refresh_vllm(force: bool = False) -> list[ModelInfo]:
     return VLLM_CATALOG
 
 
+def model_ids() -> list[str]:
+    """Every model id an agent can be put on: the fixed catalogs plus what the local Ollama and vLLM servers serve now."""
+    local = [m.id for m in refresh_ollama() + refresh_vllm()]
+    return MODEL_IDS + [i for i in dict.fromkeys(local) if i not in MODEL_IDS]
+
+
 def catalog_for(backend: str) -> list[ModelInfo]:
     if backend == "codex":
         return CODEX_CATALOG
