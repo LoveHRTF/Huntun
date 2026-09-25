@@ -82,6 +82,7 @@
   .toolbar { display:flex; align-items:center; gap:10px; margin:4px 0 12px; flex-wrap:wrap; } .toolbar .sort { margin-left:auto; display:flex; gap:6px; align-items:center; }
   .sort select { width:auto; font-size:12px; padding:4px 6px; }
   .thread { display:block; border:2px solid var(--line); margin-bottom:12px; background:var(--panel); box-shadow: 4px 4px 0 var(--ink); }
+  .pending { position:sticky; top:0; z-index:4; display:flex; gap:10px; align-items:center; background:var(--warn); color:var(--ink); border:2px solid var(--ink); box-shadow:3px 3px 0 var(--ink); padding:7px 12px; margin-bottom:12px; font: 600 12px/1.3 var(--sans); cursor:pointer; } .pending b { font-weight:700; } .pending .go { margin-left:auto; text-decoration:underline; }
   .thread .head { display:flex; gap:12px; padding:12px 14px; cursor:pointer; align-items:flex-start; }
   .thread .head .txt { flex:1; min-width:0; }
   .thread .title { font-weight:600; font-size:15px; color:#fff; margin:2px 0 4px; }
@@ -231,7 +232,7 @@ const I18N = {
     "Estimate to finish": "完成所需估算", "Role": "角色", "Model": "模型", "Effort": "推理强度", "Personality": "性格", "Custom…": "自定义…", "Describe temperament, board voice, and working style": "描述性情、板上的说话风格与工作方式", "Why this model: {x}": "为何选此模型：{x}", "Model choice: {x}": "模型选择：{x}", "runs via {x}": "运行于 {x}",
     "Approve plan": "批准方案", "Approve": "批准", "Ask the master to revise": "让主管修改", "Request changes": "请求修改", "e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA": "例如：去掉 UX 研究员，后端工程师改用 Sonnet，再加一名 QA", "Team size limit: {n} agents besides the master.": "团队人数上限：不含主管 {n} 名。",
     "Team planning did not finish": "团队规划未完成", "Last attempt failed: {x}": "上次尝试失败：{x}", "Your goal and context are kept as typed; fix the cause and send again.": "你输入的目标与背景已保留；修正原因后重新发送即可。", "Retry team planning": "重试团队规划", "Retry": "重试", "back to setup": "返回设置", "Agents load paused; press Start all afterwards.": "成员以暂停状态加载；之后按「全部开始」。",
-    "Start all": "全部开始", "Pause all": "全部暂停", "Needs you": "需要你", "Needs you ({n})": "需要你（{n}）", "items that need your decision, approval, or input": "需要你决策、批准或补充信息的事项", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "所有成员 @ 你的事项。在对应话题中回复，或在此标记完成后即清除。", "Nothing needs you right now.": "目前没有需要你处理的事项。", "Done": "完成", "Close": "关闭", "Cancel": "取消",
+    "Start all": "全部开始", "Pause all": "全部暂停", "Needs you": "需要你", "Needs you ({n})": "需要你（{n}）", "1 new thread": "1 个新话题", "{n} new threads": "{n} 个新话题", "1 new reply": "1 条新回复", "{n} new replies": "{n} 条新回复", "Show at top": "回到顶部查看", "items that need your decision, approval, or input": "需要你决策、批准或补充信息的事项", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "所有成员 @ 你的事项。在对应话题中回复，或在此标记完成后即清除。", "Nothing needs you right now.": "目前没有需要你处理的事项。", "Done": "完成", "Close": "关闭", "Cancel": "取消",
     "Team": "团队", "Threads": "话题", "Discussion": "讨论", "Activity": "动态", "Live": "实时", "Recent cycles": "最近周期", "No cycles yet.": "还没有周期。", "Nothing yet — the agent has not started a cycle.": "还没有内容——该成员尚未开始周期。", "Nothing yet.": "暂无。", "Current task": "当前任务", "Last cycle": "上一周期", "next: {x}": "下一步：{x}", "Uncommitted files": "未提交的文件", "Compactions": "上下文压缩", "Context": "上下文", "Cycles": "周期", "Cost": "费用", "context compactions": "上下文压缩次数", "context window {n}% ({a} / {b})": "上下文窗口 {n}%（{a} / {b}）",
     "New thread": "新话题", "Post thread": "发布话题", "Title": "标题", "Ask a question or add a requirement. Type @ to tag an agent.": "提问或追加需求。输入 @ 可 @ 成员。", "Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act.": "以 @human 身份回复。输入 @ 可 @ 成员；被 @ 的成员会被唤醒并决定是否行动。", "Tagged agents are woken up and decide whether to act.": "被 @ 的成员会被唤醒并决定是否行动。", "Send": "发送", "Cmd/Ctrl-Enter to send": "Cmd/Ctrl-Enter 发送",
     "sort": "排序", "show": "显示", "time posted": "发布时间", "last response": "最近回复", "commit updates": "提交更新", "discussions": "讨论", "everything": "全部", "Nothing matches this filter.": "没有符合筛选条件的内容。", "No threads yet. Agents post here when they have something to discuss; you can also start one.": "还没有话题。成员有事讨论时会在这里发帖；你也可以发起。",
@@ -259,7 +260,7 @@ const I18N = {
     "Estimate to finish": "完成所需估算", "Role": "角色", "Model": "模型", "Effort": "推理強度", "Personality": "性格", "Custom…": "自訂…", "Describe temperament, board voice, and working style": "描述性情、討論板上的語氣與工作方式", "Why this model: {x}": "為何選此模型：{x}", "Model choice: {x}": "模型選擇：{x}", "runs via {x}": "執行於 {x}",
     "Approve plan": "核准方案", "Approve": "核准", "Ask the master to revise": "請主管修改", "Request changes": "要求修改", "e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA": "例如：拿掉 UX 研究員，後端工程師改用 Sonnet，再加一名 QA", "Team size limit: {n} agents besides the master.": "團隊人數上限：不含主管 {n} 名。",
     "Team planning did not finish": "團隊規劃未完成", "Last attempt failed: {x}": "上次嘗試失敗：{x}", "Your goal and context are kept as typed; fix the cause and send again.": "你輸入的目標與背景已保留；修正原因後重新送出即可。", "Retry team planning": "重試團隊規劃", "Retry": "重試", "back to setup": "返回設定", "Agents load paused; press Start all afterwards.": "成員以暫停狀態載入；之後按「全部開始」。",
-    "Start all": "全部開始", "Pause all": "全部暫停", "Needs you": "需要你", "Needs you ({n})": "需要你（{n}）", "items that need your decision, approval, or input": "需要你決策、核准或補充資訊的事項", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "所有成員 @ 你的事項。在對應討論串回覆，或在此標記完成後即清除。", "Nothing needs you right now.": "目前沒有需要你處理的事項。", "Done": "完成", "Close": "關閉", "Cancel": "取消",
+    "Start all": "全部開始", "Pause all": "全部暫停", "Needs you": "需要你", "Needs you ({n})": "需要你（{n}）", "1 new thread": "1 個新討論串", "{n} new threads": "{n} 個新討論串", "1 new reply": "1 則新回覆", "{n} new replies": "{n} 則新回覆", "Show at top": "回到頂部查看", "items that need your decision, approval, or input": "需要你決策、核准或補充資訊的事項", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "所有成員 @ 你的事項。在對應討論串回覆，或在此標記完成後即清除。", "Nothing needs you right now.": "目前沒有需要你處理的事項。", "Done": "完成", "Close": "關閉", "Cancel": "取消",
     "Team": "團隊", "Threads": "討論串", "Discussion": "討論", "Activity": "動態", "Live": "即時", "Recent cycles": "最近週期", "No cycles yet.": "還沒有週期。", "Nothing yet — the agent has not started a cycle.": "還沒有內容——該成員尚未開始週期。", "Nothing yet.": "暫無。", "Current task": "目前任務", "Last cycle": "上一週期", "next: {x}": "下一步：{x}", "Uncommitted files": "未提交的檔案", "Compactions": "上下文壓縮", "Context": "上下文", "Cycles": "週期", "Cost": "費用", "context compactions": "上下文壓縮次數", "context window {n}% ({a} / {b})": "上下文視窗 {n}%（{a} / {b}）",
     "New thread": "新討論串", "Post thread": "發佈討論串", "Title": "標題", "Ask a question or add a requirement. Type @ to tag an agent.": "提問或新增需求。輸入 @ 可標記成員。", "Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act.": "以 @human 身分回覆。輸入 @ 可標記成員；被標記的成員會被喚醒並決定是否行動。", "Tagged agents are woken up and decide whether to act.": "被標記的成員會被喚醒並決定是否行動。", "Send": "送出", "Cmd/Ctrl-Enter to send": "Cmd/Ctrl-Enter 送出",
     "sort": "排序", "show": "顯示", "time posted": "發佈時間", "last response": "最近回覆", "commit updates": "提交更新", "discussions": "討論", "everything": "全部", "Nothing matches this filter.": "沒有符合篩選條件的內容。", "No threads yet. Agents post here when they have something to discuss; you can also start one.": "還沒有討論串。成員有事討論時會在這裡發文；你也可以發起。",
@@ -287,7 +288,7 @@ const I18N = {
     "Estimate to finish": "完了までの見積もり", "Role": "役割", "Model": "モデル", "Effort": "推論強度", "Personality": "性格", "Custom…": "カスタム…", "Describe temperament, board voice, and working style": "気質、ボードでの口調、仕事のスタイルを記述", "Why this model: {x}": "このモデルの理由：{x}", "Model choice: {x}": "モデルの選択：{x}", "runs via {x}": "{x} で実行",
     "Approve plan": "計画を承認", "Approve": "承認", "Ask the master to revise": "マスターに修正を依頼", "Request changes": "変更を依頼", "e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA": "例：UX リサーチャーを外し、バックエンドは Sonnet に、QA をもう 1 名追加", "Team size limit: {n} agents besides the master.": "チーム人数の上限：マスターを除き {n} 名。",
     "Team planning did not finish": "チーム計画が完了しませんでした", "Last attempt failed: {x}": "前回の試行が失敗：{x}", "Your goal and context are kept as typed; fix the cause and send again.": "入力した目標と背景は保持されています。原因を直して再送信してください。", "Retry team planning": "チーム計画を再試行", "Retry": "再試行", "back to setup": "設定に戻る", "Agents load paused; press Start all afterwards.": "メンバーは一時停止状態で読み込まれます。その後「すべて開始」を押してください。",
-    "Start all": "すべて開始", "Pause all": "すべて一時停止", "Needs you": "要対応", "Needs you ({n})": "要対応（{n}）", "items that need your decision, approval, or input": "あなたの判断・承認・入力が必要な項目", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "メンバーがあなたにタグ付けした項目。スレッドで返信するか、ここで完了にすると消えます。", "Nothing needs you right now.": "今は対応が必要な項目はありません。", "Done": "完了", "Close": "閉じる", "Cancel": "キャンセル",
+    "Start all": "すべて開始", "Pause all": "すべて一時停止", "Needs you": "要対応", "Needs you ({n})": "要対応（{n}）", "1 new thread": "新しいスレッド 1 件", "{n} new threads": "新しいスレッド {n} 件", "1 new reply": "新しい返信 1 件", "{n} new replies": "新しい返信 {n} 件", "Show at top": "上に戻って表示", "items that need your decision, approval, or input": "あなたの判断・承認・入力が必要な項目", "Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.": "メンバーがあなたにタグ付けした項目。スレッドで返信するか、ここで完了にすると消えます。", "Nothing needs you right now.": "今は対応が必要な項目はありません。", "Done": "完了", "Close": "閉じる", "Cancel": "キャンセル",
     "Team": "チーム", "Threads": "スレッド", "Discussion": "議論", "Activity": "アクティビティ", "Live": "ライブ", "Recent cycles": "最近のサイクル", "No cycles yet.": "サイクルはまだありません。", "Nothing yet — the agent has not started a cycle.": "まだ何もありません — このメンバーはサイクルを開始していません。", "Nothing yet.": "まだありません。", "Current task": "現在のタスク", "Last cycle": "前回のサイクル", "next: {x}": "次：{x}", "Uncommitted files": "未コミットのファイル", "Compactions": "コンテキスト圧縮", "Context": "コンテキスト", "Cycles": "サイクル", "Cost": "コスト", "context compactions": "コンテキスト圧縮の回数", "context window {n}% ({a} / {b})": "コンテキストウィンドウ {n}%（{a} / {b}）",
     "New thread": "新しいスレッド", "Post thread": "スレッドを投稿", "Title": "タイトル", "Ask a question or add a requirement. Type @ to tag an agent.": "質問するか要件を追加。@ でメンバーをタグ付け。", "Reply as @human. Type @ to tag an agent; they are woken up and decide whether to act.": "@human として返信。@ でメンバーをタグ付けすると起こされ、対応するかを判断します。", "Tagged agents are woken up and decide whether to act.": "タグ付けされたメンバーは起こされ、対応するかを判断します。", "Send": "送信", "Cmd/Ctrl-Enter to send": "Cmd/Ctrl-Enter で送信",
     "sort": "並び替え", "show": "表示", "time posted": "投稿日時", "last response": "最終返信", "commit updates": "コミット更新", "discussions": "議論", "everything": "すべて", "Nothing matches this filter.": "このフィルターに一致するものはありません。", "No threads yet. Agents post here when they have something to discuss; you can also start one.": "スレッドはまだありません。メンバーは議論があればここに投稿します。あなたから始めることもできます。",
@@ -708,6 +709,23 @@ function sortedThreads() {
   return ts;
 }
 let threadsDirty = false;
+// A refresh never moves what the human is reading: while the list is scrolled away from the top, or an open thread is being read part-way,
+// new threads and replies are held back and announced in a sticky banner; clicking it (or scrolling back to the top) shows them.
+let shownThreads = null, pendingRefresh = false, chatRestore = null;
+const listScroll = () => { const sec = $("#threadsbox") && $("#threadsbox").closest("section"); return Math.max(sec ? sec.scrollTop : 0, window.scrollY || 0); };
+const readingChat = () => { const m = $("#messages"); return !!(m && m.querySelector(".msg") && m.scrollHeight - m.scrollTop - m.clientHeight > 60); };
+function showPending() {
+  const box = $("#threadsbox"); if (!box || !shownThreads) return;
+  let threads = 0, replies = 0;
+  for (const t of state.threads) { const seen = shownThreads.get(t.id); if (seen === undefined) threads++; else if (t.id !== openThread) replies += Math.max(0, t.comment_count - seen); }   // the open thread updates in place
+  if (!threads && !replies) { hidePending(); return; }
+  pendingRefresh = true;
+  let el = $("#pending"); if (!el) { el = document.createElement("div"); el.id = "pending"; el.className = "pending"; el.onclick = () => { const sec = box.closest("section"); if (sec) sec.scrollTop = 0; window.scrollTo(0, 0); drawThreads(true); }; box.prepend(el); }
+  const parts = []; if (threads) parts.push(threads === 1 ? "1 new thread" : threads + " new threads"); if (replies) parts.push(replies === 1 ? "1 new reply" : replies + " new replies");
+  el.innerHTML = '<span>✦</span>' + parts.map(x => '<b>' + x + '</b>').join('<span>·</span>') + '<span class="go">Show at top</span>';
+}
+function hidePending() { pendingRefresh = false; const el = $("#pending"); if (el) el.remove(); }
+document.addEventListener("scroll", () => { if (pendingRefresh && !typingInThreads() && listScroll() <= 24 && !readingChat()) drawThreads(true); }, true);
 function typingInThreads() { const a = document.activeElement; return !!(a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT") && a.closest("#threadsbox")); }
 async function drawThreads(force) {
   if (!state) return;
@@ -716,7 +734,9 @@ async function drawThreads(force) {
   const names = state.agents.filter(a => a.status !== "retired").map(a => a.name);
   const key = sortBy + "|" + filterBy + "|" + composing + "|" + openThread + "|" + JSON.stringify(state.threads.map(t => [t.id, t.last_activity, t.comment_count]));
   if (key !== threadKey || force) {
-    threadKey = key;
+    if (!force && threadKey && (listScroll() > 24 || readingChat())) { showPending(); if (openThread) drawChat(); return; }   // held back: see the banner
+    hidePending(); threadKey = key; shownThreads = new Map(state.threads.map(t => [t.id, t.comment_count]));
+    const msgs = $("#messages"); chatRestore = msgs && msgs.querySelector(".msg") && msgs.dataset.thread === String(openThread) ? { thread: msgs.dataset.thread, top: msgs.scrollTop, atBottom: msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60 } : null;
     const draftT = $("#ntitle") ? $("#ntitle").value : "", draftB = $("#nbody") ? $("#nbody").value : "", draftC = $("#cbody") ? $("#cbody").value : "";
     const list = sortedThreads().map(t => {
       const open = t.id === openThread;
@@ -758,8 +778,9 @@ async function drawChat() {
   const active = document.activeElement, keepFocus = active && active.id === "cbody" ? { s: active.selectionStart, e: active.selectionEnd } : null;
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60 || !box.querySelector(".msg");
   const bubble = (m, first) => '<div class="msg' + (m.author === "human" ? " me" : "") + (first ? " first" : "") + '">' + avatar(m.author) + '<div class="bubble"><div class="bhead"><b>@' + esc(m.author) + '</b><span class="meta">' + when(m.created_at) + '</span></div><div class="md">' + md(m.body) + '</div></div></div>';
-  box.innerHTML = bubble(data.thread, true) + data.comments.map(c => bubble(c, false)).join("");
-  if (atBottom) box.scrollTop = box.scrollHeight;
+  box.innerHTML = bubble(data.thread, true) + data.comments.map(c => bubble(c, false)).join(""); box.dataset.thread = String(openThread);
+  const keep = chatRestore && chatRestore.thread === String(openThread) ? chatRestore : null; chatRestore = null;
+  if (keep ? keep.atBottom : atBottom) box.scrollTop = box.scrollHeight; else if (keep) box.scrollTop = keep.top;
   if (keepFocus && $("#cbody")) { const ta = $("#cbody"); ta.focus({ preventScroll: true }); try { ta.setSelectionRange(keepFocus.s, keepFocus.e); } catch (e) {} }
 }
 
