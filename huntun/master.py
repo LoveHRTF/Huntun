@@ -283,7 +283,7 @@ async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str =
         role = a.get("role") if a.get("role") in ROLE_KEYS else "fullstack"
         avail = available_backends()
         allowed = {m.id for m, _ in catalog_available(avail)} or {m.id for m in catalog_for(config.backend)}
-        model = a.get("model") if a.get("model") in allowed else (next(iter(allowed)) if config.backend in ("codex", "kimi", "deepseek", "ollama") else None)
+        model = a.get("model") if a.get("model") in allowed else (next(iter(allowed)) if config.backend in ("codex", "kimi", "deepseek", "ollama", "vllm") else None)
         backend = backend_for_model(model, avail, default="") if model else ""
         effort = a.get("effort") if a.get("effort") in EFFORTS else None
         why = str(a.get("why") or "").strip()

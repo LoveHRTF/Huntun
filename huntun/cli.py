@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("init", help="plan the team for a goal from the command line (the web app can do this too)")
     add_dir(s)
-    s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama"], help="model backend (default: auto-detect)")
+    s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm"], help="model backend (default: auto-detect)")
     s.add_argument("--context", default="", help="extra context for the master: constraints, stack preferences, existing code")
     s.add_argument("goal", nargs="+", help="what the team should build")
 
