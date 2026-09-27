@@ -2,7 +2,9 @@
 
 A local, uncensored Flash-Next server for Huntun seats, built from
 [`Navin-Models/Qwen3.8-Flash-Next-Uncensored-AD-4.27-GGUF`](https://huggingface.co/Navin-Models/Qwen3.8-Flash-Next-Uncensored-AD-4.27-GGUF)
-and llama.cpp's `llama-server`.
+and llama.cpp's `llama-server`, optionally with a second, faster model,
+[`orcarouter/Qwen3.8-27B-Uncensored-GGUF`](https://huggingface.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF) (Q4_K_M), served
+next to it at the same address (see [A second model](#a-second-model-qwen38-27b)).
 
 The full write-up of how this box was set up — architecture, every step and error along the way, measured results and a
 step-by-step reproduction — is in [SETUP-REPORT.md](SETUP-REPORT.md) (中文版：[SETUP-REPORT.zh-CN.md](SETUP-REPORT.zh-CN.md)).
@@ -140,6 +142,45 @@ REASONING_BUDGET=4096 # shorter thinking, faster turns
 FIT_TARGET_MIB=1536   # if a desktop session shares the GPU
 ```
 
+## A second model: Qwen3.8-27B
+
+Flash-Next is the stronger model but runs at ~17 tok/s with ~600 t/s prefill, because most of it lives in RAM and on the
+NVMe drive. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in the 4090's VRAM: others measured ~40 tok/s and
+~2,400 t/s prefill on a 4090 (~60 tok/s with MTP), at a lower level of capability (Artificial Analysis index 34 vs 40,
+Terminal-Bench 2.1 73.0 vs 84.3). It suits well-specified tasks where turnaround matters; Flash-Next suits the harder ones.
+
+```powershell
+.\setup.ps1 download 27b      # ~17 GB into %USERPROFILE%\flash-next\models\Qwen3.8-27B-Uncensored
+.\setup.ps1 restart           # as administrator, or stop and start serve.ps1
+```
+
+(`./setup.sh download 27b` on Linux, then restart `serve.sh` or the service.)
+
+With both models downloaded, `serve.ps1` / `serve.sh` start `llama-server` as a **router**: the same address, port, API
+key and firewall rule as before, but `/v1/models` lists both models (`qwen3.8-flash-next-uncensored` and
+`qwen3.8-27b-uncensored`) and each request is served by the model it names. The chat page gets a model picker; Huntun
+lists both under the same server, each with its own context and sessions, and any seat can use either. The router starts
+one `llama-server` per model on a loopback port from the presets it writes to `%USERPROFILE%\flash-next\models.ini`
+(generated from `config.ps1` on every start; do not edit it).
+
+The 4090 holds **one model at a time** (`--models-max 1`). A request for the other model waits until the loaded one has
+finished its requests, then the router unloads it and loads the other: a few seconds for the 27B, a minute or more for
+Flash-Next. So put all of this machine's seats in a team on one of the two models; Huntun tells the master so. Which
+model loads at startup is `DEFAULT_MODEL` (`flash-next`, or `27b`); `SERVE_MODELS = "27b"` serves only one of them.
+
+Defaults for the 27B (`Q27_*` in `config.ps1` / `flash-next.env`):
+
+| Setting | Default | Why |
+|---|---|---|
+| `Q27_MODEL_SET` | `Q4_K_M` (16.8 GB) | `Q5_K_M` (19.5 GB) is closer to Q8 but leaves room for ~64K of context; Q8_0 (29 GB) does not fit in VRAM and would run at ~4-5 tok/s |
+| `Q27_PARALLEL`, `Q27_CTX_PER_SLOT`, `Q27_KV_UNIFIED` | 2, 65536, on | two sessions sharing a 128K pool |
+| `Q27_KV_TYPE` | `q4_0` | ~18 KB per token (16 of its 64 layers keep a cache); `q8_0` doubles it and does not fit 128K next to the weights and the desktop |
+| `Q27_MTP` | off | on drafts with the model's built-in multi-token-prediction head (`--spec-type draft-mtp`), reported +30-40% decode for one session; measure it with `bench.py --model qwen3.8-27b-uncensored` before keeping it |
+
+If the server log shows layers placed on the CPU when the 27B loads, VRAM is short: lower `Q27_CTX_PER_SLOT`.
+`bench.py --model qwen3.8-27b-uncensored` measures it (the router loads it for the run) and compares against the numbers
+above.
+
 ## Connecting Huntun
 
 In Huntun (the Mac mini), open **⚙ Model providers** in the header, choose **+ Add a server** and fill in what
@@ -150,7 +191,8 @@ it available right away. The entry then shows in the list; click it to change or
 More GPU boxes (or an Ollama or vLLM server) can be added the same way.
 
 "llama.cpp server" then appears among the providers on the setup page, and the model
-(`qwen3.8-flash-next-uncensored`) among the choices for each seat, next to Claude, Codex and Ollama models. Huntun reads
+(`qwen3.8-flash-next-uncensored`, and `qwen3.8-27b-uncensored` when both are served) among the choices for each seat,
+next to Claude, Codex and Ollama models. Huntun reads
 the model name, the context of one slot and the number of slots from the server, and tells the master how many
 sessions it runs at once so it staffs no more seats than that: more agents than slots queue, and they evict each
 other's prompt cache, so every turn re-reads the whole context. The note is shown to the master when it staffs the team.

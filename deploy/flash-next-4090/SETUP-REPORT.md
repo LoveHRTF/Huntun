@@ -394,6 +394,25 @@ Section 1 of its output must show a `tool_use: get_time(...)` line.
   an update, pin an older `$LLAMA_TAG` (see llama.cpp issue #28355).
 - **Never forward port 8080 to the internet.**
 
+### 11. Optional: a second, faster model (Qwen3.8-27B)
+
+Added after the setup above. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in VRAM: others measured ~40 tok/s
+and ~2,400 t/s prefill on a 4090, about 2.5× and 4× Flash-Next here, at a lower level of capability (Artificial Analysis
+index 34 vs 40). Not yet measured on this box.
+
+1. `.\setup.ps1 download 27b` (~17 GB from `orcarouter/Qwen3.8-27B-Uncensored-GGUF`).
+2. `.\setup.ps1 restart` **[admin]**. With both models downloaded, the server starts as a llama.cpp **router**: same
+   address, port, API key and firewall rule; `/v1/models` lists `qwen3.8-flash-next-uncensored` and
+   `qwen3.8-27b-uncensored`, and each request is served by the model it names.
+3. Measure it: `bench.py --api-key <your key> --model qwen3.8-27b-uncensored`.
+4. In Huntun, **⚙ Model providers** shows both models under the 4090 entry, each with its own context and sessions;
+   any seat can use either. Chatbox and the chat page pick the model by name.
+
+The 4090 holds one of them at a time. A request for the other waits until the loaded one finishes its requests, then
+the router swaps them (seconds for the 27B, a minute or more for Flash-Next), so keep a team's seats on this machine on
+one model. `$DEFAULT_MODEL = "27b"` in `config.local.ps1` makes the 27B the one loaded at startup; the kit README
+("A second model") lists the other settings.
+
 ### Linux variant
 
 The same kit runs on Ubuntu 24.04. It builds llama.cpp for sm_89 instead of downloading binaries; settings go in
@@ -437,8 +456,8 @@ INSTALL_CUDA=1 ./setup.sh deps
 |---|---|
 | [`README.md`](README.md) | Reference for the kit: memory layout, context options, Windows and Linux setup, security |
 | `windows/config.ps1` | Windows defaults; override in `windows/config.local.ps1` (git-ignored) |
-| `windows/setup.ps1` | `check`, `install`, `login`, `download`, `apikey`, `firewall`, `tune`, `task`, `service`, `restart`, `connect`, `all` |
-| `windows/serve.ps1` | Builds the `llama-server` command from the settings and starts it |
+| `windows/setup.ps1` | `check`, `install`, `login`, `download` (`download 27b` for the second model), `apikey`, `firewall`, `tune`, `task`, `service`, `restart`, `connect`, `all` |
+| `windows/serve.ps1` | Builds the `llama-server` command from the settings and starts it; with both models downloaded, writes the router's model presets and starts it as a router |
 | `flash-next.env`, `setup.sh`, `serve.sh` | The same for Linux |
 | `fetch_model.py` | Lists the GGUF sets, picks one, downloads with retries, explains gated-repo errors |
-| `bench.py` | Tool-call check, prefill at chosen sizes, decode at 1 and 2 sessions and at depth, compared against the plan |
+| `bench.py` | Tool-call check, prefill at chosen sizes, decode at 1 and 2 sessions and at depth, compared against the plan (`--model` picks the model on a router) |

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Checks and measures a running llama-server for Qwen3.8-Flash-Next, then compares against the reference plan.
+"""Checks and measures a running llama-server for Qwen3.8-Flash-Next (or Qwen3.8-27B), then compares against expectations.
 
 1. Anthropic-compatible /v1/messages with a tool: the path Huntun uses (must return a tool_use block).
 2. Prefill: prompt processing speed at a few prompt lengths (prompt cache off).
 3. Decode: generation speed with 1..N concurrent requests, and at a long context depth.
 
-Standard library only. Usage: ./bench.py [--url http://127.0.0.1:8080] [--parallel 2] [--quick] [--sizes 4096,65536,250000]
+Every request names --model, so the same run works against a router serving both models (it loads the one named).
+Standard library only. Usage: ./bench.py [--url http://127.0.0.1:8080] [--model qwen3.8-27b-uncensored] [--parallel 2] [--quick]
+                                         [--sizes 4096,65536,250000]
 """
 from __future__ import annotations
 
@@ -27,6 +29,10 @@ WORDS = ("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo li
 # the N-gram table on NVMe (16.4-16.9 / 20.2-20.6 tok/s decode, 629-632 t/s prefill); a few percent either way is noise.
 PLAN = {"decode_total_2": 60.0, "prefill": 4000.0}
 EXPECT = {"decode_1": (15, 20), "decode_total_2": (18, 25), "prefill": (550, 800)}
+# Qwen3.8-27B Q4_K_M sits entirely in VRAM: others measured ~40 tok/s and ~2,400 t/s prefill on a 4090 (Linux, no MTP);
+# two streams of a dense model nearly double the total. Estimates, not yet measured on this box.
+EXPECT_27B = {"decode_1": (32, 48), "decode_total_2": (55, 90), "prefill": (1800, 2800)}
+MODEL = ""  # every request names it: a router serving several models routes on it, a single-model server ignores it
 
 
 AUTH: dict[str, str] = {}   # Authorization header for a server started with --api-key
@@ -60,7 +66,7 @@ def filler(base: str, n_tokens: int, seed: int) -> str:
     """Random text of about n_tokens tokens (measured with /tokenize), different per seed so no cache can help."""
     rng = random.Random(seed)
     text = " ".join(rng.choice(WORDS) for _ in range(n_tokens))
-    counted = len(post(base + "/tokenize", {"content": text})["tokens"])
+    counted = len(post(base + "/tokenize", {"model": MODEL, "content": text})["tokens"])
     scale = n_tokens / max(counted, 1)
     words = text.split()
     if scale < 1:
@@ -71,7 +77,7 @@ def filler(base: str, n_tokens: int, seed: int) -> str:
 
 
 def complete(base: str, prompt: str, n_predict: int, ignore_eos: bool = True) -> dict:
-    r = post(base + "/completion", {"prompt": prompt, "n_predict": n_predict, "cache_prompt": False,
+    r = post(base + "/completion", {"model": MODEL, "prompt": prompt, "n_predict": n_predict, "cache_prompt": False,
                                     "ignore_eos": ignore_eos, "temperature": 0.7})
     return r.get("timings", {})
 
@@ -126,7 +132,7 @@ def verdict(value: float, lo: float, hi: float) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8080")
-    ap.add_argument("--model", default="qwen3.8-flash-next-uncensored")
+    ap.add_argument("--model", default="qwen3.8-flash-next-uncensored", help="the model to measure (qwen3.8-27b-uncensored for the 27B)")
     ap.add_argument("--api-key", default=os.environ.get("FLASHNEXT_API_KEY", ""), help="the server's API key (API_KEY in the kit's config), if it has one")
     ap.add_argument("--parallel", type=int, default=2, help="the server's -np")
     ap.add_argument("--quick", action="store_true", help="shorter prompts and generations")
@@ -135,6 +141,10 @@ def main() -> int:
     ap.add_argument("--skip-messages", action="store_true")
     a = ap.parse_args()
     base = a.url.rstrip("/")
+    global MODEL
+    MODEL = a.model
+    dense = "27b" in a.model.lower()
+    expect = EXPECT_27B if dense else EXPECT
     if a.api_key:
         AUTH["Authorization"] = f"Bearer {a.api_key}"
 
@@ -171,14 +181,19 @@ def main() -> int:
     print(f"  1 request at {depth // 1024}K context depth: {deep:5.1f} tok/s")
 
     best_prefill = max(prefill.values())
-    print("\nSummary vs the reference plan (5090 + 128 GB) and this box's expectation (4090 + 64 GB DDR4)")
-    print(f"  prefill           {best_prefill:7.0f} t/s   plan >{PLAN['prefill']:.0f}   expected {EXPECT['prefill'][0]}-{EXPECT['prefill'][1]}  "
-          f"-> {verdict(best_prefill, *EXPECT['prefill'])}")
-    print(f"  decode, 1 stream  {totals[1]:7.1f} tok/s  plan  n/a    expected {EXPECT['decode_1'][0]}-{EXPECT['decode_1'][1]}  "
-          f"-> {verdict(totals[1], *EXPECT['decode_1'])}")
+    if dense:
+        print("\nSummary vs this box's expectation for Qwen3.8-27B (from other 4090s; the Flash-Next plan does not apply)")
+    else:
+        print("\nSummary vs the reference plan (5090 + 128 GB) and this box's expectation (4090 + 64 GB DDR4)")
+    plan_prefill = "  n/a " if dense else f">{PLAN['prefill']:.0f}"
+    plan_total = " n/a" if dense else f"{PLAN['decode_total_2']:.0f}  "
+    print(f"  prefill           {best_prefill:7.0f} t/s   plan {plan_prefill}   expected {expect['prefill'][0]}-{expect['prefill'][1]}  "
+          f"-> {verdict(best_prefill, *expect['prefill'])}")
+    print(f"  decode, 1 stream  {totals[1]:7.1f} tok/s  plan  n/a    expected {expect['decode_1'][0]}-{expect['decode_1'][1]}  "
+          f"-> {verdict(totals[1], *expect['decode_1'])}")
     if 2 in totals:
-        print(f"  decode, 2 streams {totals[2]:7.1f} tok/s  plan {PLAN['decode_total_2']:.0f}     expected {EXPECT['decode_total_2'][0]}-{EXPECT['decode_total_2'][1]}  "
-              f"-> {verdict(totals[2], *EXPECT['decode_total_2'])}")
+        print(f"  decode, 2 streams {totals[2]:7.1f} tok/s  plan {plan_total}   expected {expect['decode_total_2'][0]}-{expect['decode_total_2'][1]}  "
+              f"-> {verdict(totals[2], *expect['decode_total_2'])}")
     if deep and totals[1]:
         print(f"  long-context decode keeps {deep / totals[1] * 100:.0f}% of short-context speed")
     if not ok_messages:

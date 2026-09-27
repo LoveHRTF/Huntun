@@ -376,6 +376,24 @@ Get-Content "$env:USERPROFILE\flash-next\server.log" -Tail 30 -Wait
   固定一个旧的 `$LLAMA_TAG`（参见 llama.cpp issue #28355）。
 - **绝不要把 8080 端口映射到公网。**
 
+### 11. 可选：再加一个更快的模型（Qwen3.8-27B）
+
+这是在上面的部署完成之后加的。Qwen3.8-27B（去审查版，Q4_K_M，约 17 GB）可以整个放进显存：别人在 4090 上测到约 40 tok/s、
+prefill 约 2400 t/s，分别是这里 Flash-Next 的约 2.5 倍和 4 倍，但能力低一档（Artificial Analysis 指数 34 对 40）。
+还没有在这台机器上实测。
+
+1. `.\setup.ps1 download 27b`（从 `orcarouter/Qwen3.8-27B-Uncensored-GGUF` 下载约 17 GB）。
+2. `.\setup.ps1 restart` **[管理员]**。两个模型都下载好后，服务器会以 llama.cpp 的 **router 模式** 启动：地址、端口、
+   API 密钥和防火墙规则都不变；`/v1/models` 会列出 `qwen3.8-flash-next-uncensored` 和 `qwen3.8-27b-uncensored`，
+   每个请求由它指定的模型处理。
+3. 测速：`bench.py --api-key <你的密钥> --model qwen3.8-27b-uncensored`。
+4. 在 Huntun 的 **⚙ 模型提供方** 里，4090 这一项下会列出两个模型，各自显示上下文和会话数，任何席位都可以选其中一个。
+   Chatbox 和网页聊天按模型名选择。
+
+4090 同一时间只能装下其中一个。请求另一个模型时，要等当前模型处理完手上的请求，router 再把两者换过来（27B 几秒，
+Flash-Next 要一分钟以上），所以一个团队在这台机器上的席位最好都用同一个模型。在 `config.local.ps1` 里写
+`$DEFAULT_MODEL = "27b"` 可以让启动时先加载 27B；其他设置见工具包 README 的 "A second model" 一节。
+
 ### Linux 版本
 
 同一个工具包也能在 Ubuntu 24.04 上运行。它会为 sm_89 编译 llama.cpp，而不是下载二进制；设置写在
@@ -419,8 +437,8 @@ INSTALL_CUDA=1 ./setup.sh deps
 |---|---|
 | [`README.md`](README.md) | 工具包说明：内存布局、上下文方案、Windows 与 Linux 部署、安全 |
 | `windows/config.ps1` | Windows 默认设置；在 `windows/config.local.ps1`（不进 git）里覆盖 |
-| `windows/setup.ps1` | `check`、`install`、`login`、`download`、`apikey`、`firewall`、`tune`、`task`、`service`、`restart`、`connect`、`all` |
-| `windows/serve.ps1` | 根据设置拼出 `llama-server` 命令并启动 |
+| `windows/setup.ps1` | `check`、`install`、`login`、`download`（第二个模型用 `download 27b`）、`apikey`、`firewall`、`tune`、`task`、`service`、`restart`、`connect`、`all` |
+| `windows/serve.ps1` | 根据设置拼出 `llama-server` 命令并启动；两个模型都下载好时，写出 router 的模型预设并以 router 模式启动 |
 | `flash-next.env`、`setup.sh`、`serve.sh` | Linux 下的对应文件 |
 | `fetch_model.py` | 列出 GGUF 文件组、自动选择、带重试下载、解释受限仓库错误 |
-| `bench.py` | 工具调用检查、指定长度的 prefill、单双会话及深度生成速度，并与参考方案对比 |
+| `bench.py` | 工具调用检查、指定长度的 prefill、单双会话及深度生成速度，并与参考方案对比（router 上用 `--model` 选模型） |

@@ -280,9 +280,10 @@ def probe_server(kind: str, url: str, key: str = "", timeout: float = 1.5, conte
     """Asks a server what it serves: {"ok", "models", "contexts" (per model), "context", "slots", "error"}.
 
     llama.cpp: the alias from GET /v1/models, then from GET /props the context of one slot (the whole pool when the server
-    shares its KV cache) and how many sessions it runs at once. Ollama: GET /api/tags; it does not say what context it
-    serves, so that is the server's own setting here, else HUNTUN_OLLAMA_CONTEXT (32768). vLLM: GET /v1/models, where each
-    model carries its max_model_len.
+    shares its KV cache) and how many sessions it runs at once. A llama-server running as a router (several models behind
+    one address, loaded on demand) answers per model instead: see _router_status. Ollama: GET /api/tags; it does not say
+    what context it serves, so that is the server's own setting here, else HUNTUN_OLLAMA_CONTEXT (32768). vLLM:
+    GET /v1/models, where each model carries its max_model_len.
     """
     import os
     import urllib.error
@@ -318,15 +319,87 @@ def probe_server(kind: str, url: str, key: str = "", timeout: float = 1.5, conte
     if kind == "llamacpp":
         try:
             props = _get_json(url + "/props", key, timeout)
+        except Exception:
+            props = {}
+        if isinstance(props, dict) and props.get("role") == "router" and contexts:
+            return _router_status(url, key, timeout, data, props, default_ctx)
+        try:
             reported = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0)
             slots = int(props.get("total_slots") or 0)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         if reported:
             contexts = {n: reported for n in contexts}
     if not contexts:
         return {**empty, "context": reported, "slots": slots, "error": "the server lists no model"}
     return {"ok": True, "models": list(contexts), "contexts": contexts, "context": reported, "slots": slots, "error": ""}
+
+
+def _router_status(url: str, key: str, timeout: float, listing: dict[str, Any], props: dict[str, Any], default_ctx: int) -> dict[str, Any]:
+    """A llama-server router: every model it lists, each with its own context, sessions and state ("loaded", "unloaded",
+    "loading", ...), plus how many models it keeps loaded at once ("max_loaded"). A loaded model's /props gives its
+    numbers; for the others they come from the preset the router will start it with. Nothing here makes the router load
+    a model (autoload=false): on a single GPU that would evict the one in use."""
+    import urllib.parse
+
+    details: dict[str, dict[str, Any]] = {}
+    for m in listing.get("data") or []:
+        if not (isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]):
+            continue
+        st = m.get("status") if isinstance(m.get("status"), dict) else {}
+        state = "failed" if st.get("failed") else str(st.get("value") or "")
+        ctx = slots = 0
+        if state == "loaded":
+            try:
+                p = _get_json(f"{url}/props?model={urllib.parse.quote(m['id'], safe='')}&autoload=false", key, timeout)
+                ctx = int((p.get("default_generation_settings") or {}).get("n_ctx") or 0)
+                slots = int(p.get("total_slots") or 0)
+            except Exception:
+                pass
+        if not ctx:
+            ctx, slots = _preset_capacity(str(st.get("preset") or ""), st.get("args"))
+        details[m["id"]] = {"context": ctx or default_ctx, "slots": slots, "state": state}
+    try:
+        max_loaded = max(0, int(props.get("max_instances") or 0))
+    except (TypeError, ValueError):
+        max_loaded = 0
+    return {"ok": True, "models": list(details), "contexts": {n: d["context"] for n, d in details.items()}, "context": 0, "slots": 0, "error": "",
+            "details": details, "max_loaded": max_loaded}
+
+
+def _preset_capacity(preset: str, args: Any) -> tuple[int, int]:
+    """(context of one session, sessions at once) from a router model's preset ("ctx-size = 131072" lines) or, failing
+    that, its command line; zeros for what neither says."""
+    def is_flag(s: Any) -> bool:
+        return isinstance(s, str) and s.startswith("-") and not s[1:2].isdigit()
+
+    opts: dict[str, str] = {}
+    if isinstance(args, list):
+        for i, a in enumerate(args):
+            if is_flag(a):
+                value = args[i + 1] if i + 1 < len(args) else None
+                opts[a.lstrip("-")] = value if isinstance(value, str) and not is_flag(value) else "true"
+    for line in preset.splitlines():
+        k, sep, v = line.partition("=")
+        if sep and not line.lstrip().startswith((";", "#", "[")):
+            opts[k.strip()] = v.strip()
+
+    def num(*names: str) -> int:
+        for n in names:
+            try:
+                return int(opts[n])
+            except (KeyError, ValueError):
+                continue
+        return 0
+
+    total = num("ctx-size", "c")
+    sessions = num("parallel", "np")
+    shared = next((opts[n].lower() in ("true", "1", "on") for n in ("kv-unified", "kvu") if n in opts), False)
+    if total <= 0:
+        return 0, max(sessions, 0)
+    if sessions <= 0:                                   # "auto": llama-server picks the slots and shares one pool among them
+        return total, 0
+    return (total if shared or sessions == 1 else total // sessions), sessions
 
 
 def probe_llamacpp(url: str, key: str = "", timeout: float = 1.5) -> dict[str, Any]:
@@ -343,14 +416,22 @@ def _pinned(spec: str, default_ctx: int) -> dict[str, int]:
     return out
 
 
-def _use_for(entry: dict[str, Any], status: dict[str, Any]) -> str:
+def _use_for(entry: dict[str, Any], status: dict[str, Any], model: str = "") -> str:
     kind = {"llamacpp": "llama.cpp", "ollama": "Ollama", "vllm": "vLLM"}[entry["type"]]
     where = entry["url"].split("//", 1)[-1] + (f" ({entry['name']})" if entry.get("name") else "")
     text = (f"local model served by {kind} at {where} (no per-token cost; speed and quality depend on that machine"
             + (" and the model's tool calling)" if entry["type"] == "vllm" else ")"))
-    slots = status.get("slots") or 0
+    details = status.get("details") or {}
+    slots = (details.get(model) or {}).get("slots", 0) if details else status.get("slots") or 0
     if slots:
         text += f"; it runs {slots} session{'s' if slots != 1 else ''} at once, so give it at most {slots} seat{'s' if slots != 1 else ''}"
+    others = [n for n in details if n != model]
+    max_loaded = status.get("max_loaded") or 0
+    if others and 0 < max_loaded <= len(others):
+        held = "one model" if max_loaded == 1 else f"{max_loaded} models"
+        text += (f"; the same machine also serves {', '.join(others)} but holds only {held} at a time: switching unloads one and"
+                 " loads the other (which can take a minute or more) while the seats on both wait, so put all of that machine's seats"
+                 " on one model")
     if entry.get("note"):
         text += f"; {entry['note']}"
     return text
@@ -390,7 +471,7 @@ def refresh_local(force: bool = False) -> dict[str, list[ModelInfo]]:
             mid = n if served[n] == 1 else f"{n}@{slugs[e['id']]}"
             if mid in routes:
                 continue
-            fresh[e["type"]].append(ModelInfo(mid, f"{n} · {server_label(e)}", e["type"], 0.0, 0.0, r["contexts"][n], _use_for(e, r), e["type"]))
+            fresh[e["type"]].append(ModelInfo(mid, f"{n} · {server_label(e)}", e["type"], 0.0, 0.0, r["contexts"][n], _use_for(e, r, n), e["type"]))
             routes[mid] = {"server": e["id"], "type": e["type"], "url": e["url"], "key": e["key"], "model": n}
     for t, cat in fresh.items():
         for m in cat:

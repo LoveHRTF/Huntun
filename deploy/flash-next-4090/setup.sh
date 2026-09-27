@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2015  # ok/warn/bad always succeed, so `A && ok || bad` is a safe if-else
-# Sets up Qwen3.8-Flash-Next (uncensored, AD-4.27 GGUF) on an Ubuntu box with an RTX 4090 and 64 GB RAM.
+# Sets up Qwen3.8-Flash-Next (uncensored, AD-4.27 GGUF), and optionally Qwen3.8-27B, on an Ubuntu box with an RTX 4090 and 64 GB RAM.
 #
 #   ./setup.sh check      hardware / OS checks (no changes)
 #   ./setup.sh deps       apt build dependencies (+ CUDA toolkit with INSTALL_CUDA=1)       [sudo]
 #   ./setup.sh build      clone/update llama.cpp at LLAMA_REF and build llama-server with CUDA
 #   ./setup.sh login      store a Hugging Face token (the model repo is gated)
-#   ./setup.sh download   download the model set from Hugging Face into MODEL_DIR
+#   ./setup.sh download   download Flash-Next from Hugging Face into MODEL_DIR (download 27b: Qwen3.8-27B Q4_K_M)
 #   ./setup.sh apikey     create an API key for the server (apikey new: replace it)
 #   ./setup.sh tune       vm.swappiness=10 and headless-mode advice                         [sudo]
 #   ./setup.sh service    install and start a systemd service running serve.sh               [sudo]
@@ -136,11 +136,18 @@ cmd_build() {
 
 cmd_download() {
   [[ -x "$VENV/bin/python" ]] || { echo "venv missing; run ./setup.sh deps first" >&2; return 1; }
-  local extra=()
-  [[ -n "$MODEL_SET" ]] && extra+=(--set "$MODEL_SET")
-  [[ "$WITH_VISION" == "1" ]] && extra+=(--vision)
-  "$VENV/bin/python" "$HERE/fetch_model.py" "$HF_REPO" "$MODEL_DIR" "${extra[@]}"
-  echo "Read the model card before first use: https://huggingface.co/$HF_REPO (required llama.cpp version, recommended flags)"
+  local repo="$HF_REPO" dir="$MODEL_DIR" set="$MODEL_SET" extra=()
+  case "${1:-}" in
+    "" | flash-next) [[ "$WITH_VISION" == "1" ]] && extra+=(--vision) ;;
+    27b) repo="$Q27_HF_REPO"; dir="$Q27_MODEL_DIR"; set="$Q27_MODEL_SET" ;;
+    *) echo "download what? ./setup.sh download (Flash-Next) or ./setup.sh download 27b" >&2; return 1 ;;
+  esac
+  [[ -n "$set" ]] && extra+=(--set "$set")
+  "$VENV/bin/python" "$HERE/fetch_model.py" "$repo" "$dir" "${extra[@]}"
+  echo "Read the model card before first use: https://huggingface.co/$repo (required llama.cpp version, recommended flags)"
+  if [[ "${1:-}" == "27b" && -f "$MODEL_DIR/model.path" ]]; then
+    echo "Both models are downloaded: serve.sh now offers both at the same address (restart it). Huntun lists both."
+  fi
 }
 
 cmd_login() {
@@ -175,9 +182,16 @@ cmd_connect() {
   echo "Huntun: add a server under Model providers (the gear button in its header) with these, or export them before starting it:"
   echo "  export HUNTUN_LLAMACPP_URL=http://$ip:$PORT"
   [[ -n "$API_KEY" ]] && echo "  export HUNTUN_LLAMACPP_KEY=$API_KEY"
-  echo "  export HUNTUN_LLAMACPP_NOTE=\"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse\""
-  echo
-  echo "Huntun reads the model name, $((ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
+  if [[ -f "$Q27_MODEL_DIR/model.path" && -f "$MODEL_DIR/model.path" ]]; then
+    echo "  export HUNTUN_LLAMACPP_NOTE=\"uncensored models on an RTX 4090. $ALIAS: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. $Q27_ALIAS: less capable but ~40 tok/s and prefill ~2,400 t/s, for well-specified tasks. Both good for tasks cloud models refuse\""
+    echo
+    echo "The server offers two models, $ALIAS and $Q27_ALIAS, and holds one at a time; Huntun reads each one's"
+    echo "context and sessions from the server and tells the master to keep this machine's seats on one of them."
+  else
+    echo "  export HUNTUN_LLAMACPP_NOTE=\"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse\""
+    echo
+    echo "Huntun reads the model name, $((ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
+  fi
   [[ "$HOST" == "127.0.0.1" ]] && echo "warning: HOST is 127.0.0.1, so other machines cannot connect" >&2
   return 0
 }
@@ -224,7 +238,7 @@ case "${1:-}" in
   deps) cmd_deps ;;
   build) cmd_build ;;
   login) cmd_login ;;
-  download) cmd_download ;;
+  download) cmd_download "${2:-}" ;;
   apikey) cmd_apikey "${2:-}" ;;
   connect) cmd_connect ;;
   tune) cmd_tune ;;

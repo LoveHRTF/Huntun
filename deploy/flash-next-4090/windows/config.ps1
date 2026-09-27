@@ -1,4 +1,4 @@
-# Defaults for the Qwen3.8-Flash-Next server on Windows (RTX 4090 + 64 GB).
+# Defaults for the local model server on Windows (RTX 4090 + 64 GB): Qwen3.8-Flash-Next and, optionally, Qwen3.8-27B.
 # Override any of these in config.local.ps1 next to this file (git-ignored), e.g.  $PARALLEL = 1
 
 # Where llama.cpp, the Python venv and the model live. Put this on the NVMe drive: the N-gram table is read from it at run time.
@@ -38,4 +38,27 @@ $CACHE_RAM_MIB = 4096
 $REASONING_BUDGET = 8192
 
 $SAMPLING_ARGS = @("--temp", "1.0", "--top-p", "0.95", "--top-k", "20", "--min-p", "0.0")
-$EXTRA_ARGS = @()
+$EXTRA_ARGS = @()                       # anything else to pass to llama-server for Flash-Next
+
+# Second model: Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB). It fits entirely in VRAM, so it is much faster than
+# Flash-Next (~40 tok/s, prefill ~2,400 t/s) but less capable. `.\setup.ps1 download 27b` fetches it. Once both models are
+# downloaded, the server offers both under the same address and API key and loads whichever a request names; the GPU
+# holds one at a time, so switching costs a reload (seconds for this one, a minute or more for Flash-Next).
+$Q27_HF_REPO = "orcarouter/Qwen3.8-27B-Uncensored-GGUF"
+$Q27_MODEL_DIR = "$FLASHNEXT_HOME\models\Qwen3.8-27B-Uncensored"
+$Q27_MODEL_SET = "Q4_K_M"               # Q5_K_M (19.5 GB) is closer to Q8 but leaves room for ~64K of context only
+$Q27_ALIAS = "qwen3.8-27b-uncensored"
+$Q27_PARALLEL = 2
+$Q27_CTX_PER_SLOT = 65536
+$Q27_KV_UNIFIED = $true                 # the two sessions share 128K; either may use all of it
+$Q27_KV_TYPE = "q4_0"                   # ~18 KB per token (16 of 64 layers keep one); q8_0 doubles it
+$Q27_BATCH = ""                         # empty = llama.cpp's defaults (2048 / 512)
+$Q27_UBATCH = ""
+$Q27_MTP = $false                       # $true = draft with the model's built-in MTP head (reported +30-40% decode); compare with bench.py
+$Q27_MTP_DRAFT = 3
+$Q27_EXTRA_ARGS = @()
+
+# Which downloaded models to serve ("auto" = all of them, or e.g. "27b" or "flash-next,27b"), and which one to load
+# at startup when there are several.
+$SERVE_MODELS = "auto"
+$DEFAULT_MODEL = "flash-next"

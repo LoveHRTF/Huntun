@@ -1,9 +1,9 @@
-# Sets up Qwen3.8-Flash-Next (uncensored, AD-4.27 GGUF) on Windows with an RTX 4090 and 64 GB RAM.
+# Sets up Qwen3.8-Flash-Next (uncensored, AD-4.27 GGUF), and optionally Qwen3.8-27B, on Windows with an RTX 4090 and 64 GB RAM.
 #
 #   .\setup.ps1 check      hardware / OS checks (no changes)
 #   .\setup.ps1 install    official llama.cpp CUDA build (prebuilt) + Python venv with huggingface_hub
 #   .\setup.ps1 login      store a Hugging Face token (the model repo is gated)
-#   .\setup.ps1 download   download the model set from Hugging Face into MODEL_DIR
+#   .\setup.ps1 download   download Flash-Next from Hugging Face into MODEL_DIR (download 27b: Qwen3.8-27B Q4_K_M)
 #   .\setup.ps1 apikey     create an API key for the server (apikey new: replace it)
 #   .\setup.ps1 firewall   let the local network reach the server (ALLOW_FROM)                  [admin]
 #   .\setup.ps1 tune       firewall, no sleep, Defender exclusion                                [admin]
@@ -74,7 +74,7 @@ function Invoke-Check {
     $letter = (Resolve-Path $FLASHNEXT_HOME).Path.Substring(0, 1)
     $vol = Get-Volume -DriveLetter $letter
     $freeGb = [math]::Round($vol.SizeRemaining / 1GB)
-    if ($freeGb -ge 100) { Ok "free on ${letter}: $freeGb GB" } else { Bad "free on ${letter}: $freeGb GB (the model needs ~85 GB)" }
+    if ($freeGb -ge 100) { Ok "free on ${letter}: $freeGb GB" } else { Bad "free on ${letter}: $freeGb GB (the model needs ~85 GB, and 17 GB more for the 27B)" }
     $diskNumber = (Get-Partition -DriveLetter $letter).DiskNumber
     $disk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq "$diskNumber" } | Select-Object -First 1
     if ($disk.MediaType -eq "HDD") { Bad "${letter}: is a hard disk: the N-gram table must be on NVMe" }
@@ -141,13 +141,18 @@ function Invoke-Install {
 }
 
 function Invoke-Download {
+    if ($Arg -and $Arg -ne "flash-next" -and $Arg -ne "27b") { throw "download what? .\setup.ps1 download (Flash-Next) or .\setup.ps1 download 27b" }
     if (-not (Test-Path "$Venv\Scripts\python.exe")) { throw "venv missing; run .\setup.ps1 install first" }
-    $extra = @()
-    if ($MODEL_SET) { $extra += @("--set", $MODEL_SET) }
-    if ($WITH_VISION) { $extra += "--vision" }
-    & "$Venv\Scripts\python.exe" "$Kit\fetch_model.py" $HF_REPO $MODEL_DIR @extra
+    $repo = $HF_REPO; $dir = $MODEL_DIR; $set = $MODEL_SET; $extra = @()
+    if ($Arg -eq "27b") { $repo = $Q27_HF_REPO; $dir = $Q27_MODEL_DIR; $set = $Q27_MODEL_SET }
+    elseif ($WITH_VISION) { $extra += "--vision" }
+    if ($set) { $extra += @("--set", $set) }
+    & "$Venv\Scripts\python.exe" "$Kit\fetch_model.py" $repo $dir @extra
     if ($LASTEXITCODE -ne 0) { throw "download failed ($LASTEXITCODE)" }
-    Write-Host "Read the model card before first use: https://huggingface.co/$HF_REPO (required llama.cpp version, recommended flags)"
+    Write-Host "Read the model card before first use: https://huggingface.co/$repo (required llama.cpp version, recommended flags)"
+    if ($Arg -eq "27b" -and (Test-Path (Join-Path $MODEL_DIR "model.path"))) {
+        Write-Host "Both models are downloaded: the server now offers both at the same address (.\setup.ps1 restart, or restart serve.ps1). Huntun lists both."
+    }
 }
 
 function Invoke-Login {
@@ -217,6 +222,8 @@ function Register-ServerTask($trigger, [hashtable]$principal) {
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     Stop-ScheduledTask -TaskName "flash-next" -ErrorAction SilentlyContinue
+    # stopping the task can leave llama-server.exe running (the router and its per-model servers), holding the port and VRAM
+    Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
     Register-ScheduledTask -TaskName "flash-next" -Action $action -Trigger $trigger -Settings $settings @principal -Force | Out-Null
     Start-ScheduledTask -TaskName "flash-next"
     return $log
@@ -267,9 +274,16 @@ function Invoke-Connect {
     Write-Host "Huntun: add a server under Model providers (the gear button in its header) with these, or export them before starting it:"
     Write-Host "  export HUNTUN_LLAMACPP_URL=http://$($ips[0]):$PORT"
     if ($API_KEY) { Write-Host "  export HUNTUN_LLAMACPP_KEY=$API_KEY" }
-    Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse`""
-    Write-Host ""
-    Write-Host "Huntun reads the model name, $([math]::Round($ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
+    if ((Test-Path (Join-Path $Q27_MODEL_DIR "model.path")) -and (Test-Path (Join-Path $MODEL_DIR "model.path"))) {
+        Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"uncensored models on an RTX 4090. ${ALIAS}: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. ${Q27_ALIAS}: less capable but ~40 tok/s and prefill ~2,400 t/s, for well-specified tasks. Both good for tasks cloud models refuse`""
+        Write-Host ""
+        Write-Host "The server offers two models, $ALIAS and $Q27_ALIAS, and holds one at a time; Huntun reads each one's"
+        Write-Host "context and sessions from the server and tells the master to keep this machine's seats on one of them."
+    } else {
+        Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse`""
+        Write-Host ""
+        Write-Host "Huntun reads the model name, $([math]::Round($ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
+    }
     if ($LISTEN -eq "127.0.0.1") { Write-Warning "LISTEN is 127.0.0.1: other machines cannot connect until you remove that line from config.local.ps1" }
 }
 

@@ -3,6 +3,7 @@ discovery, and the local servers saved from the Model providers menu."""
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import stat
@@ -112,6 +113,45 @@ class _FakeLlamaServer(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+class _FakeLlamaRouter(_FakeLlamaServer):
+    """llama-server as a router, as recorded from a real one: two models behind one address, one loaded. A GET that could
+    load a model (a per-model /props without autoload=false) is recorded, since on one GPU it would evict the loaded one."""
+    loads: list[str] = []
+    posted_models: list[str] = []
+    PRESET_27B = ("[qwen3.8-27b-uncensored]\njinja = true\nctx-size = 131072\ncache-type-k = q4_0\nkv-unified = true\n"
+                  "model = C:\\flash-next\\models\\Qwen3.8-27B-Uncensored-Q4_K_M.gguf\nparallel = 2\n\n")
+    PRESET_FN = ("[qwen3.8-flash-next-uncensored]\nctx-size = 131072\nkv-unified = true\nparallel = 2\nload-on-startup = true\n\n")
+
+    def do_GET(self) -> None:  # noqa: N802
+        if not self._authorized():
+            return
+        path, _, query = self.path.partition("?")
+        params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+        if path == "/v1/models":
+            self._send(200, {"object": "list", "data": [
+                {"id": "qwen3.8-27b-uncensored", "object": "model", "status": {"value": "unloaded", "args": [], "preset": self.PRESET_27B}},
+                {"id": "qwen3.8-flash-next-uncensored", "object": "model", "status": {"value": "loaded", "args": ["llama-server", "--ctx-size", "131072"],
+                                                                                     "preset": self.PRESET_FN}}]})
+        elif path == "/props" and not params.get("model"):
+            self._send(200, {"role": "router", "max_instances": 1, "models_autoload": True, "default_generation_settings": {"params": None, "n_ctx": 0}})
+        elif path == "/props":
+            if params.get("autoload") != "false":
+                type(self).loads.append(params["model"])
+            if params["model"] == "qwen3.8-flash-next-uncensored":
+                self._send(200, {"default_generation_settings": {"n_ctx": 262144}, "total_slots": 2})
+            else:
+                self._send(400, {"error": {"code": 400, "message": "model is not loaded", "type": "invalid_request_error"}})
+        else:
+            self._send(404, {})
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers["Content-Length"])
+        body = self.rfile.read(length)
+        type(self).posted_models.append(json.loads(body).get("model", ""))
+        self.rfile = io.BytesIO(body)                                                  # let the parent read it again
+        super().do_POST()
+
+
 def isolate_huntun_home(test: unittest.TestCase) -> Path:
     """Points HUNTUN_HOME at a temporary directory so saved provider settings on this machine cannot leak into a test."""
     tmp = tempfile.TemporaryDirectory()
@@ -213,6 +253,37 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(models.estimate_cost_usd("qwen3.8-flash-next-uncensored", 1_000_000), 0.0)
         self.assertEqual(models.context_limit("qwen3.8-flash-next-uncensored"), 131072)
         self.assertIn("runs via llama.cpp server (local); runs locally, no per-token price; 131k context", models.catalog_text(available=avail))
+
+    def test_llamacpp_router_offers_each_model_with_its_own_capacity_without_loading_any(self) -> None:
+        _FakeLlamaRouter.key, _FakeLlamaRouter.seen_keys, _FakeLlamaRouter.loads, _FakeLlamaRouter.posted_models = "secret", [], [], []
+        srv = HTTPServer(("127.0.0.1", 0), _FakeLlamaRouter)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        os.environ["HUNTUN_LLAMACPP_URL"] = f"http://127.0.0.1:{srv.server_port}"
+        os.environ["HUNTUN_LLAMACPP_KEY"] = "secret"
+        cat = {m.id: m for m in models.refresh_llamacpp(force=True)}
+        self.assertEqual({i: m.context for i, m in cat.items()},
+                         {"qwen3.8-flash-next-uncensored": 262144,                               # loaded: from its own /props
+                          "qwen3.8-27b-uncensored": 131072})                                     # not loaded: from its preset (shared pool)
+        self.assertEqual(_FakeLlamaRouter.loads, [], "discovery must never make the router load a model")
+        for mid, other in (("qwen3.8-27b-uncensored", "qwen3.8-flash-next-uncensored"), ("qwen3.8-flash-next-uncensored", "qwen3.8-27b-uncensored")):
+            self.assertIn("give it at most 2 seats", cat[mid].use_for)
+            self.assertIn(f"also serves {other} but holds only one model at a time", cat[mid].use_for)
+        st = models.probe_server("llamacpp", os.environ["HUNTUN_LLAMACPP_URL"], "secret")
+        self.assertEqual((st["max_loaded"], st["details"]["qwen3.8-27b-uncensored"], st["details"]["qwen3.8-flash-next-uncensored"]["state"]),
+                         (1, {"context": 131072, "slots": 2, "state": "unloaded"}, "loaded"))
+        b = make_backend("llamacpp", self.config)                                        # each call names its model, which is what the router routes on
+        asyncio.run(b.client.messages.create(model=models.local_route("qwen3.8-27b-uncensored")["model"], max_tokens=5,
+                                             messages=[{"role": "user", "content": "ping"}]))
+        self.assertEqual(_FakeLlamaRouter.posted_models, ["qwen3.8-27b-uncensored"])
+
+    def test_router_preset_capacity(self) -> None:
+        cap = models._preset_capacity
+        self.assertEqual(cap("[m]\nctx-size = 131072\nparallel = 2\n", None), (65536, 2))           # separate slots split the pool
+        self.assertEqual(cap("[m]\nctx-size = 131072\nparallel = 2\nkv-unified = true\n", None), (131072, 2))
+        self.assertEqual(cap("[m]\nc = 8192\n", None), (8192, 0))                                   # slots "auto": one shared pool
+        self.assertEqual(cap("", ["llama-server", "--ctx-size", "32768", "--parallel", "1", "--jinja"]), (32768, 1))
+        self.assertEqual(cap("[m]\njinja = true\n", ["llama-server", "--reasoning-budget", "-1"]), (0, 0))
 
     def test_llamacpp_with_a_wrong_key_or_no_server_offers_nothing(self) -> None:
         self._llama_server()
