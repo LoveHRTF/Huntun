@@ -1702,20 +1702,17 @@ function makeOffice(wid) {
     floor2: () => { Q(0, 0, 64, 64, "#c8ccd2"); },
     wallFace: () => { wallBase(); Q(28, 12, 8, 40, "#e4e4e0"); },
     shelf: () => { wallBase(); Q(26, 10, 12, 42, "#c8161d"); Q(27, 11, 10, 40, "#d8262d"); Q(29, 14, 6, 34, "#ffe27a"); Q(30, 16, 4, 30, "#c8161d"); },
-    decorate: () => {                                                                              // on the upper wall: the countdown board, then red banners side by side
+    decorate: () => {                                                                              // on the upper wall: the countdown board and one red banner
       const CN_FONT = "'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif", by = T + 5, bh = 22;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = "#1b1d22"; ctx.fillRect(T + 4, T + 6, 3.8 * T, 20); ctx.fillStyle = "#0b0c10"; ctx.fillRect(T + 6, T + 8, 3.8 * T - 4, 16);
       ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px " + CN_FONT.replace("sans-serif", "monospace"); ctx.fillText("攻坚倒计时003天", T + 4 + 1.9 * T, T + 17);
-      const x0 = T + 4 + 3.8 * T + 12, x1 = (MW - 1) * T - 6, n = Math.max(1, Math.min(3, Math.floor((x1 - x0) / (6.5 * T)))), gap = 10, w = (x1 - x0 - gap * (n - 1)) / n;
-      for (let i = 0; i < n; i++) {
-        const bx = x0 + i * (w + gap), text = CN_BANNERS[i % CN_BANNERS.length];
-        ctx.fillStyle = "#6e0a0e"; ctx.fillRect(bx + 6, by - 3, 2, 3); ctx.fillRect(bx + w - 8, by - 3, 2, 3);                   // the hooks it hangs from
-        ctx.fillStyle = "#8f0d12"; ctx.fillRect(bx - 1, by - 1, w + 2, bh + 2); ctx.fillStyle = "#c8161d"; ctx.fillRect(bx, by, w, bh);
-        ctx.fillStyle = "#e6c15a"; ctx.fillRect(bx, by, w, 1); ctx.fillRect(bx, by + bh - 1, w, 1);
-        let size = 13; ctx.font = "bold " + size + "px " + CN_FONT; while (size > 8 && ctx.measureText(text).width > w - 10) { size -= 1; ctx.font = "bold " + size + "px " + CN_FONT; }
-        ctx.fillStyle = "#ffe27a"; ctx.fillText(text, bx + w / 2, by + bh / 2 + 1, w - 8);
-      }
+      const bx = T + 4 + 3.8 * T + 12, w = (MW - 1) * T - 6 - bx, text = CN_BANNERS[0];
+      ctx.fillStyle = "#6e0a0e"; ctx.fillRect(bx + 8, by - 3, 2, 3); ctx.fillRect(bx + w - 10, by - 3, 2, 3);                           // the hooks it hangs from
+      ctx.fillStyle = "#8f0d12"; ctx.fillRect(bx - 1, by - 1, w + 2, bh + 2); ctx.fillStyle = "#c8161d"; ctx.fillRect(bx, by, w, bh);
+      ctx.fillStyle = "#e6c15a"; ctx.fillRect(bx, by, w, 1); ctx.fillRect(bx, by + bh - 1, w, 1);
+      let size = 14; ctx.font = "bold " + size + "px " + CN_FONT; while (size > 8 && ctx.measureText(text).width > w - 12) { size -= 1; ctx.font = "bold " + size + "px " + CN_FONT; }
+      ctx.fillStyle = "#ffe27a"; ctx.fillText(text, bx + w / 2, by + bh / 2 + 1, w - 10);
       ctx.textBaseline = "alphabetic";
     } };
   // ---- environment props and furniture variants per theme (the office stays a working office: same desks, chairs, sleeping spots, toilets, door)
