@@ -37,13 +37,25 @@ def complete(key: str, paths: list[str]) -> bool:
 
 
 def choose(sets: dict[str, list[str]], want: str) -> tuple[str | None, list[str]]:
-    """The set to download: the one matching `want`, else the only set that is not an MTP variant. Returns (key, candidates)."""
+    """The set to download. Returns (key, candidates); key is None when the choice is ambiguous.
+
+    With `want`: the sets containing it, and among several the one whose name ends with it ("main" picks "-main", not
+    "-mainline"). Without: sets that are not MTP variants, and among several the one built for mainline llama.cpp,
+    which is what this kit runs (repos often ship a "-mainline" set next to one for a fork or an experimental variant).
+    """
     keys = [k for k in sets if complete(k, sets[k])]
     if want:
-        keys = [k for k in keys if want.lower() in k.lower()]
+        w = want.lower()
+        keys = [k for k in keys if w in k.lower()]
+        exact = [k for k in keys if k.lower().endswith(w)]
+        if len(keys) > 1 and len(exact) == 1:
+            return exact[0], keys
     else:
         plain = [k for k in keys if "mtp" not in k.lower()]
         keys = plain or keys
+        mainline = [k for k in keys if "mainline" in k.lower()]
+        if len(keys) > 1 and len(mainline) == 1:
+            return mainline[0], keys
     return (keys[0] if len(keys) == 1 else None), keys
 
 

@@ -51,6 +51,16 @@ class PickSet(unittest.TestCase):
         self.assertIsNone(key)
         self.assertEqual(sorted(candidates), ["b", "c"])  # "a" is missing a shard
 
+    def test_prefers_the_mainline_set_and_exact_names(self) -> None:
+        # Navin-Models/...-AD-4.27-GGUF: a 34-file "-main" set (experimental attached MTP) and a 33-file "-mainline" set
+        files = {f"Q-AD-4.27-main-{i:05d}-of-00034.gguf": 1 for i in range(1, 35)}
+        files.update({f"Q-AD-4.27-mainline-{i:05d}-of-00033.gguf": 1 for i in range(1, 34)})
+        sets = fetch.group_sets(files)
+        self.assertEqual(fetch.choose(sets, "")[0], "Q-AD-4.27-mainline")
+        self.assertEqual(fetch.choose(sets, "main")[0], "Q-AD-4.27-main")
+        self.assertEqual(fetch.choose(sets, "mainline")[0], "Q-AD-4.27-mainline")
+        self.assertIsNone(fetch.choose(sets, "AD-4.27")[0])
+
     def test_mmproj_prefers_f16_next_to_the_model(self) -> None:
         files = {"x/m.gguf": 1, "x/mmproj-BF16.gguf": 1, "x/mmproj-F16.gguf": 1, "mmproj-F32.gguf": 1}
         self.assertEqual(fetch.pick_mmproj(files, "x/m"), "x/mmproj-F16.gguf")
