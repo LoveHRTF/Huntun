@@ -22,3 +22,6 @@ coverage/
 
 # huntun: local state and caches
 .kimi-code/
+
+# deploy kits: local overrides
+deploy/*/*.local.env
