@@ -25,3 +25,4 @@ coverage/
 
 # deploy kits: local overrides
 deploy/*/*.local.env
+deploy/*/windows/config.local.ps1

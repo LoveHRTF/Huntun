@@ -23,15 +23,52 @@ Decode is bound by DDR4 bandwidth (the experts that do not fit in 24 GB of VRAM 
 How the memory fits: the model is memory-mapped. `--fit` puts attention, the shared expert, the KV cache and as many
 experts as fit into VRAM; the rest of the experts sit in RAM; the ~38 GB N-gram table stays on the NVMe drive and
 llama.cpp reads only the rows each token needs (`--lazy-mode on`), with the Linux page cache keeping the hot ones.
-Free RAM is therefore speed: run the box headless.
+Free RAM is therefore speed.
 
 ## Requirements
 
-- Ubuntu 24.04 (headless recommended), NVIDIA driver installed (`nvidia-smi` works).
-- RTX 4090 on PCIe 4.0 x16, 64 GB RAM, 8-16 GB swap.
+- Windows 10/11 or Ubuntu 24.04 (headless Linux is fastest), NVIDIA driver installed (`nvidia-smi` works).
+- RTX 4090 on PCIe 4.0 x16, 64 GB RAM, 8-16 GB swap or page file.
 - About 100 GB free on an **NVMe** drive for the model and the llama.cpp build.
 
-## Setup
+## Setup on Windows
+
+`windows/` does the same with the official prebuilt llama.cpp CUDA binaries, so nothing is compiled. In PowerShell:
+
+```powershell
+git clone https://github.com/LoveHRTF/Huntun.git; cd Huntun\deploy\flash-next-4090\windows
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # once, to allow local scripts
+winget install Python.Python.3.12                     # if Python 3.10+ is missing
+.\setup.ps1 check      # GPU/driver, PCIe, RAM, page file, NVMe, Defender
+.\setup.ps1 install    # latest llama.cpp Windows CUDA 12.4 build + Python venv
+.\setup.ps1 download   # ~85 GB into %USERPROFILE%\flash-next\models (put FLASHNEXT_HOME on the NVMe drive)
+.\setup.ps1 tune       # as administrator: no sleep, Defender exclusion, firewall rule
+.\serve.ps1            # foreground
+& "$env:USERPROFILE\flash-next\venv\Scripts\python.exe" ..\bench.py   # second window
+.\setup.ps1 task       # optional: start the server at logon (log in %USERPROFILE%\flash-next\server.log)
+```
+
+Settings live in `windows\config.ps1`; override them in `windows\config.local.ps1` (git-ignored), e.g.
+`$FLASHNEXT_HOME = "D:\flash-next"`, `$HUNTUN_HOST_IP = "192.168.1.30"`, `$PARALLEL = 1`.
+
+Windows-specific points:
+
+- **Sysmem fallback**: set NVIDIA Control Panel > Manage 3D settings > CUDA - Sysmem Fallback Policy to
+  *Prefer No Sysmem Fallback*. Otherwise, when VRAM runs short, the driver silently moves allocations into system RAM
+  and generation drops to a crawl instead of failing.
+- **The desktop shares the 4090** (the 5900X has no iGPU), so `FIT_TARGET_MIB` defaults to 1536 MiB of headroom, and
+  Windows itself keeps several GB of RAM that the N-gram page cache would otherwise use. Close browsers and games
+  while agents run. Expect somewhat lower numbers than on a headless Linux install of the same box.
+- **llama.cpp issue #28355**: on Windows, builds after b10665 were reported to load the N-gram table badly, making
+  prefill extremely slow. If `bench.py` shows prefill far below the expectation, try another build with
+  `$LLAMA_TAG = "b10665"` (or a newer tag) in `config.local.ps1` and `.\setup.ps1 install` again; watch RAM use, since
+  older builds may not have `--lazy-mode`.
+- **Defender** scans every read of the 85 GB model unless the folder is excluded (`tune` does it).
+- **Start at logon** uses a scheduled task, so the server runs only while you are signed in; for unattended reboots
+  enable automatic sign-in (Sysinternals Autologon).
+- WSL2 is not a good fit: it gets half the RAM by default and reads Windows drives slowly.
+
+## Setup on Linux
 
 ```bash
 git clone https://github.com/LoveHRTF/Huntun.git && cd Huntun/deploy/flash-next-4090
@@ -78,8 +115,8 @@ Whether the model thinks is up to the server (Qwen's template thinks by default,
 
 ## Security
 
-`llama-server` listens on the LAN without authentication by default. Allow only the Huntun host
-(`sudo ufw allow from <mac-mini-ip> to any port 8080 proto tcp`). Huntun always sends the key `ollama`, so setting
+`llama-server` listens on the LAN without authentication by default. Allow only the Huntun host (Windows: set
+`$HUNTUN_HOST_IP` and run `.\setup.ps1 tune`; Linux: `sudo ufw allow from <mac-mini-ip> to any port 8080 proto tcp`). Huntun always sends the key `ollama`, so setting
 `API_KEY=ollama` adds a speed bump but no real protection.
 
 ## Troubleshooting
@@ -89,4 +126,4 @@ Whether the model thinks is up to the server (Qwen's template thinks by default,
 - **Out of memory at load**: lower `CTX_PER_SLOT` or `UBATCH`, or raise `FIT_TARGET_MIB`. Never add `--mlock`.
 - **`/v1/messages` check fails**: update llama.cpp (`./setup.sh build`) and make sure the chat template from the GGUF
   is used (`--jinja` is on by default).
-- Logs of the service: `journalctl -u flash-next -f`.
+- Logs: `journalctl -u flash-next -f` (Linux service), `Get-Content $env:USERPROFILE\flash-next\server.log -Wait` (Windows task).
