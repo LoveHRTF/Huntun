@@ -40,7 +40,8 @@ batches measured **5 tok/s** instead of 17. The kit therefore sizes the batch au
 | `PARALLEL = 1`, `CTX_PER_SLOT = 262144` | 1 x 256K | 1,024 |
 
 Measured with 2 x 128K (batch 2,048): decode 16.8 tok/s for one session, 19.7 total for two, 18.7 at 32K depth, all
-the same as 2 x 64K; prefill ~525 t/s on 16K-32K prompts (-17%) but faster on short ones (484 vs ~400 t/s at 4K). With a shared pool, the sessions generating at the same moment must fit in
+the same as 2 x 64K, and 16.7 tok/s at 117K depth (decode does not slow down with length); prefill ~525 t/s on
+16K-32K prompts (-17%), ~500 t/s on a 120K prompt (4 minutes), and faster on short ones (484-536 vs ~400 t/s at 4K). With a shared pool, the sessions generating at the same moment must fit in
 the pool together; idle sessions are moved to the RAM prompt cache to make room.
 
 Tried on this box and not worth it:
