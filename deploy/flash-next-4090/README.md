@@ -4,6 +4,9 @@ A local, uncensored Flash-Next server for Huntun seats, built from
 [`Navin-Models/Qwen3.8-Flash-Next-Uncensored-AD-4.27-GGUF`](https://huggingface.co/Navin-Models/Qwen3.8-Flash-Next-Uncensored-AD-4.27-GGUF)
 and llama.cpp's `llama-server`.
 
+The full write-up of how this box was set up — architecture, every step and error along the way, measured results and a
+step-by-step reproduction — is in [SETUP-REPORT.md](SETUP-REPORT.md) (中文版：[SETUP-REPORT.zh-CN.md](SETUP-REPORT.zh-CN.md)).
+
 ## The plan, scaled to this box
 
 The reference plan runs Flash-Next on an RTX 5090 + 128 GB with the per-layer-embedding (N-gram) table offloaded to disk:
