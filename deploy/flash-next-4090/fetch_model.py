@@ -79,10 +79,18 @@ def list_files(repo: str) -> dict[str, int]:
     return {e.path: e.size for e in HfApi().list_repo_tree(repo, recursive=True) if isinstance(e, RepoFile)}
 
 
+class AccessDenied(Exception):
+    pass
+
+
 def download(repo: str, model_dir: Path, paths: list[str]) -> None:
     from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import GatedRepoError
 
-    snapshot_download(repo_id=repo, local_dir=str(model_dir), allow_patterns=paths)
+    try:
+        snapshot_download(repo_id=repo, local_dir=str(model_dir), allow_patterns=paths)
+    except GatedRepoError as e:
+        raise AccessDenied(str(e).splitlines()[0]) from None
 
 
 def main() -> int:
@@ -128,7 +136,14 @@ def main() -> int:
         print("Not enough disk space (keeping 5 GiB spare).", file=sys.stderr)
         return 3
 
-    download(a.repo, model_dir, wanted + extras)
+    try:
+        download(a.repo, model_dir, wanted + extras)
+    except AccessDenied as e:
+        print(f"\n{a.repo} is gated: its author requires you to accept terms before downloading ({e}).", file=sys.stderr)
+        print(f"  1. Sign in at https://huggingface.co, open https://huggingface.co/{a.repo} and accept the access terms", file=sys.stderr)
+        print("     (if the author approves requests by hand, wait until the page no longer asks you to request access).", file=sys.stderr)
+        print("  2. Log in on this machine (setup.ps1 login / setup.sh login), then run download again.", file=sys.stderr)
+        return 4
 
     first = model_dir / sets[key][0]
     (model_dir / "model.path").write_text(str(first) + "\n")

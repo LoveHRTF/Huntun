@@ -2,6 +2,7 @@
 #
 #   .\setup.ps1 check      hardware / OS checks (no changes)
 #   .\setup.ps1 install    official llama.cpp CUDA build (prebuilt) + Python venv with huggingface_hub
+#   .\setup.ps1 login      store a Hugging Face token (the model repo is gated)
 #   .\setup.ps1 download   download the model set from Hugging Face into MODEL_DIR
 #   .\setup.ps1 tune       no sleep, Defender exclusion, firewall rule for the Huntun host        [admin]
 #   .\setup.ps1 task       start the server at logon with a scheduled task (logs to server.log)
@@ -144,6 +145,13 @@ function Invoke-Download {
     Write-Host "Read the model card before first use: $MODEL_DIR\README.md (required llama.cpp version, recommended flags)"
 }
 
+function Invoke-Login {
+    if (-not (Test-Path "$Venv\Scripts\hf.exe")) { throw "venv missing; run .\setup.ps1 install first" }
+    Write-Host "Sign in through the browser page it opens, or paste a Read token from https://huggingface.co/settings/tokens."
+    & "$Venv\Scripts\hf.exe" auth login
+    & "$Venv\Scripts\hf.exe" auth whoami
+}
+
 function Invoke-Tune {
     if (-not (IsAdmin)) { throw "run this from an elevated PowerShell (Run as administrator)" }
     powercfg /change standby-timeout-ac 0 | Out-Null
@@ -177,6 +185,7 @@ function Invoke-Task {
 switch ($Command) {
     "check" { exit (Invoke-Check) }
     "install" { Invoke-Install }
+    "login" { Invoke-Login }
     "download" { Invoke-Download }
     "tune" { Invoke-Tune }
     "task" { Invoke-Task }
@@ -185,5 +194,5 @@ switch ($Command) {
         Invoke-Install; Invoke-Download
         Write-Host ""; Write-Host "Next: .\serve.ps1   (then python ..\bench.py in another window; .\setup.ps1 task to start it at logon)"
     }
-    default { Get-Content $PSCommandPath -TotalCount 10 | Select-Object -Skip 1 | ForEach-Object { $_ -replace '^# ?', '' }; exit 1 }
+    default { Get-Content $PSCommandPath -TotalCount 11 | Select-Object -Skip 1 | ForEach-Object { $_ -replace '^# ?', '' }; exit 1 }
 }

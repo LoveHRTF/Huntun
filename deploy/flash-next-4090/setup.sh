@@ -5,6 +5,7 @@
 #   ./setup.sh check      hardware / OS checks (no changes)
 #   ./setup.sh deps       apt build dependencies (+ CUDA toolkit with INSTALL_CUDA=1)       [sudo]
 #   ./setup.sh build      clone/update llama.cpp at LLAMA_REF and build llama-server with CUDA
+#   ./setup.sh login      store a Hugging Face token (the model repo is gated)
 #   ./setup.sh download   download the model set from Hugging Face into MODEL_DIR
 #   ./setup.sh tune       vm.swappiness=10 and headless-mode advice                         [sudo]
 #   ./setup.sh service    install and start a systemd service running serve.sh               [sudo]
@@ -140,6 +141,13 @@ cmd_download() {
   echo "Read the model card before first use: $MODEL_DIR/README.md (required llama.cpp version, recommended flags)"
 }
 
+cmd_login() {
+  [[ -x "$VENV/bin/hf" ]] || { echo "venv missing; run ./setup.sh deps first" >&2; return 1; }
+  echo "Sign in through the browser page it opens, or paste a Read token from https://huggingface.co/settings/tokens."
+  "$VENV/bin/hf" auth login
+  "$VENV/bin/hf" auth whoami
+}
+
 cmd_tune() {
   echo "vm.swappiness=10 (keeps weights in RAM instead of swapping them out)"
   echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-flash-next.conf >/dev/null
@@ -181,11 +189,12 @@ case "${1:-}" in
   check) cmd_check ;;
   deps) cmd_deps ;;
   build) cmd_build ;;
+  login) cmd_login ;;
   download) cmd_download ;;
   tune) cmd_tune ;;
   service) cmd_service ;;
   all) cmd_check || { echo "Fix the [FAIL] items above first (or run the steps one by one)." >&2; exit 1; }
        cmd_deps; cmd_build; cmd_download
        echo; echo "Next: ./serve.sh   (then ./bench.py in another shell; ./setup.sh service to run it at boot)" ;;
-  *) sed -n '3,13p' "$0"; exit 1 ;;
+  *) sed -n '3,14p' "$0"; exit 1 ;;
 esac
