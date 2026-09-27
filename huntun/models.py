@@ -67,10 +67,12 @@ DEEPSEEK_CATALOG: list[ModelInfo] = [
 ]
 OLLAMA_CATALOG: list[ModelInfo] = []                                             # filled by refresh_ollama() from the local server
 VLLM_CATALOG: list[ModelInfo] = []                                               # filled by refresh_vllm() from the local server
+LLAMACPP_CATALOG: list[ModelInfo] = []                                           # filled by refresh_llamacpp() from HUNTUN_LLAMACPP_URL
 MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG}
 MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG]
 _ollama_checked = 0.0
 _vllm_checked = 0.0
+_llamacpp_checked = 0.0
 
 
 def ollama_host() -> str:
@@ -170,9 +172,182 @@ def refresh_vllm(force: bool = False) -> list[ModelInfo]:
     return VLLM_CATALOG
 
 
+# ---- llama.cpp server: settings saved from the Projects page (~/.huntun/providers.json) win over HUNTUN_LLAMACPP_* ----
+_saved_cache: tuple[float, dict] = (-1.0, {})
+
+
+def _providers_file():
+    import os
+    from pathlib import Path
+
+    return Path(os.environ.get("HUNTUN_HOME") or Path.home() / ".huntun") / "providers.json"
+
+
+def saved_provider(name: str) -> dict:
+    """What the Projects page saved for a provider ({} when nothing); re-read whenever the file changes."""
+    import json
+
+    global _saved_cache
+    f = _providers_file()
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        return {}
+    if mtime != _saved_cache[0]:
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, ValueError):
+            data = {}
+        _saved_cache = (mtime, data if isinstance(data, dict) else {})
+    entry = _saved_cache[1].get(name)
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def save_provider(name: str, values: dict | None) -> None:
+    """Stores (or with None, forgets) a provider's settings; the file holds API keys, so only its owner may read it."""
+    import json
+    import os
+
+    global _saved_cache
+    f = _providers_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(f.read_text())
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    if values is None:
+        data.pop(name, None)
+    else:
+        data[name] = values
+    tmp = f.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps(data, indent=2))
+    os.replace(tmp, f)
+    _saved_cache = (-1.0, {})
+    if name == "llamacpp":
+        refresh_llamacpp(force=True)
+
+
+def llamacpp_settings() -> dict:
+    """The effective llama.cpp server settings and where they come from: {"url", "key", "note", "source"}."""
+    import os
+
+    saved = saved_provider("llamacpp")
+    if saved.get("url"):
+        return {"url": normalize_server_url(str(saved["url"])), "key": str(saved.get("key") or ""), "note": str(saved.get("note") or ""), "source": "saved"}
+    url = normalize_server_url(os.environ.get("HUNTUN_LLAMACPP_URL") or "")
+    return {"url": url, "key": os.environ.get("HUNTUN_LLAMACPP_KEY") or "", "note": os.environ.get("HUNTUN_LLAMACPP_NOTE", ""),
+            "source": "environment" if url else ""}
+
+
+def normalize_server_url(url: str) -> str:
+    """ "10.0.0.72:8080" -> "http://10.0.0.72:8080"; trailing slashes and a trailing /v1 are dropped (the clients add their paths)."""
+    url = url.strip().rstrip("/")
+    if url and "://" not in url:
+        url = "http://" + url
+    if url.endswith("/v1"):
+        url = url[: -len("/v1")]
+    return url
+
+
+def llamacpp_url() -> str:
+    return llamacpp_settings()["url"]
+
+
+def llamacpp_key() -> str:
+    """The llama-server's --api-key, or a placeholder a server without one ignores."""
+    return llamacpp_settings()["key"] or "none"
+
+
+def probe_llamacpp(url: str, key: str = "", timeout: float = 1.5) -> dict:
+    """Asks a llama-server what it serves: {"ok", "models", "context", "slots", "error"}.
+
+    The alias comes from GET /v1/models; GET /props gives the context of one slot (the whole pool when the server
+    shares its KV cache) and how many sessions it runs at once.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = normalize_server_url(url)
+    if not url:
+        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": "no server address set"}
+
+    def get(path: str) -> dict:
+        req = urllib.request.Request(url + path, headers={"Authorization": f"Bearer {key or 'none'}"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+
+    try:
+        ids = [str(m["id"]) for m in get("/v1/models").get("data") or [] if m.get("id")]
+    except urllib.error.HTTPError as e:
+        err = "the server rejected the API key" if e.code == 401 else f"the server answered HTTP {e.code}"
+        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": err}
+    except Exception as e:
+        reason = getattr(e, "reason", None) or e
+        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": f"cannot reach {url}: {reason}"}
+    context = slots = 0
+    try:
+        props = get("/props")
+        context = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0)
+        slots = int(props.get("total_slots") or 0)
+    except Exception:
+        pass
+    if not ids:
+        return {"ok": False, "models": [], "context": context, "slots": slots, "error": "the server lists no model"}
+    return {"ok": True, "models": ids, "context": context, "slots": slots, "error": ""}
+
+
+def refresh_llamacpp(force: bool = False) -> list[ModelInfo]:
+    """The model the configured llama.cpp server serves, as catalog entries; cached for 30 s.
+
+    Settings come from the Projects page or HUNTUN_LLAMACPP_URL / _KEY / _NOTE. HUNTUN_LLAMACPP_MODELS="name[@context],..."
+    skips the discovery. The note is added to the model's description in the catalog the master chooses from.
+    """
+    import os
+    import time
+
+    global _llamacpp_checked
+    # an empty answer is cached too: the server is usually another machine, and one that is switched off would
+    # otherwise cost a connection timeout on every page refresh
+    if not force and time.time() - _llamacpp_checked < 30:
+        return LLAMACPP_CATALOG
+    _llamacpp_checked = time.time()
+    cfg = llamacpp_settings()
+    url = cfg["url"]
+    default_ctx = int(os.environ.get("HUNTUN_LLAMACPP_CONTEXT", "32768"))
+    forced = os.environ.get("HUNTUN_LLAMACPP_MODELS", "")
+    names: list[tuple[str, int]] = []
+    slots = 0
+    if forced.strip():
+        for item in forced.split(","):
+            if item.strip():
+                n, _, c = item.strip().partition("@")
+                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
+    elif url:
+        info = probe_llamacpp(url, cfg["key"])
+        slots = info["slots"]
+        names = [(i, info["context"] or default_ctx) for i in info["models"]]
+    where = url.split("//", 1)[-1] if url else "your network"
+    use_for = f"local model served by llama.cpp at {where} (no per-token cost; speed and quality depend on that machine)"
+    if slots:
+        use_for += f"; it runs {slots} session{'s' if slots != 1 else ''} at once, so give it at most {slots} seat{'s' if slots != 1 else ''}"
+    note = cfg["note"].strip()
+    if note:
+        use_for += f"; {note}"
+    found = [ModelInfo(n, n, "llamacpp", 0.0, 0.0, c, use_for, "llamacpp") for n, c in names]
+    LLAMACPP_CATALOG[:] = found
+    for m in found:
+        MODEL_BY_ID[m.id] = m
+    return LLAMACPP_CATALOG
+
+
 def model_ids() -> list[str]:
-    """Every model id an agent can be put on: the fixed catalogs plus what the local Ollama and vLLM servers serve now."""
-    local = [m.id for m in refresh_ollama() + refresh_vllm()]
+    """Every model id an agent can be put on: the fixed catalogs plus what the local Ollama, vLLM and llama.cpp servers serve now."""
+    local = [m.id for m in refresh_ollama() + refresh_vllm() + refresh_llamacpp()]
     return MODEL_IDS + [i for i in dict.fromkeys(local) if i not in MODEL_IDS]
 
 
@@ -187,6 +362,8 @@ def catalog_for(backend: str) -> list[ModelInfo]:
         return refresh_ollama()
     if backend == "vllm":
         return refresh_vllm()
+    if backend == "llamacpp":
+        return refresh_llamacpp()
     return MODEL_CATALOG
 
 
@@ -212,6 +389,8 @@ def available_backends() -> dict[str, str]:
         out["ollama"] = "Ollama server with models"
     if refresh_vllm():
         out["vllm"] = "vLLM server with models"
+    if refresh_llamacpp():
+        out["llamacpp"] = "llama.cpp server with a model"
     return out
 
 
@@ -248,6 +427,8 @@ def backend_for_model(model_id: str | None, available: dict[str, str] | None = N
         return "ollama" if "ollama" in avail else default
     if m.vendor == "vllm":
         return "vllm" if "vllm" in avail else default
+    if m.vendor == "llamacpp":
+        return "llamacpp" if "llamacpp" in avail else default
     if "claude-code" in avail:
         return "claude-code"
     if "api" in avail:
@@ -271,6 +452,8 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "ollama") for m in refresh_ollama()]
     if "vllm" in avail:
         out += [(m, "vllm") for m in refresh_vllm()]
+    if "llamacpp" in avail:
+        out += [(m, "llamacpp") for m in refresh_llamacpp()]
     return out
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 DEFAULT_API_MODEL = "claude-opus-5-5"
@@ -303,13 +486,14 @@ def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, ca
 def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
     """Rough list-price cost for a token volume: assumes 85% input (half of it cached), 15% output. Codex models price at 0."""
     m = model_info(model_id)
-    if not m or m.tier in ("codex", "kimi", "ollama", "vllm"):
+    if not m or m.tier in ("codex", "kimi", "ollama", "vllm", "llamacpp"):
         return 0.0
     inp, out = tokens * 0.85, tokens * 0.15
     return round((inp * 0.5 * m.input_per_m + inp * 0.5 * m.input_per_m * 0.1 + out * m.output_per_m) / 1e6, 2)
 
 
-BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)", "vllm": "vLLM (local)"}
+BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)",
+                 "vllm": "vLLM (local)", "llamacpp": "llama.cpp server (local)"}
 
 
 def catalog_text(backend: str = "api", available: dict[str, str] | None = None) -> str:
@@ -318,7 +502,8 @@ def catalog_text(backend: str = "api", available: dict[str, str] | None = None) 
         pairs = [(m, backend) for m in catalog_for(backend)]
     lines = []
     for m, b in pairs:
-        price = (f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m else "runs locally, no per-token price" if m.vendor in ("ollama", "vllm")
+        price = (f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m
+                 else "runs locally, no per-token price" if m.vendor in ("ollama", "vllm", "llamacpp")
                  else "billed through the ChatGPT plan, no per-token price")
         lines.append(f"- {m.id} ({m.label}; vendor {m.vendor}; runs via {BACKEND_LABEL.get(b, b)}; {price}; {m.context // 1000}k context): {m.use_for}")
     return "\n".join(lines)

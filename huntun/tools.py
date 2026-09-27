@@ -497,7 +497,7 @@ def _with_models(spec: ToolSpec, ids: list[str]) -> ToolSpec:
 
 def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
     is_master = ctx.agent.role == "master"
-    specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama", "vllm") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
+    specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama", "vllm", "llamacpp") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
     if is_master:                                                                          # only the master's tools (hire, set model) name models
         ids = model_ids()
         specs = [_with_models(t, ids) for t in specs]

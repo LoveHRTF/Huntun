@@ -64,7 +64,7 @@ def default_config(goal: str) -> HuntunConfig:
 def resolve_backend(config: HuntunConfig) -> str:
     """Picks the model backend: an explicit setting wins, otherwise API key -> api, Claude Code CLI -> claude-code."""
     choice = os.environ.get("HUNTUN_BACKEND") or config.backend
-    if choice in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm"):
+    if choice in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"):
         return choice
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return "api"
@@ -83,11 +83,13 @@ def resolve_backend(config: HuntunConfig) -> str:
         return "ollama"
     if "vllm" in avail:
         return "vllm"
+    if "llamacpp" in avail:
+        return "llamacpp"
     raise RuntimeError(
         "No model backend available. Set ANTHROPIC_API_KEY (backend 'api'), or install and log in to Claude Code "
         "(`claude` on PATH, backend 'claude-code'), OpenAI Codex (`codex` on PATH, backend 'codex'), Kimi Code (`kimi` on PATH, backend 'kimi'), "
-        "DeepSeek (DEEPSEEK_API_KEY, backend 'deepseek'), a local Ollama server with models (backend 'ollama') or a vLLM server (VLLM_BASE_URL, backend 'vllm'). "
-        "Force one with --backend or HUNTUN_BACKEND."
+        "DeepSeek (DEEPSEEK_API_KEY, backend 'deepseek'), a local Ollama server with models (backend 'ollama'), a vLLM server (VLLM_BASE_URL, backend 'vllm') "
+        "or a llama.cpp server (set on the Projects page or HUNTUN_LLAMACPP_URL, backend 'llamacpp'). Force one with --backend or HUNTUN_BACKEND."
     )
 
 

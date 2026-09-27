@@ -1,8 +1,8 @@
 """Anthropic Messages API backend: a manual streaming tool-use loop whose message history is written
 to disk after every step so a cycle can be paused and resumed.
 
-The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic) and a local
-Ollama server (http://127.0.0.1:11434). In that "compat" mode the Anthropic-only extras (betas, server-side
+The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic), a local
+Ollama server (http://127.0.0.1:11434) and a llama.cpp server (llama-server at HUNTUN_LLAMACPP_URL). In that "compat" mode the Anthropic-only extras (betas, server-side
 fallbacks, effort, adaptive thinking, server tools, eager input streaming) are left out, and any field a provider
 still rejects with a 400 is dropped and the call retried.
 """
@@ -30,6 +30,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "api": {"label": "Anthropic API"},
     "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com/anthropic", "key_env": "DEEPSEEK_API_KEY"},
     "ollama": {"label": "Ollama (local)", "base_url_env": "OLLAMA_HOST", "base_url": "http://127.0.0.1:11434", "key": "ollama"},
+    # llama-server takes the key as X-Api-Key (what the SDK sends); without --api-key it ignores the placeholder
+    "llamacpp": {"label": "llama.cpp server", "base_url_env": "HUNTUN_LLAMACPP_URL", "base_url": "http://127.0.0.1:8080",
+                 "key_env": "HUNTUN_LLAMACPP_KEY", "key": "none"},
 }
 OPTIONAL_FIELDS = ("fallbacks", "output_config", "thinking", "cache_control", "tool_choice", "eager_input_streaming")   # dropped one by one on a 400
 
@@ -63,7 +66,7 @@ def _serializable(content: Any) -> list[dict[str, Any]]:
 class ApiBackend:
     name = "api"
     provider = "api"
-    compat = False                        # True for Anthropic-compatible providers (DeepSeek, Ollama)
+    compat = False                        # True for Anthropic-compatible providers (DeepSeek, Ollama, llama.cpp)
     dropped: set[str]
 
     def __init__(self, config: HuntunConfig, provider: str = "api") -> None:
@@ -73,14 +76,35 @@ class ApiBackend:
         self.compat = provider != "api"
         self.dropped = set()
         spec = PROVIDERS[provider]
+        self._client_for: tuple[str, str] | None = None
         if self.compat:
-            base = os.environ.get(spec.get("base_url_env", ""), "") or spec["base_url"]
-            key = os.environ.get(spec["key_env"]) if spec.get("key_env") else spec.get("key")
+            base, key = self._endpoint()
             if not key:
                 raise RuntimeError(f"{spec['label']}: set {spec['key_env']}")
-            self.client = anthropic.AsyncAnthropic(api_key=key, base_url=base.rstrip("/"))
+            self.client = anthropic.AsyncAnthropic(api_key=key, base_url=base)
+            self._client_for = (base, key)
         else:
             self.client = anthropic.AsyncAnthropic()
+
+    def _endpoint(self) -> tuple[str, str]:
+        """(base URL, API key) for a compatible provider; the llama.cpp server's come from the Projects page or the environment."""
+        spec = PROVIDERS[self.provider]
+        if self.provider == "llamacpp":
+            from ..models import llamacpp_key, llamacpp_url
+
+            return (llamacpp_url() or spec["base_url"]), llamacpp_key()
+        base = os.environ.get(spec.get("base_url_env", ""), "") or spec["base_url"]
+        key = (os.environ.get(spec["key_env"]) if spec.get("key_env") else None) or spec.get("key")
+        return base.rstrip("/"), key or ""
+
+    def _sync_client(self) -> None:
+        """A llama.cpp server can be re-pointed from the Projects page while a team runs: follow it on the next call."""
+        if self.provider != "llamacpp" or self._client_for is None:
+            return
+        current = self._endpoint()
+        if current != self._client_for:
+            self.client = anthropic.AsyncAnthropic(api_key=current[1], base_url=current[0])
+            self._client_for = current
 
     def _default_model(self) -> str:
         if not self.compat:
@@ -103,6 +127,7 @@ class ApiBackend:
 
     async def _send(self, params: dict[str, Any]) -> Any:
         """One streamed call; on a 400 that names an optional field, drop that field for good and retry."""
+        self._sync_client()
         while True:
             p = self._prepare(params)
             try:
@@ -158,6 +183,7 @@ class ApiBackend:
         raise RuntimeError(f"Model did not call {tool_name}. It said: {text[:500]}")
 
     async def probe(self) -> bool:
+        self._sync_client()
         try:
             await self.client.messages.create(model="claude-haiku-4-5" if not self.compat else self._default_model(), max_tokens=5, messages=[{"role": "user", "content": "ping"}])
             return True

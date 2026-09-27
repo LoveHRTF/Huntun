@@ -62,7 +62,12 @@ class RenderTests(HubTests):
         return resp
 
     def test_every_page_state_renders(self) -> None:
-        self.render("#/", {"/api/workspaces": {"workspaces": [], "home": "/"}, "/api/fs": {"path": "/", "exists": True, "parent": None, "dirs": [], "files": 0, "initialized": False, "git": False, "home": "/"}})
+        home = {"/api/workspaces": {"workspaces": [], "home": "/"}, "/api/fs": {"path": "/", "exists": True, "parent": None, "dirs": [], "files": 0, "initialized": False, "git": False, "home": "/"},
+                "/api/providers": {"llamacpp": {"url": "", "has_key": False, "note": "", "source": ""}}}
+        self.render("#/", home)
+        served = {"ok": True, "models": ["qwen3.8-flash-next-uncensored"], "context": 262144, "slots": 2, "error": ""}
+        out = self.render("#/", {**home, "/api/providers": {"llamacpp": {"url": "http://10.0.0.72:8080", "has_key": True, "note": "", "source": "saved", "status": served}}})
+        self.assertIn("qwen3.8-flash-next-uncensored · 256K context · 2 sessions at once", out["text"])
         w = self.srv.call("/api/workspaces", {"path": str(self.project)})
         wid = w["id"]
         self.render(f"#/w/{wid}/setup", {"/api/workspaces": {"workspaces": [w], "home": "/"}, f"/api/workspaces/{wid}": w})
@@ -111,6 +116,15 @@ class RenderTests(HubTests):
         pass
 
     def test_browse(self) -> None:
+        pass
+
+    def test_writes_from_other_sites_are_refused(self) -> None:
+        pass
+
+    def test_reads_from_other_sites_are_refused_but_the_page_opens_from_anywhere(self) -> None:
+        pass
+
+    def test_allowed_hosts_admit_a_proxy_name(self) -> None:
         pass
 
 

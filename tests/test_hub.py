@@ -318,5 +318,68 @@ class HubTests(unittest.TestCase):
             FakeBackend.structured = original  # type: ignore[assignment]
 
 
+    # ---- requests other web pages could make through the user's browser -------------------------------------------
+
+    def raw(self, path: str, body: str | None = None, headers: dict[str, str] | None = None) -> tuple[int, Any]:
+        """One request with exactly these headers (urllib adds Host, and a form content type for a body without one)."""
+        req = urllib.request.Request(self.srv.base + path, data=body.encode() if body is not None else None,
+                                     method="POST" if body is not None else "GET", headers=headers or {})
+        try:
+            with urllib.request.urlopen(req) as r:
+                status, raw = r.status, r.read().decode()
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, e.read().decode()
+        try:
+            return status, json.loads(raw)
+        except ValueError:
+            return status, raw
+
+    def test_writes_from_other_sites_are_refused(self) -> None:
+        body = json.dumps({"path": str(self.project)})
+        port = self.srv.server.server_address[1]
+        json_ct = {"content-type": "application/json"}
+        attacks = {
+            "text/plain, sent by any page without a preflight": ({"content-type": "text/plain"}, 415),
+            "a form post": ({"content-type": "application/x-www-form-urlencoded"}, 415),
+            "no content type": ({}, 415),
+            "a foreign Origin": ({**json_ct, "origin": "https://evil.example"}, 403),
+            "an opaque origin (sandboxed frame, file://)": ({**json_ct, "origin": "null"}, 403),
+            "a page on another port of this machine": ({**json_ct, "origin": "http://127.0.0.1:8080"}, 403),
+            "the browser flagging it cross-site": ({**json_ct, "sec-fetch-site": "cross-site"}, 403),
+            "DNS rebinding (the page's own name, resolved to 127.0.0.1)": ({**json_ct, "host": f"evil.example:{port}", "origin": f"http://evil.example:{port}"}, 403),
+        }
+        for what, (headers, status) in attacks.items():
+            with self.subTest(what):
+                code, res = self.raw("/api/workspaces", body, headers)
+                self.assertEqual(code, status, res)
+        self.assertEqual(self.srv.call("/api/workspaces")["workspaces"], [], "none of them registered the project")
+
+        # the page itself: same-origin JSON, whether opened as 127.0.0.1 or localhost
+        code, w = self.raw("/api/workspaces", body, {**json_ct, "origin": f"http://127.0.0.1:{port}", "sec-fetch-site": "same-origin"})
+        self.assertEqual(code, 201, w)
+        code, res = self.raw(f"/api/workspaces/{w['id']}/init", json.dumps({"goal": "  "}),
+                             {**json_ct, "host": f"localhost:{port}", "origin": f"http://localhost:{port}", "sec-fetch-site": "same-origin"})
+        self.assertEqual(code, 400, res)                                                # reached the handler: the goal is empty
+        # scripts and the documented curl calls: JSON without browser headers
+        self.assertEqual(self.srv.call(f"/api/workspaces/{w['id']}/forget", {}), {"ok": True})
+
+    def test_reads_from_other_sites_are_refused_but_the_page_opens_from_anywhere(self) -> None:
+        port = self.srv.server.server_address[1]
+        self.assertEqual(self.raw("/api/workspaces", headers={"sec-fetch-site": "cross-site"})[0], 403)   # e.g. <img src=...>
+        self.assertEqual(self.raw("/api/workspaces", headers={"host": f"evil.example:{port}"})[0], 403)    # DNS rebinding
+        self.assertEqual(self.raw("/api/workspaces", headers={"sec-fetch-site": "same-origin"})[0], 200)
+        code, page = self.raw("/", headers={"sec-fetch-site": "cross-site"})                               # following a link
+        self.assertEqual(code, 200)
+        self.assertIn("<html", page.lower())
+
+    def test_allowed_hosts_admit_a_proxy_name(self) -> None:
+        port = self.srv.server.server_address[1]
+        headers = {"host": f"huntun.lan:{port}", "origin": f"http://huntun.lan:{port}", "content-type": "application/json"}
+        self.assertEqual(self.raw("/api/workspaces", json.dumps({"path": str(self.project)}), headers)[0], 403)
+        os.environ["HUNTUN_ALLOWED_HOSTS"] = "huntun.lan"
+        self.addCleanup(os.environ.pop, "HUNTUN_ALLOWED_HOSTS", None)
+        self.assertEqual(self.raw("/api/workspaces", json.dumps({"path": str(self.project)}), headers)[0], 201)
+
+
 if __name__ == "__main__":
     unittest.main()

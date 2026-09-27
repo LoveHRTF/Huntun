@@ -35,7 +35,7 @@ from .store import Store
 
 EPILOG = """environment:
   ANTHROPIC_API_KEY              use the Anthropic API backend (or `ant auth login`)
-  HUNTUN_BACKEND                 force a backend: api|claude-code|codex|kimi|deepseek|ollama|vllm (default: auto-detect)
+  HUNTUN_BACKEND                 force a backend: api|claude-code|codex|kimi|deepseek|ollama|vllm|llamacpp (default: auto-detect)
   VLLM_BASE_URL (http://127.0.0.1:8000/v1)  VLLM_API_KEY  HUNTUN_VLLM_MODELS   local vLLM server (backend vllm)
   HUNTUN_MODEL (claude-opus-5-5)   HUNTUN_LEAD_EFFORT (xhigh)  HUNTUN_WORKER_EFFORT (high)
   HUNTUN_REVIEW_INTERVAL_MIN (20)  HUNTUN_IDLE_INTERVAL_SEC (90)  HUNTUN_LEAD_IDLE_INTERVAL_SEC (600)
@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("init", help="plan the team for a goal from the command line (the web app can do this too)")
     add_dir(s)
-    s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm"], help="model backend (default: auto-detect)")
+    s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"], help="model backend (default: auto-detect)")
     s.add_argument("--context", default="", help="extra context for the master: constraints, stack preferences, existing code")
     s.add_argument("goal", nargs="+", help="what the team should build")
 

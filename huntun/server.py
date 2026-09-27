@@ -5,6 +5,7 @@ Runs in a background thread; anything that touches agents is handed to the hub's
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,7 +14,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .hub import Hub, browse
-from .models import BACKEND_LABEL, available_backends, catalog_available, catalog_for
+from .models import (BACKEND_LABEL, available_backends, catalog_available, catalog_for, llamacpp_settings, normalize_server_url,
+                     probe_llamacpp, save_provider)
 from .personalities import PERSONALITIES
 
 PAGE = (Path(__file__).parent / "app.html").read_text()
@@ -41,6 +43,32 @@ def _limits_from(store: Any) -> dict[str, Any]:
             "resume_count": int(g("limit_resume_count", "0") or 0), "gate": g("resume_gate", "") or None, "next_probe_at": None, "last_probe": None, "auto": False}
 
 
+def _llamacpp_view(probe: bool = True) -> dict[str, Any]:
+    """The llama.cpp server settings for the Projects page: never the key itself, only whether one is set."""
+    cfg = llamacpp_settings()
+    view: dict[str, Any] = {"url": cfg["url"], "has_key": bool(cfg["key"]), "note": cfg["note"], "source": cfg["source"]}
+    if probe and cfg["url"]:
+        view["status"] = probe_llamacpp(cfg["url"], cfg["key"])
+    return view
+
+
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def allowed_hosts() -> set[str]:
+    """Host names the server answers to: loopback only, plus HUNTUN_ALLOWED_HOSTS (comma-separated) for a proxy in front."""
+    extra = {h.strip().lower() for h in os.environ.get("HUNTUN_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    return LOCAL_HOSTS | extra
+
+
+def _hostname(host: str) -> str:
+    """ "127.0.0.1:4747" -> "127.0.0.1", "[::1]:4747" -> "[::1]"."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host.split("]", 1)[0] + "]"
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
 class HttpError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
@@ -65,6 +93,26 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             n = int(self.headers.get("content-length") or 0)
             raw = self.rfile.read(n) if n else b""
             return json.loads(raw) if raw else {}
+
+        def _guard(self, write: bool) -> None:
+            """Refuses requests another web page could make through the user's browser.
+
+            Any site open in the browser can send requests to 127.0.0.1, and the API can add projects, approve plans, start
+            agents and re-point model traffic. So: the Host must be this machine (a DNS-rebinding page names its own domain);
+            the browser must not flag the request as coming from another site (Sec-Fetch-Site) or origin (Origin); and a
+            write must carry a JSON body, which another site cannot send without a CORS preflight this server never answers.
+            The web app, the documented curl calls and scripts using urllib all pass.
+            """
+            host = self.headers.get("host") or ""
+            if _hostname(host) not in allowed_hosts():
+                raise HttpError(403, f"unknown host {host!r}; open Huntun at http://127.0.0.1 (or set HUNTUN_ALLOWED_HOSTS)")
+            if (self.headers.get("sec-fetch-site") or "").lower() in ("cross-site", "same-site"):
+                raise HttpError(403, "cross-site request refused")
+            origin = self.headers.get("origin")
+            if origin is not None and urlparse(origin).netloc.lower() != host.lower():
+                raise HttpError(403, "cross-origin request refused")
+            if write and (self.headers.get("content-type") or "").split(";")[0].strip().lower() != "application/json":
+                raise HttpError(415, "send JSON (content-type: application/json)")
 
         def _entry(self, wid: str):
             e = hub.get(wid)
@@ -98,6 +146,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             url = urlparse(self.path)
             path = url.path
             try:
+                if path.startswith("/api/"):
+                    self._guard(write=False)                                      # some reads load a project's agents
                 if path == "/":
                     data = PAGE.encode()
                     self.send_response(200)
@@ -108,6 +158,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     return
                 if path == "/api/workspaces":
                     return self._json(200, {"workspaces": hub.list(), "home": str(Path.home()), "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
+                if path == "/api/providers":
+                    return self._json(200, {"llamacpp": _llamacpp_view()})
                 if path == "/api/fs":
                     q = parse_qs(url.query)
                     return self._json(200, browse((q.get("path") or [None])[0]))
@@ -179,7 +231,25 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
         def do_POST(self) -> None:
             path = urlparse(self.path).path
             try:
+                self._guard(write=True)
                 body = self._body()
+                if path in ("/api/providers/llamacpp", "/api/providers/llamacpp/test"):
+                    current = llamacpp_settings()
+                    url = normalize_server_url(str(body.get("url") or ""))
+                    if body.get("clear_key"):
+                        key = ""
+                    elif body.get("key"):
+                        key = str(body["key"]).strip()
+                    else:
+                        key = current["key"]                                      # blank field: keep the key already set
+                    if path.endswith("/test"):
+                        return self._json(200, probe_llamacpp(url, key))
+                    if url:
+                        save_provider("llamacpp", {"url": url, "key": key, "note": str(body.get("note") or "").strip()})
+                    else:
+                        save_provider("llamacpp", None)                           # back to HUNTUN_LLAMACPP_* if set
+                    return self._json(200, {"llamacpp": _llamacpp_view(),
+                                            "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/workspaces":
                     e = hub.add(str(body.get("path") or ""))
                     if e.orchestrator is None and e.state == "ready":
@@ -216,7 +286,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     raise HttpError(409, str(ex)) from None
                 return self._json(202, self._entry(wid).summary())
             if sub == "/init":
-                backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm") else None
+                backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp") else None
                 try:
                     e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0))
                 except ValueError as ex:

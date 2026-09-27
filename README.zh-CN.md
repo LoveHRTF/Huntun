@@ -22,7 +22,7 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 
 **为持续运行而设计。** 每位成员拥有独立的记忆、笔记与会话。暂停、重启以及供应商用量限制都不会丢失上下文：工作从中断处精确恢复，你可以离开任意时长。
 
-**按席位选择供应商。** Claude Code、OpenAI Codex、Kimi Code、DeepSeek、通过 Ollama 或 vLLM 运行的本地模型与 Anthropic API 可在同一支团队中组合使用：关键工作交给最强的模型，常规任务以最低成本完成。
+**按席位选择供应商。** Claude Code、OpenAI Codex、Kimi Code、DeepSeek、通过 Ollama、vLLM 或 llama.cpp 服务器运行的本地模型与 Anthropic API 可在同一支团队中组合使用：关键工作交给最强的模型，常规任务以最低成本完成。
 
 **运行状态一目了然。** 像素风办公室实时呈现团队状态：谁在推理、编码、讨论、等待、压缩上下文，或因错误与用量限制而受阻。提供九种环境，从企业园区到交易大厅。
 
@@ -44,10 +44,11 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 | Kimi Code | `npm i -g @moonshot-ai/kimi-code`（或 `brew install kimi-code`），然后 `kimi login` 并选择模型。 | PATH 中存在 `kimi` 且已配置模型 |
 | DeepSeek | 在 platform.deepseek.com 创建 API key 并导出：`export DEEPSEEK_API_KEY=sk-...`。 | 已设置 `DEEPSEEK_API_KEY` |
 | Ollama（本地） | 安装 Ollama 0.14 或更新版本，拉取一个支持工具调用的模型，并用适合内存的上下文长度启动服务：`ollama pull qwen3:27b`，然后 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`。可选：指定 Huntun 使用的模型与上下文：`export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`。 | `OLLAMA_HOST`（默认 `http://127.0.0.1:11434`）上有可响应且已加载模型的服务 |
-| vLLM（本地） | 用开启工具调用的方式部署一个支持工具调用的模型：`vllm serve Qwen/Qwen3-32B --enable-auto-tool-choice --tool-call-parser hermes`。如果服务不在默认地址，告诉 Huntun 它在哪里：`export VLLM_BASE_URL=http://gpu-box:8000/v1`（若服务以 `--api-key` 启动，再设置 `VLLM_API_KEY`）。其他 OpenAI 兼容服务（SGLang、LM Studio、llama.cpp 的 `llama-server`）用法相同。 | `VLLM_BASE_URL`（默认 `http://127.0.0.1:8000/v1`）上有可响应且已加载模型的服务 |
+| vLLM（本地） | 用开启工具调用的方式部署一个支持工具调用的模型：`vllm serve Qwen/Qwen3-32B --enable-auto-tool-choice --tool-call-parser hermes`。如果服务不在默认地址，告诉 Huntun 它在哪里：`export VLLM_BASE_URL=http://gpu-box:8000/v1`（若服务以 `--api-key` 启动，再设置 `VLLM_API_KEY`）。其他 OpenAI 兼容服务（SGLang、LM Studio）用法相同；llama.cpp 的 `llama-server` 请使用下面的 llama.cpp 提供方。 | `VLLM_BASE_URL`（默认 `http://127.0.0.1:8000/v1`）上有可响应且已加载模型的服务 |
+| llama.cpp 服务器（本机或局域网） | 在本机或另一台机器上用 `--jinja`（工具调用需要）运行 `llama-server`，然后在 Huntun 项目页的 **模型提供方** 中填写它的地址（以及 API 密钥，如有），点 **测试** 可查看它提供的模型；也可以在启动 Huntun 前设置 `HUNTUN_LLAMACPP_URL` 和 `HUNTUN_LLAMACPP_KEY`。Huntun 会从服务器读取模型名、每个槽位的上下文和可并行的会话数；可选的说明（`HUNTUN_LLAMACPP_NOTE`）会在主管分配席位时提供参考（例如模型擅长什么、速度多快）。[`deploy/flash-next-4090`](deploy/flash-next-4090/README.md) 可为 Qwen3.8-Flash-Next 搭建这样的服务器。 | 已配置的服务器可响应且已加载模型 |
 | Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...`。 | 已设置 `ANTHROPIC_API_KEY` |
 
-可用 `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|vllm|api` 强制指定提供方，或在设置页面选择。
+可用 `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|vllm|llamacpp|api` 强制指定提供方，或在设置页面选择。
 
 **安装**
 
