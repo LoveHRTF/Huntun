@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 import threading
@@ -28,9 +29,12 @@ PLAN = {"decode_total_2": 60.0, "prefill": 4000.0}
 EXPECT = {"decode_1": (15, 20), "decode_total_2": (18, 25), "prefill": (550, 800)}
 
 
+AUTH: dict[str, str] = {}   # Authorization header for a server started with --api-key
+
+
 def post(url: str, body: dict, headers: dict | None = None, timeout: float = 1800) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", **(headers or {})})
+                                 headers={"Content-Type": "application/json", **AUTH, **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 
@@ -82,7 +86,7 @@ def check_messages(base: str, model: str, key: str) -> bool:
     }
     t0 = time.time()
     try:
-        r = post(base + "/v1/messages", body, {"x-api-key": key, "anthropic-version": "2023-06-01"})
+        r = post(base + "/v1/messages", body, {"x-api-key": key or "none", "anthropic-version": "2023-06-01"})
     except urllib.error.HTTPError as e:
         print(f"  /v1/messages failed: HTTP {e.code} {e.read().decode()[:300]}")
         return False
@@ -123,7 +127,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8080")
     ap.add_argument("--model", default="qwen3.8-flash-next-uncensored")
-    ap.add_argument("--api-key", default="ollama", help="what Huntun sends; only checked if the server has --api-key")
+    ap.add_argument("--api-key", default=os.environ.get("FLASHNEXT_API_KEY", ""), help="the server's API key (API_KEY in the kit's config), if it has one")
     ap.add_argument("--parallel", type=int, default=2, help="the server's -np")
     ap.add_argument("--quick", action="store_true", help="shorter prompts and generations")
     ap.add_argument("--sizes", default="", help="comma-separated prompt lengths for the prefill test; the last one is also "
@@ -131,6 +135,8 @@ def main() -> int:
     ap.add_argument("--skip-messages", action="store_true")
     a = ap.parse_args()
     base = a.url.rstrip("/")
+    if a.api_key:
+        AUTH["Authorization"] = f"Bearer {a.api_key}"
 
     print(f"Waiting for {base} ...")
     wait_ready(base)

@@ -71,15 +71,27 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # once, to allow local scr
 winget install Python.Python.3.12                     # if Python 3.10+ is missing
 .\setup.ps1 check      # GPU/driver, PCIe, RAM, page file, NVMe, Defender
 .\setup.ps1 install    # latest llama.cpp Windows CUDA 12.4 build + Python venv
-.\setup.ps1 download   # ~85 GB into %USERPROFILE%\flash-next\models (put FLASHNEXT_HOME on the NVMe drive)
-.\setup.ps1 tune       # as administrator: no sleep, Defender exclusion, firewall rule
-.\serve.ps1            # foreground
+.\setup.ps1 login      # the model repo is gated: accept its terms on Hugging Face first
+.\setup.ps1 download   # ~88 GB into %USERPROFILE%\flash-next\models (put FLASHNEXT_HOME on the NVMe drive)
+.\serve.ps1            # foreground; chat at http://localhost:8080
 & "$env:USERPROFILE\flash-next\venv\Scripts\python.exe" ..\bench.py   # second window
-.\setup.ps1 task       # optional: start the server at logon (log in %USERPROFILE%\flash-next\server.log)
 ```
 
+To serve the local network (chat from other devices, Huntun on the Mac mini):
+
+```powershell
+.\setup.ps1 apikey     # generates a key into config.local.ps1; every client must send it
+.\setup.ps1 tune       # as administrator: firewall rule for the local network, no sleep, Defender exclusion
+.\setup.ps1 service    # as administrator: start at boot, no sign-in needed (asks for your Windows password)
+.\setup.ps1 connect    # prints the chat address and the lines to paste into Huntun's environment
+```
+
+`service` runs the server in the background after every reboot; if its log (`%USERPROFILE%\flash-next\server.log`) does
+not list the RTX 4090 as a CUDA device, use `.\setup.ps1 task` instead, which starts it when you sign in. After
+changing settings, restart it with `Stop-ScheduledTask flash-next; Start-ScheduledTask flash-next`.
+
 Settings live in `windows\config.ps1`; override them in `windows\config.local.ps1` (git-ignored), e.g.
-`$FLASHNEXT_HOME = "D:\flash-next"`, `$HUNTUN_HOST_IP = "192.168.1.30"`, `$PARALLEL = 1`.
+`$FLASHNEXT_HOME = "D:\flash-next"`, `$CTX_PER_SLOT = 131072`, `$ALLOW_FROM = "192.168.1.30"`.
 
 Windows-specific points:
 
@@ -127,27 +139,31 @@ FIT_TARGET_MIB=1536   # if a desktop session shares the GPU
 
 ## Connecting Huntun
 
-On the machine running Huntun (the Mac mini):
+Huntun has a provider for llama.cpp servers. On the machine running Huntun (the Mac mini), set what
+`setup.ps1 connect` / `setup.sh connect` prints, for example:
 
 ```bash
-export OLLAMA_HOST=http://<4090-box-ip>:8080
-export HUNTUN_OLLAMA_MODELS="qwen3.8-flash-next-uncensored@65536"
+export HUNTUN_LLAMACPP_URL=http://192.168.1.20:8080
+export HUNTUN_LLAMACPP_KEY=<the API_KEY>
+export HUNTUN_LLAMACPP_NOTE="Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s ..."
 ```
 
-Huntun's local provider speaks the Anthropic Messages API, which `llama-server` serves at `/v1/messages`
-(`bench.py` checks exactly this path with a tool call). The context after `@` must match `CTX_PER_SLOT`.
-Give the local model at most `PARALLEL` seats: more agents than slots queue, and they evict each other's prompt
-cache, so every turn re-reads the whole context. Huntun reads a single `OLLAMA_HOST`, so a second local server
-(for example a model on the Mac mini itself) needs a router in front of both until Huntun supports several hosts.
+Restart Huntun. "llama.cpp server" then appears among the providers on the setup page, and the model
+(`qwen3.8-flash-next-uncensored`) among the choices for each seat, next to Claude, Codex and Ollama models. Huntun reads
+the model name, the context of one slot and the number of slots from the server, and tells the master how many
+sessions it runs at once so it staffs no more seats than that: more agents than slots queue, and they evict each
+other's prompt cache, so every turn re-reads the whole context. The note is shown to the master when it staffs the team.
 
-Whether the model thinks is up to the server (Qwen's template thinks by default, capped by `REASONING_BUDGET`);
-`HUNTUN_COMPAT_THINKING=on` also asks for it explicitly.
+Run `bench.py` once without `--skip-messages` (add `--api-key ...`): it checks the `/v1/messages` tool call that
+Huntun relies on. Whether the model thinks is up to the server (Qwen's template thinks by default, capped by
+`REASONING_BUDGET`); `HUNTUN_COMPAT_THINKING=on` also asks for it explicitly.
 
 ## Security
 
-`llama-server` listens on the LAN without authentication by default. Allow only the Huntun host (Windows: set
-`$HUNTUN_HOST_IP` and run `.\setup.ps1 tune`; Linux: `sudo ufw allow from <mac-mini-ip> to any port 8080 proto tcp`). Huntun always sends the key `ollama`, so setting
-`API_KEY=ollama` adds a speed bump but no real protection.
+`llama-server` answers anyone who can reach its port, and without an API key any web page opened on the network could
+use it (it allows all origins). Set a key (`setup.ps1 apikey` / `setup.sh apikey`), and keep the firewall to the local
+network (`ALLOW_FROM`, default `LocalSubnet`) or to the machines that need it. The chat page asks for the key under
+Settings; Huntun sends `HUNTUN_LLAMACPP_KEY`. Never forward the port to the internet.
 
 ## Troubleshooting
 

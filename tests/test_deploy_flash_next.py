@@ -108,6 +108,7 @@ class Download(unittest.TestCase):
 
 class _FakeServer(BaseHTTPRequestHandler):
     tool_use = True
+    required_key = ""
 
     def log_message(self, *a) -> None:
         pass
@@ -125,6 +126,10 @@ class _FakeServer(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        given = (self.headers.get("Authorization") or self.headers.get("X-Api-Key") or "").removeprefix("Bearer ")
+        if self.required_key and given != self.required_key:
+            self._send({"error": {"message": "Invalid API Key"}}, 401)
+            return
         if self.path == "/tokenize":
             self._send({"tokens": list(range(len(body["content"].split())))})
         elif self.path == "/completion":
@@ -147,6 +152,8 @@ class Bench(unittest.TestCase):
     def tearDown(self) -> None:
         self.server.shutdown()
         _FakeServer.tool_use = True
+        _FakeServer.required_key = ""
+        bench.AUTH.clear()
 
     def _run(self, *args: str) -> tuple[int, str]:
         import sys
@@ -173,6 +180,12 @@ class Bench(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("1 request at 97K context depth", out)
         self.assertNotIn("32K", out)
+
+    def test_sends_the_api_key_on_every_request(self) -> None:
+        _FakeServer.required_key = "k3y"
+        code, out = self._run("--api-key", "k3y")
+        self.assertEqual(code, 0, out)
+        self.assertIn("tool_use: get_time", out)
 
     def test_fails_when_messages_returns_no_tool_call(self) -> None:
         _FakeServer.tool_use = False

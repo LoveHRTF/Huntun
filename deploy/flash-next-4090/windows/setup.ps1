@@ -4,12 +4,16 @@
 #   .\setup.ps1 install    official llama.cpp CUDA build (prebuilt) + Python venv with huggingface_hub
 #   .\setup.ps1 login      store a Hugging Face token (the model repo is gated)
 #   .\setup.ps1 download   download the model set from Hugging Face into MODEL_DIR
-#   .\setup.ps1 tune       no sleep, Defender exclusion, firewall rule for the Huntun host        [admin]
-#   .\setup.ps1 task       start the server at logon with a scheduled task (logs to server.log)
+#   .\setup.ps1 apikey     create an API key for the server (apikey new: replace it)
+#   .\setup.ps1 firewall   let the local network reach the server (ALLOW_FROM)                  [admin]
+#   .\setup.ps1 tune       firewall, no sleep, Defender exclusion                                [admin]
+#   .\setup.ps1 task       start the server at your logon (logs to server.log)
+#   .\setup.ps1 service    start the server at boot, without anyone signing in                   [admin]
+#   .\setup.ps1 connect    print the chat address and the settings Huntun needs
 #   .\setup.ps1 all        check, install, download
 #
 # Settings: config.ps1, overridden by config.local.ps1 next to it.
-param([Parameter(Position = 0)][string]$Command = "")
+param([Parameter(Position = 0)][string]$Command = "", [Parameter(Position = 1)][string]$Arg = "")
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is many times faster without the progress bar
 
@@ -152,6 +156,46 @@ function Invoke-Login {
     & "$Venv\Scripts\hf.exe" auth whoami
 }
 
+function Get-LanAddresses {
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -ne "127.0.0.1" -and $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -ne "WellKnown" } |
+        Select-Object -ExpandProperty IPAddress
+}
+
+function Invoke-ApiKey {
+    $local = "$PSScriptRoot\config.local.ps1"
+    if ($API_KEY -and $Arg -ne "new") {
+        Write-Host "The server already has an API key: $API_KEY   (.\setup.ps1 apikey new replaces it)"
+        return
+    }
+    $bytes = New-Object byte[] 24
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $key = [Convert]::ToBase64String($bytes).Replace("+", "-").Replace("/", "_").TrimEnd("=")
+    $lines = @()
+    if (Test-Path $local) { $lines = @(Get-Content $local | Where-Object { $_ -notmatch '^\s*\$API_KEY\s*=' }) }
+    $lines += "`$API_KEY = `"$key`""
+    Set-Content $local $lines
+    Write-Host "API key written to config.local.ps1: $key"
+    Write-Host "Restart the server to apply it. Every client needs it: the chat page asks for it under Settings > API Key,"
+    Write-Host "and Huntun reads it from HUNTUN_LLAMACPP_KEY (.\setup.ps1 connect prints the lines)."
+}
+
+function Invoke-Firewall {
+    if (-not (IsAdmin)) { throw "run this from an elevated PowerShell (Run as administrator)" }
+    $prog = "$LlamaDir\llama-server.exe"
+    # answering "Block" to Windows' first-run prompt leaves a rule that beats any Allow rule
+    $blocking = Get-NetFirewallApplicationFilter -Program $prog -ErrorAction SilentlyContinue | Get-NetFirewallRule |
+        Where-Object { $_.Direction -eq "Inbound" -and $_.Action -eq "Block" }
+    foreach ($r in $blocking) { Remove-NetFirewallRule -Name $r.Name; Write-Host "Removed the blocking rule '$($r.DisplayName)'" }
+    Get-NetFirewallRule -DisplayName "flash-next llama-server" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    $remote = @($ALLOW_FROM -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    New-NetFirewallRule -DisplayName "flash-next llama-server" -Direction Inbound -Protocol TCP -LocalPort $PORT -Profile Any `
+        -RemoteAddress $remote -Program $prog -Action Allow | Out-Null
+    Write-Host "Firewall: TCP $PORT open to $($remote -join ', ') for llama-server.exe"
+    if ($LISTEN -eq "127.0.0.1") { Write-Warning "LISTEN is 127.0.0.1, so the server only answers this PC; remove that line from config.local.ps1" }
+    if (-not $API_KEY) { Write-Warning "the server has no API key: anyone on the network can use it. Run .\setup.ps1 apikey" }
+}
+
 function Invoke-Tune {
     if (-not (IsAdmin)) { throw "run this from an elevated PowerShell (Run as administrator)" }
     powercfg /change standby-timeout-ac 0 | Out-Null
@@ -159,27 +203,59 @@ function Invoke-Tune {
     Write-Host "Sleep and hibernate disabled on AC power (a sleeping box drops the server)"
     Add-MpPreference -ExclusionPath $FLASHNEXT_HOME
     Write-Host "Defender real-time scanning excludes $FLASHNEXT_HOME"
-    Get-NetFirewallRule -DisplayName "flash-next llama-server" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    $remote = if ($HUNTUN_HOST_IP) { $HUNTUN_HOST_IP } else { "LocalSubnet" }
-    New-NetFirewallRule -DisplayName "flash-next llama-server" -Direction Inbound -Protocol TCP -LocalPort $PORT `
-        -RemoteAddress $remote -Program "$LlamaDir\llama-server.exe" -Action Allow | Out-Null
-    Write-Host "Firewall: TCP $PORT open to $remote for llama-server.exe (set HUNTUN_HOST_IP to allow only the Mac mini)"
+    Invoke-Firewall
     Write-Host ""
     Write-Host "One manual step: NVIDIA Control Panel > Manage 3D settings > CUDA - Sysmem Fallback Policy = Prefer No Sysmem Fallback."
     Write-Host "Otherwise the driver silently spills VRAM into system RAM when it runs short, and generation slows to a crawl."
 }
 
-function Invoke-Task {
+function Register-ServerTask($trigger, [hashtable]$principal) {
     $log = Join-Path $FLASHNEXT_HOME "server.log"
     $action = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSScriptRoot\serve.ps1`" -LogFile `"$log`""
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    Register-ScheduledTask -TaskName "flash-next" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+    Stop-ScheduledTask -TaskName "flash-next" -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName "flash-next" -Action $action -Trigger $trigger -Settings $settings @principal -Force | Out-Null
     Start-ScheduledTask -TaskName "flash-next"
-    Write-Host "Scheduled task 'flash-next' starts the server at your logon; log: $log"
-    Write-Host "For unattended reboots enable automatic sign-in (Sysinternals Autologon). Stop: Stop-ScheduledTask flash-next; remove: Unregister-ScheduledTask flash-next"
+    return $log
+}
+
+function Invoke-Task {
+    $log = Register-ServerTask (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME") @{}
+    Write-Host "Scheduled task 'flash-next' starts the server when you sign in; log: $log"
+    Write-Host "It runs only while you are signed in; .\setup.ps1 service starts it at boot instead."
+    Write-Host "Stop: Stop-ScheduledTask flash-next; remove: Unregister-ScheduledTask flash-next -Confirm:`$false"
+}
+
+function Invoke-Service {
+    if (-not (IsAdmin)) { throw "run this from an elevated PowerShell (Run as administrator)" }
+    $cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" `
+        -Message "Your Windows password: Task Scheduler stores it to start the server at boot without anyone signing in"
+    if (-not $cred) { throw "cancelled" }
+    $log = Register-ServerTask (New-ScheduledTaskTrigger -AtStartup) @{
+        User = $cred.UserName; Password = $cred.GetNetworkCredential().Password; RunLevel = "Highest"
+    }
+    Write-Host "Scheduled task 'flash-next' now starts the server at boot, signed in or not; log: $log"
+    Write-Host "Check the log once after a reboot: it must list the RTX 4090 as a CUDA device. If it does not, use .\setup.ps1 task."
+    Write-Host "Stop: Stop-ScheduledTask flash-next; remove: Unregister-ScheduledTask flash-next -Confirm:`$false"
+}
+
+function Invoke-Connect {
+    $ips = @(Get-LanAddresses)
+    if (-not $ips) { $ips = @("<this-pc-ip>") }
+    $ctx = if ($KV_UNIFIED) { $PARALLEL * $CTX_PER_SLOT } else { $CTX_PER_SLOT }
+    Write-Host "Chat in a browser on the local network:"
+    foreach ($ip in $ips) { Write-Host "  http://${ip}:$PORT" }
+    if ($API_KEY) { Write-Host "  (enter the API key under Settings > API Key: $API_KEY)" }
+    Write-Host ""
+    Write-Host "Huntun on the Mac mini (add to ~/.zshrc, then restart Huntun):"
+    Write-Host "  export HUNTUN_LLAMACPP_URL=http://$($ips[0]):$PORT"
+    if ($API_KEY) { Write-Host "  export HUNTUN_LLAMACPP_KEY=$API_KEY" }
+    Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse`""
+    Write-Host ""
+    Write-Host "Huntun reads the model name, $([math]::Round($ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
+    if ($LISTEN -eq "127.0.0.1") { Write-Warning "LISTEN is 127.0.0.1: other machines cannot connect until you remove that line from config.local.ps1" }
 }
 
 switch ($Command) {
@@ -187,12 +263,16 @@ switch ($Command) {
     "install" { Invoke-Install }
     "login" { Invoke-Login }
     "download" { Invoke-Download }
+    "apikey" { Invoke-ApiKey }
+    "firewall" { Invoke-Firewall }
     "tune" { Invoke-Tune }
     "task" { Invoke-Task }
+    "service" { Invoke-Service }
+    "connect" { Invoke-Connect }
     "all" {
         if ((Invoke-Check) -ne 0) { Write-Host "Fix the [FAIL] items above first (or run the steps one by one)."; exit 1 }
         Invoke-Install; Invoke-Download
         Write-Host ""; Write-Host "Next: .\serve.ps1   (then python ..\bench.py in another window; .\setup.ps1 task to start it at logon)"
     }
-    default { Get-Content $PSCommandPath -TotalCount 11 | Select-Object -Skip 1 | ForEach-Object { $_ -replace '^# ?', '' }; exit 1 }
+    default { Get-Content $PSCommandPath -TotalCount 15 | Select-Object -Skip 1 | ForEach-Object { $_ -replace '^# ?', '' }; exit 1 }
 }

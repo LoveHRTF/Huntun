@@ -18,8 +18,8 @@ $WITH_VISION = $false                   # also fetch and load the mmproj vision 
 $ALIAS = "qwen3.8-flash-next-uncensored"
 $LISTEN = "0.0.0.0"                     # listen on the LAN so the Mac mini can reach it
 $PORT = 8080
-$API_KEY = ""                           # empty = no auth. Huntun's local provider always sends the key "ollama".
-$HUNTUN_HOST_IP = ""                    # the Mac mini's IP; `setup.ps1 tune` limits the firewall rule to it
+$API_KEY = ""                           # required key for every client; `setup.ps1 apikey` generates one into config.local.ps1
+$ALLOW_FROM = "LocalSubnet"             # who the firewall lets in: LocalSubnet, or comma-separated IPs such as "192.168.1.30"
 
 # Two parallel slots, as in the reference plan. -c is split evenly across slots.
 $PARALLEL = 2

@@ -7,8 +7,10 @@
 #   ./setup.sh build      clone/update llama.cpp at LLAMA_REF and build llama-server with CUDA
 #   ./setup.sh login      store a Hugging Face token (the model repo is gated)
 #   ./setup.sh download   download the model set from Hugging Face into MODEL_DIR
+#   ./setup.sh apikey     create an API key for the server (apikey new: replace it)
 #   ./setup.sh tune       vm.swappiness=10 and headless-mode advice                         [sudo]
 #   ./setup.sh service    install and start a systemd service running serve.sh               [sudo]
+#   ./setup.sh connect    print the chat address and the settings Huntun needs
 #   ./setup.sh all        check, deps, build, download
 #
 # Settings: flash-next.env, overridden by flash-next.local.env next to it.
@@ -148,6 +150,38 @@ cmd_login() {
   "$VENV/bin/hf" auth whoami
 }
 
+cmd_apikey() {
+  local local_env="$HERE/flash-next.local.env" key
+  if [[ -n "$API_KEY" && "${1:-}" != "new" ]]; then
+    echo "The server already has an API key: $API_KEY   (./setup.sh apikey new replaces it)"
+    return
+  fi
+  key="$(head -c 24 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
+  touch "$local_env"
+  grep -v '^API_KEY=' "$local_env" > "$local_env.tmp" || true
+  echo "API_KEY=\"$key\"" >> "$local_env.tmp"
+  mv "$local_env.tmp" "$local_env"
+  echo "API key written to flash-next.local.env: $key"
+  echo "Restart the server to apply it. The chat page asks for it under Settings > API Key; Huntun reads it from HUNTUN_LLAMACPP_KEY."
+}
+
+cmd_connect() {
+  local ip ctx=$CTX_PER_SLOT
+  [[ "$KV_UNIFIED" == "1" ]] && ctx=$((PARALLEL * CTX_PER_SLOT))
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; ip="${ip:-<this-machine-ip>}"
+  echo "Chat in a browser on the local network: http://$ip:$PORT"
+  [[ -n "$API_KEY" ]] && echo "  (enter the API key under Settings > API Key: $API_KEY)"
+  echo
+  echo "Huntun (add to the shell profile of the machine running it, then restart Huntun):"
+  echo "  export HUNTUN_LLAMACPP_URL=http://$ip:$PORT"
+  [[ -n "$API_KEY" ]] && echo "  export HUNTUN_LLAMACPP_KEY=$API_KEY"
+  echo "  export HUNTUN_LLAMACPP_NOTE=\"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse\""
+  echo
+  echo "Huntun reads the model name, $((ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
+  [[ "$HOST" == "127.0.0.1" ]] && echo "warning: HOST is 127.0.0.1, so other machines cannot connect" >&2
+  return 0
+}
+
 cmd_tune() {
   echo "vm.swappiness=10 (keeps weights in RAM instead of swapping them out)"
   echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-flash-next.conf >/dev/null
@@ -191,10 +225,12 @@ case "${1:-}" in
   build) cmd_build ;;
   login) cmd_login ;;
   download) cmd_download ;;
+  apikey) cmd_apikey "${2:-}" ;;
+  connect) cmd_connect ;;
   tune) cmd_tune ;;
   service) cmd_service ;;
   all) cmd_check || { echo "Fix the [FAIL] items above first (or run the steps one by one)." >&2; exit 1; }
        cmd_deps; cmd_build; cmd_download
        echo; echo "Next: ./serve.sh   (then ./bench.py in another shell; ./setup.sh service to run it at boot)" ;;
-  *) sed -n '3,14p' "$0"; exit 1 ;;
+  *) sed -n '3,16p' "$0"; exit 1 ;;
 esac
