@@ -57,11 +57,14 @@ function Invoke-Check {
     $ramGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
     if ($ramGb -ge 60) { Ok "RAM: $ramGb GB" } else { Bad "RAM: $ramGb GB (needs 64 GB)" }
     $pf = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue
-    if ($pf) { Ok "page file: $([math]::Round(($pf | Measure-Object AllocatedBaseSize -Sum).Sum / 1024)) GB" } else { Warn "no page file: enable a system-managed one so a memory spike does not kill the server" }
+    $pfGb = if ($pf) { [math]::Round(($pf | Measure-Object AllocatedBaseSize -Sum).Sum / 1024) } else { 0 }
+    if ($pfGb -ge 16) { Ok "page file: $pfGb GB" }
+    else { Warn "page file: $pfGb GB; set it to system managed or 16+ GB (System > About > Advanced system settings > Performance) so a memory spike does not kill the server" }
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
     Ok "CPU: $($cpu.Name.Trim()), $($cpu.NumberOfCores) cores"
 
     New-Item -ItemType Directory -Force -Path $FLASHNEXT_HOME | Out-Null
+    Ok "install location: $FLASHNEXT_HOME (change it with `$FLASHNEXT_HOME in config.local.ps1, not in the shell)"
     $letter = (Resolve-Path $FLASHNEXT_HOME).Path.Substring(0, 1)
     $vol = Get-Volume -DriveLetter $letter
     $freeGb = [math]::Round($vol.SizeRemaining / 1GB)
@@ -86,11 +89,18 @@ function Invoke-Check {
 
 function Invoke-Install {
     New-Item -ItemType Directory -Force -Path $FLASHNEXT_HOME | Out-Null
-    $which = if ($LLAMA_TAG -eq "latest") { "latest" } else { "tags/$LLAMA_TAG" }
-    $rel = Invoke-RestMethod "https://api.github.com/repos/ggml-org/llama.cpp/releases/$which" -Headers @{ "User-Agent" = "huntun-flash-next" }
-    $bin = $rel.assets | Where-Object { $_.name -like "llama-*-bin-win-cuda-$LLAMA_CUDA-x64.zip" } | Select-Object -First 1
-    $rt = $rel.assets | Where-Object { $_.name -eq "cudart-llama-bin-win-cuda-$LLAMA_CUDA-x64.zip" } | Select-Object -First 1
-    if (-not $bin -or -not $rt) { throw "release $($rel.tag_name) has no Windows CUDA $LLAMA_CUDA x64 build; set LLAMA_TAG or LLAMA_CUDA" }
+    # llama.cpp publishes every build (bNNNNN) as a pre-release, so /releases/latest points at an old release without
+    # binaries. "latest" therefore means the newest build that ships the Windows CUDA zip and its runtime DLLs.
+    $api = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
+    $headers = @{ "User-Agent" = "huntun-flash-next" }
+    $releases = if ($LLAMA_TAG -eq "latest") { Invoke-RestMethod "${api}?per_page=30" -Headers $headers } else { @(Invoke-RestMethod "$api/tags/$LLAMA_TAG" -Headers $headers) }
+    $rel = $null; $bin = $null; $rt = $null
+    foreach ($r in $releases) {
+        $bin = $r.assets | Where-Object { $_.name -like "llama-*-bin-win-cuda-$LLAMA_CUDA-x64.zip" } | Select-Object -First 1
+        $rt = $r.assets | Where-Object { $_.name -eq "cudart-llama-bin-win-cuda-$LLAMA_CUDA-x64.zip" } | Select-Object -First 1
+        if ($bin -and $rt) { $rel = $r; break }
+    }
+    if (-not $rel) { throw "no llama.cpp release ($LLAMA_TAG) has a Windows CUDA $LLAMA_CUDA x64 build; set LLAMA_TAG or LLAMA_CUDA in config.local.ps1" }
     Write-Host "llama.cpp $($rel.tag_name): $($bin.name) + $($rt.name)"
 
     $tmp = Join-Path ([IO.Path]::GetTempPath()) "flash-next-$([guid]::NewGuid())"
