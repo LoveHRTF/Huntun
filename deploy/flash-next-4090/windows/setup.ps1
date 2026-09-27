@@ -264,7 +264,7 @@ function Invoke-Connect {
     foreach ($ip in $ips) { Write-Host "  http://${ip}:$PORT" }
     if ($API_KEY) { Write-Host "  (enter the API key under Settings > API Key: $API_KEY)" }
     Write-Host ""
-    Write-Host "Huntun on the Mac mini (add to ~/.zshrc, then restart Huntun):"
+    Write-Host "Huntun: enter these under Model providers > llama.cpp server on its Projects page, or export them before starting it:"
     Write-Host "  export HUNTUN_LLAMACPP_URL=http://$($ips[0]):$PORT"
     if ($API_KEY) { Write-Host "  export HUNTUN_LLAMACPP_KEY=$API_KEY" }
     Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse`""

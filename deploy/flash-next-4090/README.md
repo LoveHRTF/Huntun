@@ -139,16 +139,12 @@ FIT_TARGET_MIB=1536   # if a desktop session shares the GPU
 
 ## Connecting Huntun
 
-Huntun has a provider for llama.cpp servers. On the machine running Huntun (the Mac mini), set what
-`setup.ps1 connect` / `setup.sh connect` prints, for example:
+On Huntun's Projects page (the Mac mini), fill in **Model providers → llama.cpp server** with what
+`setup.ps1 connect` / `setup.sh connect` prints: the server address, the API key and, optionally, a note for the
+master. **Test** shows the model, context and sessions it finds; **Save** makes it available right away. Setting
+`HUNTUN_LLAMACPP_URL`, `HUNTUN_LLAMACPP_KEY` and `HUNTUN_LLAMACPP_NOTE` before starting Huntun works too.
 
-```bash
-export HUNTUN_LLAMACPP_URL=http://192.168.1.20:8080
-export HUNTUN_LLAMACPP_KEY=<the API_KEY>
-export HUNTUN_LLAMACPP_NOTE="Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s ..."
-```
-
-Restart Huntun. "llama.cpp server" then appears among the providers on the setup page, and the model
+"llama.cpp server" then appears among the providers on the setup page, and the model
 (`qwen3.8-flash-next-uncensored`) among the choices for each seat, next to Claude, Codex and Ollama models. Huntun reads
 the model name, the context of one slot and the number of slots from the server, and tells the master how many
 sessions it runs at once so it staffs no more seats than that: more agents than slots queue, and they evict each

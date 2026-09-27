@@ -213,7 +213,7 @@ const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) 
 const I18N = {
   "zh-CN": {
     "Master agent log": "主管实时日志", "No output yet.": "暂无输出。",
-    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp 服务器（HUNTUN_LLAMACPP_URL）", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
+    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp 服务器（HUNTUN_LLAMACPP_URL）", "Model providers": "模型提供方", "llama.cpp server": "llama.cpp 服务器", "A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.": "本机或局域网中的 llama-server（例如本地 GPU 主机）。在这里连通后，主管即可用它的模型安排席位，每个席位也都能选择它。", "Server address": "服务器地址", "API key": "API 密钥", "Note for the master (optional)": "给主管的说明（可选）", "Save": "保存", "Test": "测试", "Remove key": "删除密钥", "Not set up.": "尚未设置。", "checking…": "检查中…", "saving…": "保存中…", "testing…": "测试中…", "Removed.": "已删除。", "(not saved yet)": "（尚未保存）", "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them.": "来自 HUNTUN_LLAMACPP_* 环境变量；在这里保存会覆盖它们。", "Detected on this machine: {x}": "本机检测到：{x}", "No provider detected yet.": "尚未检测到任何提供方。", "saved (leave blank to keep it)": "已保存（留空即保留）", "the server's --api-key, if it has one": "服务器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅长什么、速度如何", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
     "Projects": "项目", "Open a project": "打开项目", "Open": "打开", "Remove": "移除", "Remove from list": "从列表移除", "Remove from this list (files and .huntun/ stay on disk)": "从此列表移除（文件与 .huntun/ 保留在磁盘上）",
     "No projects yet. Point Huntun at a directory on the right.": "还没有项目。请在右侧指定一个目录。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任意目录均可：新项目用空文件夹，已有代码库也可以。输入路径或浏览选择。",
     "/path/to/project": "/项目/路径", "No goal yet. Open it to set one up.": "尚未设定目标。打开后即可设置。", "not set up": "未设置", "awaiting approval": "等待批准", "confirm goal": "确认目标", "running": "运行中", "paused": "已暂停", "error": "出错", "Set up {x}": "设置 {x}",
@@ -241,7 +241,7 @@ const I18N = {
   },
   "zh-TW": {
     "Master agent log": "主管即時日誌", "No output yet.": "尚無輸出。",
-    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp 伺服器（HUNTUN_LLAMACPP_URL）", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
+    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp 伺服器（HUNTUN_LLAMACPP_URL）", "Model providers": "模型提供者", "llama.cpp server": "llama.cpp 伺服器", "A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.": "本機或區域網路中的 llama-server（例如本地 GPU 主機）。在這裡連通後，主管即可用它的模型安排席位，每個席位也都能選擇它。", "Server address": "伺服器位址", "API key": "API 金鑰", "Note for the master (optional)": "給主管的說明（選填）", "Save": "儲存", "Test": "測試", "Remove key": "刪除金鑰", "Not set up.": "尚未設定。", "checking…": "檢查中…", "saving…": "儲存中…", "testing…": "測試中…", "Removed.": "已刪除。", "(not saved yet)": "（尚未儲存）", "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them.": "來自 HUNTUN_LLAMACPP_* 環境變數；在這裡儲存會覆寫它們。", "Detected on this machine: {x}": "本機偵測到：{x}", "No provider detected yet.": "尚未偵測到任何提供者。", "saved (leave blank to keep it)": "已儲存（留空即保留）", "the server's --api-key, if it has one": "伺服器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅長什麼、速度如何", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
     "Projects": "專案", "Open a project": "開啟專案", "Open": "開啟", "Remove": "移除", "Remove from list": "從清單移除", "Remove from this list (files and .huntun/ stay on disk)": "從此清單移除（檔案與 .huntun/ 仍保留在磁碟上）",
     "No projects yet. Point Huntun at a directory on the right.": "還沒有專案。請在右側指定一個目錄。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任何目錄皆可：新專案用空資料夾，既有程式碼庫也可以。輸入路徑或瀏覽選擇。",
     "/path/to/project": "/專案/路徑", "No goal yet. Open it to set one up.": "尚未設定目標。開啟後即可設定。", "not set up": "未設定", "awaiting approval": "等待核准", "confirm goal": "確認目標", "running": "執行中", "paused": "已暫停", "error": "錯誤", "Set up {x}": "設定 {x}",
@@ -269,7 +269,7 @@ const I18N = {
   },
   "ja": {
     "Master agent log": "マスターのライブログ", "No output yet.": "まだ出力はありません。",
-    "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp サーバー（HUNTUN_LLAMACPP_URL）", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
+    "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp サーバー（HUNTUN_LLAMACPP_URL）", "Model providers": "モデルプロバイダー", "llama.cpp server": "llama.cpp サーバー", "A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.": "このマシンまたはネットワーク上の llama-server（ローカル GPU マシンなど）。ここで接続できれば、マスターはそのモデルで席を割り当てられ、各席でも選択できます。", "Server address": "サーバーアドレス", "API key": "API キー", "Note for the master (optional)": "マスターへのメモ（任意）", "Save": "保存", "Test": "テスト", "Remove key": "キーを削除", "Not set up.": "未設定です。", "checking…": "確認中…", "saving…": "保存中…", "testing…": "テスト中…", "Removed.": "削除しました。", "(not saved yet)": "（未保存）", "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them.": "HUNTUN_LLAMACPP_* 環境変数から読み込み中。ここで保存すると上書きされます。", "Detected on this machine: {x}": "このマシンで検出：{x}", "No provider detected yet.": "プロバイダーはまだ検出されていません。", "saved (leave blank to keep it)": "保存済み（空欄のままで維持）", "the server's --api-key, if it has one": "サーバーの --api-key（ある場合）", "e.g. what the model is good at and how fast it is": "例：モデルの得意分野や速度", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
     "Projects": "プロジェクト", "Open a project": "プロジェクトを開く", "Open": "開く", "Remove": "削除", "Remove from list": "一覧から削除", "Remove from this list (files and .huntun/ stay on disk)": "この一覧から削除（ファイルと .huntun/ はディスクに残ります）",
     "No projects yet. Point Huntun at a directory on the right.": "プロジェクトはまだありません。右側でディレクトリを指定してください。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "どのディレクトリでも構いません。新規なら空のフォルダ、既存のコードベースでも可。パスを入力するか参照してください。",
     "/path/to/project": "/プロジェクト/パス", "No goal yet. Open it to set one up.": "目標が未設定です。開いて設定してください。", "not set up": "未設定", "awaiting approval": "承認待ち", "confirm goal": "目標を確認", "running": "実行中", "paused": "一時停止中", "error": "エラー", "Set up {x}": "{x} を設定",
@@ -398,13 +398,23 @@ async function homeView() {
   boardId = null;
   $("#main").className = ""; $("#main").innerHTML = '<section id="view"></section>';
   $("#hgoal").textContent = ""; $("#hstatus").style.display = "none"; $("#hactions").innerHTML = "";
-  const { workspaces, home } = await api("/api/workspaces");
+  const { workspaces, home, backends } = await api("/api/workspaces");
   if (browserPath === null) browserPath = home;
   $("#view").innerHTML = '<div class="grid"><div><h2>Projects</h2><div id="projects"></div></div>' +
     '<div><h2>Open a project</h2><p class="hint">Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.</p>' +
     '<form id="openform"><input id="path" placeholder="/path/to/project" autocomplete="off" spellcheck="false">' +
-    '<div class="browser" id="browser"></div><div class="row"><button>Open</button><span class="hint" id="pathinfo"></span></div></form></div></div>';
+    '<div class="browser" id="browser"></div><div class="row"><button>Open</button><span class="hint" id="pathinfo"></span></div></form>' +
+    '<h2 style="margin-top:24px">Model providers</h2><p class="hint" id="detected"></p>' +
+    '<form class="card" id="llamaform"><h3>llama.cpp server</h3>' +
+    '<p class="hint">A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.</p>' +
+    '<label>Server address</label><input id="lc-url" placeholder="http://10.0.0.72:8080" autocomplete="off" spellcheck="false">' +
+    '<label>API key</label><input id="lc-key" type="password" autocomplete="off" placeholder="the server\'s --api-key, if it has one">' +
+    '<label>Note for the master (optional)</label><input id="lc-note" autocomplete="off" placeholder="e.g. what the model is good at and how fast it is">' +
+    '<div class="row"><button>Save</button><button type="button" class="secondary" id="lc-test">Test</button><button type="button" class="small danger" id="lc-clearkey" style="display:none">Remove key</button></div>' +
+    '<div id="lc-status" class="meta" style="margin-top:8px"></div><div id="lc-source" class="hint"></div></form></div></div>';
   drawProjects(workspaces);
+  drawDetected(backends);
+  loadLlamacpp();
   $("#path").value = browserPath;
   $("#path").addEventListener("input", (e) => browseTo(e.target.value, true));
   $("#path").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); openPath(); } });
@@ -412,6 +422,48 @@ async function homeView() {
   $("#browser").addEventListener("click", (e) => { const row = e.target.closest("[data-path]"); if (row) browseTo(row.dataset.path); });
   browseTo(browserPath);
   timer = setInterval(async () => { if ((location.hash || "#/") === "#/" && $("#projects")) drawProjects((await api("/api/workspaces")).workspaces); }, 5000);
+}
+function drawDetected(backends) {
+  const names = Object.values(backends || {});
+  $("#detected").textContent = names.length ? "Detected on this machine: " + names.join(", ") : "No provider detected yet.";
+}
+function llamaStatus(st) {
+  if (!st) return "";
+  if (!st.ok) return '<span class="error">' + esc(st.error) + '</span>';
+  const ctx = st.context ? " · " + Math.round(st.context / 1024) + "K context" : "";
+  const slots = st.slots ? " · " + st.slots + (st.slots === 1 ? " session" : " sessions") + " at once" : "";
+  return '<span style="color:var(--ok)">✓</span> ' + esc(st.models.join(", ")) + esc(ctx + slots);
+}
+async function loadLlamacpp() {
+  const form = $("#llamaform");
+  if (!form) return;
+  let cfg = { url: "", has_key: false, note: "", source: "" };
+  const show = (c) => {
+    cfg = c;
+    $("#lc-url").value = c.url || ""; $("#lc-note").value = c.note || ""; $("#lc-key").value = "";
+    $("#lc-key").placeholder = c.has_key ? "saved (leave blank to keep it)" : "the server's --api-key, if it has one";
+    $("#lc-clearkey").style.display = c.has_key ? "" : "none";
+    $("#lc-status").innerHTML = c.url ? (c.status ? llamaStatus(c.status) : "") : '<span class="hint">Not set up.</span>';
+    $("#lc-source").textContent = c.source === "environment" ? "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them." : "";
+  };
+  $("#lc-status").textContent = "checking…";
+  try { show((await api("/api/providers")).llamacpp); } catch (err) { $("#lc-status").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; }
+  const values = (extra) => Object.assign({ url: $("#lc-url").value.trim(), key: $("#lc-key").value.trim(), note: $("#lc-note").value.trim() }, extra || {});
+  const save = async (extra) => {
+    $("#lc-status").textContent = "saving…";
+    try {
+      const r = await api("/api/providers/llamacpp", values(extra));
+      show(r.llamacpp); drawDetected(r.backends);
+      if (!r.llamacpp.url) $("#lc-status").innerHTML = '<span class="hint">Removed.</span>';
+    } catch (err) { $("#lc-status").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; }
+  };
+  form.onsubmit = (e) => { e.preventDefault(); save(); };
+  $("#lc-clearkey").onclick = () => save({ key: "", clear_key: true });
+  $("#lc-test").onclick = async () => {
+    $("#lc-status").textContent = "testing…";
+    try { $("#lc-status").innerHTML = llamaStatus(await api("/api/providers/llamacpp/test", values())) + ' <span class="hint">(not saved yet)</span>'; }
+    catch (err) { $("#lc-status").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; }
+  };
 }
 function drawProjects(workspaces) {
   $("#projects").innerHTML = workspaces.length ? workspaces.map(w =>

@@ -13,7 +13,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .hub import Hub, browse
-from .models import BACKEND_LABEL, available_backends, catalog_available, catalog_for
+from .models import (BACKEND_LABEL, available_backends, catalog_available, catalog_for, llamacpp_settings, normalize_server_url,
+                     probe_llamacpp, save_provider)
 from .personalities import PERSONALITIES
 
 PAGE = (Path(__file__).parent / "app.html").read_text()
@@ -41,6 +42,15 @@ def _limits_from(store: Any) -> dict[str, Any]:
             "resume_count": int(g("limit_resume_count", "0") or 0), "gate": g("resume_gate", "") or None, "next_probe_at": None, "last_probe": None, "auto": False}
 
 
+def _llamacpp_view(probe: bool = True) -> dict[str, Any]:
+    """The llama.cpp server settings for the Projects page: never the key itself, only whether one is set."""
+    cfg = llamacpp_settings()
+    view: dict[str, Any] = {"url": cfg["url"], "has_key": bool(cfg["key"]), "note": cfg["note"], "source": cfg["source"]}
+    if probe and cfg["url"]:
+        view["status"] = probe_llamacpp(cfg["url"], cfg["key"])
+    return view
+
+
 class HttpError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
@@ -65,6 +75,16 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             n = int(self.headers.get("content-length") or 0)
             raw = self.rfile.read(n) if n else b""
             return json.loads(raw) if raw else {}
+
+        def _settings_request(self) -> None:
+            """Settings can redirect every model call, so only the Huntun page itself may change them: a JSON body (other
+            sites cannot send one without a preflight this server never answers) from this origin, when the browser says."""
+            if (self.headers.get("content-type") or "").split(";")[0].strip().lower() != "application/json":
+                raise HttpError(415, "send JSON")
+            origin = self.headers.get("origin")
+            host = self.headers.get("host") or ""
+            if origin and urlparse(origin).netloc != host:
+                raise HttpError(403, "cross-origin request refused")
 
         def _entry(self, wid: str):
             e = hub.get(wid)
@@ -108,6 +128,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     return
                 if path == "/api/workspaces":
                     return self._json(200, {"workspaces": hub.list(), "home": str(Path.home()), "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
+                if path == "/api/providers":
+                    return self._json(200, {"llamacpp": _llamacpp_view()})
                 if path == "/api/fs":
                     q = parse_qs(url.query)
                     return self._json(200, browse((q.get("path") or [None])[0]))
@@ -180,6 +202,24 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             path = urlparse(self.path).path
             try:
                 body = self._body()
+                if path in ("/api/providers/llamacpp", "/api/providers/llamacpp/test"):
+                    self._settings_request()
+                    current = llamacpp_settings()
+                    url = normalize_server_url(str(body.get("url") or ""))
+                    if body.get("clear_key"):
+                        key = ""
+                    elif body.get("key"):
+                        key = str(body["key"]).strip()
+                    else:
+                        key = current["key"]                                      # blank field: keep the key already set
+                    if path.endswith("/test"):
+                        return self._json(200, probe_llamacpp(url, key))
+                    if url:
+                        save_provider("llamacpp", {"url": url, "key": key, "note": str(body.get("note") or "").strip()})
+                    else:
+                        save_provider("llamacpp", None)                           # back to HUNTUN_LLAMACPP_* if set
+                    return self._json(200, {"llamacpp": _llamacpp_view(),
+                                            "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/workspaces":
                     e = hub.add(str(body.get("path") or ""))
                     if e.orchestrator is None and e.state == "ready":

@@ -44,7 +44,7 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 | Kimi Code | `npm i -g @moonshot-ai/kimi-code`（或 `brew install kimi-code`），然后 `kimi login` 并选择模型。 | PATH 中存在 `kimi` 且已配置模型 |
 | DeepSeek | 在 platform.deepseek.com 创建 API key 并导出：`export DEEPSEEK_API_KEY=sk-...`。 | 已设置 `DEEPSEEK_API_KEY` |
 | Ollama（本地） | 安装 Ollama 0.14 或更新版本，拉取一个支持工具调用的模型，并用适合内存的上下文长度启动服务：`ollama pull qwen3:27b`，然后 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`。可选：指定 Huntun 使用的模型与上下文：`export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`。 | `OLLAMA_HOST`（默认 `http://127.0.0.1:11434`）上有可响应且已加载模型的服务 |
-| llama.cpp 服务器（本机或局域网） | 在本机或另一台机器上用 `--jinja`（工具调用需要）运行 `llama-server`，然后让 Huntun 指向它：`export HUNTUN_LLAMACPP_URL=http://192.168.1.20:8080`；若服务器设置了 `--api-key`，再 `export HUNTUN_LLAMACPP_KEY=...`。Huntun 会从服务器读取模型名、每个槽位的上下文和可并行的会话数；`HUNTUN_LLAMACPP_NOTE` 可以补充一句给主管分配席位时参考（例如模型擅长什么、速度多快）。[`deploy/flash-next-4090`](deploy/flash-next-4090/README.md) 可为 Qwen3.8-Flash-Next 搭建这样的服务器。 | `HUNTUN_LLAMACPP_URL` 上有可响应且已加载模型的服务 |
+| llama.cpp 服务器（本机或局域网） | 在本机或另一台机器上用 `--jinja`（工具调用需要）运行 `llama-server`，然后在 Huntun 项目页的 **模型提供方** 中填写它的地址（以及 API 密钥，如有），点 **测试** 可查看它提供的模型；也可以在启动 Huntun 前设置 `HUNTUN_LLAMACPP_URL` 和 `HUNTUN_LLAMACPP_KEY`。Huntun 会从服务器读取模型名、每个槽位的上下文和可并行的会话数；可选的说明（`HUNTUN_LLAMACPP_NOTE`）会在主管分配席位时提供参考（例如模型擅长什么、速度多快）。[`deploy/flash-next-4090`](deploy/flash-next-4090/README.md) 可为 Qwen3.8-Flash-Next 搭建这样的服务器。 | 已配置的服务器可响应且已加载模型 |
 | Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...`。 | 已设置 `ANTHROPIC_API_KEY` |
 
 可用 `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|llamacpp|api` 强制指定提供方，或在设置页面选择。

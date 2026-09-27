@@ -172,7 +172,7 @@ cmd_connect() {
   echo "Chat in a browser on the local network: http://$ip:$PORT"
   [[ -n "$API_KEY" ]] && echo "  (enter the API key under Settings > API Key: $API_KEY)"
   echo
-  echo "Huntun (add to the shell profile of the machine running it, then restart Huntun):"
+  echo "Huntun: enter these under Model providers > llama.cpp server on its Projects page, or export them before starting it:"
   echo "  export HUNTUN_LLAMACPP_URL=http://$ip:$PORT"
   [[ -n "$API_KEY" ]] && echo "  export HUNTUN_LLAMACPP_KEY=$API_KEY"
   echo "  export HUNTUN_LLAMACPP_NOTE=\"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse\""

@@ -116,31 +116,143 @@ def refresh_ollama(force: bool = False) -> list[ModelInfo]:
     return OLLAMA_CATALOG
 
 
-def llamacpp_url() -> str:
+# ---- llama.cpp server: settings saved from the Projects page (~/.huntun/providers.json) win over HUNTUN_LLAMACPP_* ----
+_saved_cache: tuple[float, dict] = (-1.0, {})
+
+
+def _providers_file():
+    import os
+    from pathlib import Path
+
+    return Path(os.environ.get("HUNTUN_HOME") or Path.home() / ".huntun") / "providers.json"
+
+
+def saved_provider(name: str) -> dict:
+    """What the Projects page saved for a provider ({} when nothing); re-read whenever the file changes."""
+    import json
+
+    global _saved_cache
+    f = _providers_file()
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        return {}
+    if mtime != _saved_cache[0]:
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, ValueError):
+            data = {}
+        _saved_cache = (mtime, data if isinstance(data, dict) else {})
+    entry = _saved_cache[1].get(name)
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def save_provider(name: str, values: dict | None) -> None:
+    """Stores (or with None, forgets) a provider's settings; the file holds API keys, so only its owner may read it."""
+    import json
     import os
 
-    return (os.environ.get("HUNTUN_LLAMACPP_URL") or "").rstrip("/")
+    global _saved_cache
+    f = _providers_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(f.read_text())
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    if values is None:
+        data.pop(name, None)
+    else:
+        data[name] = values
+    tmp = f.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps(data, indent=2))
+    os.replace(tmp, f)
+    _saved_cache = (-1.0, {})
+    if name == "llamacpp":
+        refresh_llamacpp(force=True)
+
+
+def llamacpp_settings() -> dict:
+    """The effective llama.cpp server settings and where they come from: {"url", "key", "note", "source"}."""
+    import os
+
+    saved = saved_provider("llamacpp")
+    if saved.get("url"):
+        return {"url": normalize_server_url(str(saved["url"])), "key": str(saved.get("key") or ""), "note": str(saved.get("note") or ""), "source": "saved"}
+    url = normalize_server_url(os.environ.get("HUNTUN_LLAMACPP_URL") or "")
+    return {"url": url, "key": os.environ.get("HUNTUN_LLAMACPP_KEY") or "", "note": os.environ.get("HUNTUN_LLAMACPP_NOTE", ""),
+            "source": "environment" if url else ""}
+
+
+def normalize_server_url(url: str) -> str:
+    """ "10.0.0.72:8080" -> "http://10.0.0.72:8080"; trailing slashes and a trailing /v1 are dropped (the clients add their paths)."""
+    url = url.strip().rstrip("/")
+    if url and "://" not in url:
+        url = "http://" + url
+    if url.endswith("/v1"):
+        url = url[: -len("/v1")]
+    return url
+
+
+def llamacpp_url() -> str:
+    return llamacpp_settings()["url"]
 
 
 def llamacpp_key() -> str:
     """The llama-server's --api-key, or a placeholder a server without one ignores."""
-    import os
+    return llamacpp_settings()["key"] or "none"
 
-    return os.environ.get("HUNTUN_LLAMACPP_KEY") or "none"
+
+def probe_llamacpp(url: str, key: str = "", timeout: float = 1.5) -> dict:
+    """Asks a llama-server what it serves: {"ok", "models", "context", "slots", "error"}.
+
+    The alias comes from GET /v1/models; GET /props gives the context of one slot (the whole pool when the server
+    shares its KV cache) and how many sessions it runs at once.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = normalize_server_url(url)
+    if not url:
+        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": "no server address set"}
+
+    def get(path: str) -> dict:
+        req = urllib.request.Request(url + path, headers={"Authorization": f"Bearer {key or 'none'}"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+
+    try:
+        ids = [str(m["id"]) for m in get("/v1/models").get("data") or [] if m.get("id")]
+    except urllib.error.HTTPError as e:
+        err = "the server rejected the API key" if e.code == 401 else f"the server answered HTTP {e.code}"
+        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": err}
+    except Exception as e:
+        reason = getattr(e, "reason", None) or e
+        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": f"cannot reach {url}: {reason}"}
+    context = slots = 0
+    try:
+        props = get("/props")
+        context = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0)
+        slots = int(props.get("total_slots") or 0)
+    except Exception:
+        pass
+    if not ids:
+        return {"ok": False, "models": [], "context": context, "slots": slots, "error": "the server lists no model"}
+    return {"ok": True, "models": ids, "context": context, "slots": slots, "error": ""}
 
 
 def refresh_llamacpp(force: bool = False) -> list[ModelInfo]:
-    """The model a llama.cpp server (llama-server) at HUNTUN_LLAMACPP_URL serves; cached for 30 s.
+    """The model the configured llama.cpp server serves, as catalog entries; cached for 30 s.
 
-    Its alias comes from GET /v1/models, and GET /props gives the context of one slot (the whole pool when the
-    server shares its KV cache) and how many sessions it runs at once, which the master needs to size the seats.
-    HUNTUN_LLAMACPP_MODELS="name[@context],..." skips the discovery; HUNTUN_LLAMACPP_NOTE is added to the model's
-    description in the catalog the master chooses from (what the model is good at, how fast it is).
+    Settings come from the Projects page or HUNTUN_LLAMACPP_URL / _KEY / _NOTE. HUNTUN_LLAMACPP_MODELS="name[@context],..."
+    skips the discovery. The note is added to the model's description in the catalog the master chooses from.
     """
-    import json
     import os
     import time
-    import urllib.request
 
     global _llamacpp_checked
     # an empty answer is cached too: the server is usually another machine, and one that is switched off would
@@ -148,39 +260,26 @@ def refresh_llamacpp(force: bool = False) -> list[ModelInfo]:
     if not force and time.time() - _llamacpp_checked < 30:
         return LLAMACPP_CATALOG
     _llamacpp_checked = time.time()
-    url = llamacpp_url()
+    cfg = llamacpp_settings()
+    url = cfg["url"]
     default_ctx = int(os.environ.get("HUNTUN_LLAMACPP_CONTEXT", "32768"))
     forced = os.environ.get("HUNTUN_LLAMACPP_MODELS", "")
     names: list[tuple[str, int]] = []
     slots = 0
-
-    def get(path: str) -> dict:
-        req = urllib.request.Request(url + path, headers={"Authorization": f"Bearer {llamacpp_key()}"})
-        with urllib.request.urlopen(req, timeout=1.5) as r:
-            return json.loads(r.read().decode())
-
     if forced.strip():
         for item in forced.split(","):
             if item.strip():
                 n, _, c = item.strip().partition("@")
                 names.append((n, int(c) if c.strip().isdigit() else default_ctx))
     elif url:
-        try:
-            ids = [str(m["id"]) for m in get("/v1/models").get("data") or [] if m.get("id")]
-            try:
-                props = get("/props")
-                ctx = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0) or default_ctx
-                slots = int(props.get("total_slots") or 0)
-            except Exception:
-                ctx = default_ctx
-            names = [(i, ctx) for i in ids]
-        except Exception:
-            names = []
+        info = probe_llamacpp(url, cfg["key"])
+        slots = info["slots"]
+        names = [(i, info["context"] or default_ctx) for i in info["models"]]
     where = url.split("//", 1)[-1] if url else "your network"
     use_for = f"local model served by llama.cpp at {where} (no per-token cost; speed and quality depend on that machine)"
     if slots:
         use_for += f"; it runs {slots} session{'s' if slots != 1 else ''} at once, so give it at most {slots} seat{'s' if slots != 1 else ''}"
-    note = os.environ.get("HUNTUN_LLAMACPP_NOTE", "").strip()
+    note = cfg["note"].strip()
     if note:
         use_for += f"; {note}"
     found = [ModelInfo(n, n, "llamacpp", 0.0, 0.0, c, use_for, "llamacpp") for n, c in names]
