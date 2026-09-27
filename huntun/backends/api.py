@@ -1,8 +1,8 @@
 """Anthropic Messages API backend: a manual streaming tool-use loop whose message history is written
 to disk after every step so a cycle can be paused and resumed.
 
-The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic) and a local
-Ollama server (http://127.0.0.1:11434). In that "compat" mode the Anthropic-only extras (betas, server-side
+The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic), a local
+Ollama server (http://127.0.0.1:11434) and a llama.cpp server (llama-server at HUNTUN_LLAMACPP_URL). In that "compat" mode the Anthropic-only extras (betas, server-side
 fallbacks, effort, adaptive thinking, server tools, eager input streaming) are left out, and any field a provider
 still rejects with a 400 is dropped and the call retried.
 """
@@ -30,6 +30,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "api": {"label": "Anthropic API"},
     "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com/anthropic", "key_env": "DEEPSEEK_API_KEY"},
     "ollama": {"label": "Ollama (local)", "base_url_env": "OLLAMA_HOST", "base_url": "http://127.0.0.1:11434", "key": "ollama"},
+    # llama-server takes the key as X-Api-Key (what the SDK sends); without --api-key it ignores the placeholder
+    "llamacpp": {"label": "llama.cpp server", "base_url_env": "HUNTUN_LLAMACPP_URL", "base_url": "http://127.0.0.1:8080",
+                 "key_env": "HUNTUN_LLAMACPP_KEY", "key": "none"},
 }
 OPTIONAL_FIELDS = ("fallbacks", "output_config", "thinking", "cache_control", "tool_choice", "eager_input_streaming")   # dropped one by one on a 400
 
@@ -63,7 +66,7 @@ def _serializable(content: Any) -> list[dict[str, Any]]:
 class ApiBackend:
     name = "api"
     provider = "api"
-    compat = False                        # True for Anthropic-compatible providers (DeepSeek, Ollama)
+    compat = False                        # True for Anthropic-compatible providers (DeepSeek, Ollama, llama.cpp)
     dropped: set[str]
 
     def __init__(self, config: HuntunConfig, provider: str = "api") -> None:
@@ -75,7 +78,7 @@ class ApiBackend:
         spec = PROVIDERS[provider]
         if self.compat:
             base = os.environ.get(spec.get("base_url_env", ""), "") or spec["base_url"]
-            key = os.environ.get(spec["key_env"]) if spec.get("key_env") else spec.get("key")
+            key = (os.environ.get(spec["key_env"]) if spec.get("key_env") else None) or spec.get("key")
             if not key:
                 raise RuntimeError(f"{spec['label']}: set {spec['key_env']}")
             self.client = anthropic.AsyncAnthropic(api_key=key, base_url=base.rstrip("/"))

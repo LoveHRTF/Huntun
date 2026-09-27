@@ -25,7 +25,7 @@ Huntun runs on the AI subscription you already have. No API key, no new vendor r
 
 **Continuity by design.** Each agent keeps its own memory, notes and session. Pauses, restarts and vendor usage limits are absorbed without losing context: work resumes exactly where it stopped, and you can step away for as long as you need.
 
-**Vendor choice, per seat.** Claude Code, OpenAI Codex, Kimi Code, DeepSeek, local models through Ollama and the Anthropic API can be combined within one team, so critical work gets the strongest model while routine tasks run at the lowest cost.
+**Vendor choice, per seat.** Claude Code, OpenAI Codex, Kimi Code, DeepSeek, local models through Ollama or a llama.cpp server, and the Anthropic API can be combined within one team, so critical work gets the strongest model while routine tasks run at the lowest cost.
 
 **Operational visibility.** A pixel-art office renders the team's state in real time: who is reasoning, coding, talking, waiting, compacting context, or blocked by an error or usage limit. Nine environments are available, from a corporate campus to a trading floor.
 
@@ -42,9 +42,10 @@ Huntun runs on the AI subscription you already have. No API key, no new vendor r
 | Kimi Code | `npm i -g @moonshot-ai/kimi-code` (or `brew install kimi-code`), then `kimi login` and pick a model. | `kimi` on PATH with a model configured |
 | DeepSeek | Create an API key at platform.deepseek.com and export it: `export DEEPSEEK_API_KEY=sk-...`. | `DEEPSEEK_API_KEY` set |
 | Ollama (local) | Install Ollama 0.14 or newer, pull a model that supports tools, and run the server with a context that fits your memory: `ollama pull qwen3:27b`, then `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. Optionally pin the models and contexts Huntun should use: `export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`. | A server answering at `OLLAMA_HOST` (default `http://127.0.0.1:11434`) with models |
+| llama.cpp server (local or on your network) | Run `llama-server` with `--jinja` (tool calls) on this or another machine, then point Huntun at it: `export HUNTUN_LLAMACPP_URL=http://192.168.1.20:8080`, plus `export HUNTUN_LLAMACPP_KEY=...` if the server has `--api-key`. Huntun reads the model name, the context per slot and the number of parallel sessions from the server; `HUNTUN_LLAMACPP_NOTE` adds a line the master sees when staffing (for example what the model is good at and how fast it is). [`deploy/flash-next-4090`](deploy/flash-next-4090/README.md) sets up such a server for Qwen3.8-Flash-Next. | A server answering at `HUNTUN_LLAMACPP_URL` with a model |
 | Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...`. | `ANTHROPIC_API_KEY` set |
 
-Force a particular provider with `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|api` or pick it on the setup page.
+Force a particular provider with `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|llamacpp|api` or pick it on the setup page.
 
 **Install**
 

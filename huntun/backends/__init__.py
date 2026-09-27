@@ -6,6 +6,7 @@
 - kimi:        Kimi Code via `kimi -p` (uses your Kimi login or Moonshot key; no API key needed here)
 - deepseek:    DeepSeek's Anthropic-compatible API (DEEPSEEK_API_KEY), driven by the api backend's loop
 - ollama:      a local Ollama server's Anthropic-compatible API (OLLAMA_HOST, default http://127.0.0.1:11434), same loop
+- llamacpp:    a llama.cpp server's Anthropic-compatible API (HUNTUN_LLAMACPP_URL, optional HUNTUN_LLAMACPP_KEY), same loop
 """
 from __future__ import annotations
 
@@ -80,11 +81,11 @@ def make_backend(name: str, config: Any) -> Backend:
         from .kimi import KimiBackend
 
         return KimiBackend(config)
-    if name in ("deepseek", "ollama"):
+    if name in ("deepseek", "ollama", "llamacpp"):
         from .api import ApiBackend
 
         return ApiBackend(config, provider=name)
     raise ValueError(f"unknown backend {name!r}")
 
 
-BACKENDS = ("api", "claude-code", "codex", "kimi", "deepseek", "ollama")
+BACKENDS = ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "llamacpp")

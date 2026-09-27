@@ -66,9 +66,11 @@ DEEPSEEK_CATALOG: list[ModelInfo] = [
               "very cheap and fast: routine implementation, tests, docs, scrum bookkeeping (peak-hour list price; off-peak is half)", "deepseek"),
 ]
 OLLAMA_CATALOG: list[ModelInfo] = []                                             # filled by refresh_ollama() from the local server
+LLAMACPP_CATALOG: list[ModelInfo] = []                                           # filled by refresh_llamacpp() from HUNTUN_LLAMACPP_URL
 MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG}
 MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG]
 _ollama_checked = 0.0
+_llamacpp_checked = 0.0
 
 
 def ollama_host() -> str:
@@ -114,6 +116,80 @@ def refresh_ollama(force: bool = False) -> list[ModelInfo]:
     return OLLAMA_CATALOG
 
 
+def llamacpp_url() -> str:
+    import os
+
+    return (os.environ.get("HUNTUN_LLAMACPP_URL") or "").rstrip("/")
+
+
+def llamacpp_key() -> str:
+    """The llama-server's --api-key, or a placeholder a server without one ignores."""
+    import os
+
+    return os.environ.get("HUNTUN_LLAMACPP_KEY") or "none"
+
+
+def refresh_llamacpp(force: bool = False) -> list[ModelInfo]:
+    """The model a llama.cpp server (llama-server) at HUNTUN_LLAMACPP_URL serves; cached for 30 s.
+
+    Its alias comes from GET /v1/models, and GET /props gives the context of one slot (the whole pool when the
+    server shares its KV cache) and how many sessions it runs at once, which the master needs to size the seats.
+    HUNTUN_LLAMACPP_MODELS="name[@context],..." skips the discovery; HUNTUN_LLAMACPP_NOTE is added to the model's
+    description in the catalog the master chooses from (what the model is good at, how fast it is).
+    """
+    import json
+    import os
+    import time
+    import urllib.request
+
+    global _llamacpp_checked
+    # an empty answer is cached too: the server is usually another machine, and one that is switched off would
+    # otherwise cost a connection timeout on every page refresh
+    if not force and time.time() - _llamacpp_checked < 30:
+        return LLAMACPP_CATALOG
+    _llamacpp_checked = time.time()
+    url = llamacpp_url()
+    default_ctx = int(os.environ.get("HUNTUN_LLAMACPP_CONTEXT", "32768"))
+    forced = os.environ.get("HUNTUN_LLAMACPP_MODELS", "")
+    names: list[tuple[str, int]] = []
+    slots = 0
+
+    def get(path: str) -> dict:
+        req = urllib.request.Request(url + path, headers={"Authorization": f"Bearer {llamacpp_key()}"})
+        with urllib.request.urlopen(req, timeout=1.5) as r:
+            return json.loads(r.read().decode())
+
+    if forced.strip():
+        for item in forced.split(","):
+            if item.strip():
+                n, _, c = item.strip().partition("@")
+                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
+    elif url:
+        try:
+            ids = [str(m["id"]) for m in get("/v1/models").get("data") or [] if m.get("id")]
+            try:
+                props = get("/props")
+                ctx = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0) or default_ctx
+                slots = int(props.get("total_slots") or 0)
+            except Exception:
+                ctx = default_ctx
+            names = [(i, ctx) for i in ids]
+        except Exception:
+            names = []
+    where = url.split("//", 1)[-1] if url else "your network"
+    use_for = f"local model served by llama.cpp at {where} (no per-token cost; speed and quality depend on that machine)"
+    if slots:
+        use_for += f"; it runs {slots} session{'s' if slots != 1 else ''} at once, so give it at most {slots} seat{'s' if slots != 1 else ''}"
+    note = os.environ.get("HUNTUN_LLAMACPP_NOTE", "").strip()
+    if note:
+        use_for += f"; {note}"
+    found = [ModelInfo(n, n, "llamacpp", 0.0, 0.0, c, use_for, "llamacpp") for n, c in names]
+    LLAMACPP_CATALOG[:] = found
+    for m in found:
+        MODEL_BY_ID[m.id] = m
+    return LLAMACPP_CATALOG
+
+
 def catalog_for(backend: str) -> list[ModelInfo]:
     if backend == "codex":
         return CODEX_CATALOG
@@ -123,6 +199,8 @@ def catalog_for(backend: str) -> list[ModelInfo]:
         return DEEPSEEK_CATALOG
     if backend == "ollama":
         return refresh_ollama()
+    if backend == "llamacpp":
+        return refresh_llamacpp()
     return MODEL_CATALOG
 
 
@@ -146,6 +224,8 @@ def available_backends() -> dict[str, str]:
         out["deepseek"] = "DeepSeek API key"
     if refresh_ollama():
         out["ollama"] = "Ollama server with models"
+    if refresh_llamacpp():
+        out["llamacpp"] = "llama.cpp server with a model"
     return out
 
 
@@ -180,6 +260,8 @@ def backend_for_model(model_id: str | None, available: dict[str, str] | None = N
         return "deepseek" if "deepseek" in avail else default
     if m.vendor == "ollama":
         return "ollama" if "ollama" in avail else default
+    if m.vendor == "llamacpp":
+        return "llamacpp" if "llamacpp" in avail else default
     if "claude-code" in avail:
         return "claude-code"
     if "api" in avail:
@@ -201,6 +283,8 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "deepseek") for m in DEEPSEEK_CATALOG]
     if "ollama" in avail:
         out += [(m, "ollama") for m in refresh_ollama()]
+    if "llamacpp" in avail:
+        out += [(m, "llamacpp") for m in refresh_llamacpp()]
     return out
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 DEFAULT_API_MODEL = "claude-opus-5-5"
@@ -233,13 +317,14 @@ def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, ca
 def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
     """Rough list-price cost for a token volume: assumes 85% input (half of it cached), 15% output. Codex models price at 0."""
     m = model_info(model_id)
-    if not m or m.tier in ("codex", "kimi", "ollama"):
+    if not m or m.tier in ("codex", "kimi", "ollama", "llamacpp"):
         return 0.0
     inp, out = tokens * 0.85, tokens * 0.15
     return round((inp * 0.5 * m.input_per_m + inp * 0.5 * m.input_per_m * 0.1 + out * m.output_per_m) / 1e6, 2)
 
 
-BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)"}
+BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)",
+                 "llamacpp": "llama.cpp server (local)"}
 
 
 def catalog_text(backend: str = "api", available: dict[str, str] | None = None) -> str:
@@ -248,6 +333,8 @@ def catalog_text(backend: str = "api", available: dict[str, str] | None = None) 
         pairs = [(m, backend) for m in catalog_for(backend)]
     lines = []
     for m, b in pairs:
-        price = f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m else "billed through the ChatGPT plan, no per-token price"
+        price = (f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m
+                 else "runs locally, no per-token price" if m.vendor in ("ollama", "llamacpp")
+                 else "billed through the ChatGPT plan, no per-token price")
         lines.append(f"- {m.id} ({m.label}; vendor {m.vendor}; runs via {BACKEND_LABEL.get(b, b)}; {price}; {m.context // 1000}k context): {m.use_for}")
     return "\n".join(lines)
