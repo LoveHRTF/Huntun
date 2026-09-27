@@ -88,7 +88,7 @@ To serve the local network (chat from other devices, Huntun on the Mac mini):
 
 `service` runs the server in the background after every reboot; if its log (`%USERPROFILE%\flash-next\server.log`) does
 not list the RTX 4090 as a CUDA device, use `.\setup.ps1 task` instead, which starts it when you sign in. After
-changing settings, restart it with `Stop-ScheduledTask flash-next; Start-ScheduledTask flash-next`.
+changing settings, restart it with `.\setup.ps1 restart` (as administrator).
 
 Settings live in `windows\config.ps1`; override them in `windows\config.local.ps1` (git-ignored), e.g.
 `$FLASHNEXT_HOME = "D:\flash-next"`, `$CTX_PER_SLOT = 131072`, `$ALLOW_FROM = "192.168.1.30"`.

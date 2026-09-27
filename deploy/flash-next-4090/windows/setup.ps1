@@ -9,6 +9,7 @@
 #   .\setup.ps1 tune       firewall, no sleep, Defender exclusion                                [admin]
 #   .\setup.ps1 task       start the server at your logon (logs to server.log)
 #   .\setup.ps1 service    start the server at boot, without anyone signing in                   [admin]
+#   .\setup.ps1 restart    restart the background server after changing settings                 [admin]
 #   .\setup.ps1 connect    print the chat address and the settings Huntun needs
 #   .\setup.ps1 all        check, install, download
 #
@@ -225,7 +226,7 @@ function Invoke-Task {
     $log = Register-ServerTask (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME") @{}
     Write-Host "Scheduled task 'flash-next' starts the server when you sign in; log: $log"
     Write-Host "It runs only while you are signed in; .\setup.ps1 service starts it at boot instead."
-    Write-Host "Stop: Stop-ScheduledTask flash-next; remove: Unregister-ScheduledTask flash-next -Confirm:`$false"
+    Write-Host "Restart after changing settings: .\setup.ps1 restart; remove: Unregister-ScheduledTask flash-next -Confirm:`$false"
 }
 
 function Invoke-Service {
@@ -238,7 +239,21 @@ function Invoke-Service {
     }
     Write-Host "Scheduled task 'flash-next' now starts the server at boot, signed in or not; log: $log"
     Write-Host "Check the log once after a reboot: it must list the RTX 4090 as a CUDA device. If it does not, use .\setup.ps1 task."
-    Write-Host "Stop: Stop-ScheduledTask flash-next; remove: Unregister-ScheduledTask flash-next -Confirm:`$false"
+    Write-Host "Restart after changing settings: .\setup.ps1 restart; remove: Unregister-ScheduledTask flash-next -Confirm:`$false"
+}
+
+function Invoke-Restart {
+    if (-not (Get-ScheduledTask -TaskName "flash-next" -ErrorAction SilentlyContinue)) {
+        throw "no background server yet: .\setup.ps1 service (at boot) or .\setup.ps1 task (at sign-in) sets it up"
+    }
+    Stop-ScheduledTask -TaskName "flash-next" -ErrorAction SilentlyContinue
+    # stopping the task can leave llama-server.exe running, and the new one then cannot take the port
+    Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    Start-ScheduledTask -TaskName "flash-next"
+    $log = Join-Path $FLASHNEXT_HOME "server.log"
+    Write-Host "Restarted. The model takes a few minutes to load; follow it with:"
+    Write-Host "  Get-Content `"$log`" -Tail 30 -Wait"
 }
 
 function Invoke-Connect {
@@ -268,11 +283,12 @@ switch ($Command) {
     "tune" { Invoke-Tune }
     "task" { Invoke-Task }
     "service" { Invoke-Service }
+    "restart" { Invoke-Restart }
     "connect" { Invoke-Connect }
     "all" {
         if ((Invoke-Check) -ne 0) { Write-Host "Fix the [FAIL] items above first (or run the steps one by one)."; exit 1 }
         Invoke-Install; Invoke-Download
         Write-Host ""; Write-Host "Next: .\serve.ps1   (then python ..\bench.py in another window; .\setup.ps1 task to start it at logon)"
     }
-    default { Get-Content $PSCommandPath -TotalCount 15 | Select-Object -Skip 1 | ForEach-Object { $_ -replace '^# ?', '' }; exit 1 }
+    default { Get-Content $PSCommandPath -TotalCount 16 | Select-Object -Skip 1 | ForEach-Object { $_ -replace '^# ?', '' }; exit 1 }
 }
