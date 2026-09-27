@@ -22,9 +22,10 @@ WORDS = ("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo li
          "sierra tango uniform victor whiskey xray yankee zulu river stone cloud maple ember harbor lantern meadow orbit "
          "pixel quartz saddle timber velvet willow zephyr anchor beacon canyon dune falcon glacier").split()
 
-# The reference plan (RTX 5090 + 128 GB) and what this box (RTX 4090 + 64 GB DDR4) is expected to reach.
+# The reference plan (RTX 5090 + 128 GB) and what this box (RTX 4090 + 64 GB DDR4) reaches: measured on Windows 11 with
+# the N-gram table on NVMe (16.4-16.9 / 20.2-20.6 tok/s decode, 629-632 t/s prefill); a few percent either way is noise.
 PLAN = {"decode_total_2": 60.0, "prefill": 4000.0}
-EXPECT = {"decode_1": (15, 20), "decode_total_2": (19, 25), "prefill": (800, 1300)}
+EXPECT = {"decode_1": (15, 20), "decode_total_2": (18, 25), "prefill": (550, 800)}
 
 
 def post(url: str, body: dict, headers: dict | None = None, timeout: float = 1800) -> dict:

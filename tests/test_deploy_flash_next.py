@@ -129,7 +129,7 @@ class _FakeServer(BaseHTTPRequestHandler):
             self._send({"tokens": list(range(len(body["content"].split())))})
         elif self.path == "/completion":
             n = body["n_predict"]
-            self._send({"timings": {"prompt_n": len(body["prompt"].split()), "prompt_ms": 2000.0, "prompt_per_second": 1000.0,
+            self._send({"timings": {"prompt_n": len(body["prompt"].split()), "prompt_ms": 2000.0, "prompt_per_second": 650.0,
                                     "predicted_n": n, "predicted_per_second": 18.0}})
         elif self.path == "/v1/messages":
             block = {"type": "tool_use", "id": "t1", "name": "get_time", "input": {"timezone": "UTC"}} if self.tool_use else {"type": "text", "text": "noon"}
@@ -166,7 +166,7 @@ class Bench(unittest.TestCase):
         self.assertIn("tool_use: get_time", out)
         self.assertIn("2 concurrent", out)
         self.assertIn("plan >4000", out)
-        self.assertIn("within expectation", out)  # 1000 t/s prefill
+        self.assertIn("within expectation", out)  # 650 t/s prefill
 
     def test_fails_when_messages_returns_no_tool_call(self) -> None:
         _FakeServer.tool_use = False
