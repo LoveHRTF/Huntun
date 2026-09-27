@@ -66,6 +66,46 @@ class PickSet(unittest.TestCase):
         self.assertEqual(fetch.pick_mmproj(files, "x/m"), "x/mmproj-F16.gguf")
 
 
+try:
+    import huggingface_hub  # noqa: F401
+    HAVE_HF = True
+except ImportError:
+    HAVE_HF = False
+
+
+@unittest.skipUnless(HAVE_HF, "huggingface_hub not installed")
+class Download(unittest.TestCase):
+    def test_retries_network_errors_and_never_fails_on_the_model_card(self) -> None:
+        from unittest import mock
+
+        calls = {"snapshot": 0}
+
+        def flaky(**kw):
+            calls["snapshot"] += 1
+            if calls["snapshot"] < 3:
+                raise TimeoutError("The read operation timed out")
+
+        def card(**kw):
+            raise TimeoutError("The read operation timed out")
+
+        err = io.StringIO()
+        with mock.patch("huggingface_hub.snapshot_download", side_effect=flaky), \
+                mock.patch("huggingface_hub.hf_hub_download", side_effect=card), \
+                mock.patch.object(fetch.time, "sleep"), contextlib.redirect_stderr(err):
+            fetch.download("o/r", Path("."), ["m-00001-of-00001.gguf"], ["README.md"])
+        self.assertEqual(calls["snapshot"], 3)
+        self.assertIn("retrying (2/4)", err.getvalue())
+        self.assertIn("Skipped README.md", err.getvalue())
+
+    def test_gives_up_after_the_last_attempt(self) -> None:
+        from unittest import mock
+
+        with mock.patch("huggingface_hub.snapshot_download", side_effect=TimeoutError("t")), \
+                mock.patch.object(fetch.time, "sleep"), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(TimeoutError):
+                fetch.download("o/r", Path("."), ["m.gguf"])
+
+
 class _FakeServer(BaseHTTPRequestHandler):
     tool_use = True
 

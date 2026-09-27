@@ -10,10 +10,17 @@ Usage: fetch_model.py REPO MODEL_DIR [--set SUBSTRING] [--vision] [--list]
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
+
+# huggingface_hub reads these when it is first imported; its 10 s defaults make a slow CDN edge abort a 90 GB download.
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
+os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "30")
+ATTEMPTS = 5
 
 SHARD_RE = re.compile(r"^(?P<stem>.+)-(?P<idx>\d{5})-of-(?P<total>\d{5})\.gguf$")
 
@@ -83,14 +90,31 @@ class AccessDenied(Exception):
     pass
 
 
-def download(repo: str, model_dir: Path, paths: list[str]) -> None:
-    from huggingface_hub import snapshot_download
-    from huggingface_hub.errors import GatedRepoError
+def download(repo: str, model_dir: Path, paths: list[str], optional: list[str] = ()) -> None:
+    """Fetches `paths`, retrying network failures (finished files are skipped and partial ones resumed on each try),
+    then `optional` files (model card, license) on a best-effort basis: they never fail the download."""
+    from huggingface_hub import hf_hub_download, snapshot_download
+    from huggingface_hub.errors import EntryNotFoundError, GatedRepoError, RepositoryNotFoundError, RevisionNotFoundError
 
-    try:
-        snapshot_download(repo_id=repo, local_dir=str(model_dir), allow_patterns=paths)
-    except GatedRepoError as e:
-        raise AccessDenied(str(e).splitlines()[0]) from None
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            snapshot_download(repo_id=repo, local_dir=str(model_dir), allow_patterns=paths)
+            break
+        except GatedRepoError as e:
+            raise AccessDenied(str(e).splitlines()[0]) from None
+        except (RepositoryNotFoundError, RevisionNotFoundError, EntryNotFoundError):
+            raise
+        except Exception as e:
+            if attempt == ATTEMPTS:
+                raise
+            print(f"\nDownload interrupted ({type(e).__name__}: {e}); retrying ({attempt}/{ATTEMPTS - 1}), "
+                  "already downloaded data is kept.", file=sys.stderr)
+            time.sleep(10 * attempt)
+    for p in optional:
+        try:
+            hf_hub_download(repo_id=repo, filename=p, local_dir=str(model_dir))
+        except Exception as e:
+            print(f"Skipped {p} ({type(e).__name__}); read it at https://huggingface.co/{repo}", file=sys.stderr)
 
 
 def main() -> int:
@@ -137,7 +161,7 @@ def main() -> int:
         return 3
 
     try:
-        download(a.repo, model_dir, wanted + extras)
+        download(a.repo, model_dir, wanted, extras)
     except AccessDenied as e:
         print(f"\n{a.repo} is gated: its author requires you to accept terms before downloading ({e}).", file=sys.stderr)
         print(f"  1. Sign in at https://huggingface.co, open https://huggingface.co/{a.repo} and accept the access terms", file=sys.stderr)

@@ -142,7 +142,7 @@ function Invoke-Download {
     if ($WITH_VISION) { $extra += "--vision" }
     & "$Venv\Scripts\python.exe" "$Kit\fetch_model.py" $HF_REPO $MODEL_DIR @extra
     if ($LASTEXITCODE -ne 0) { throw "download failed ($LASTEXITCODE)" }
-    Write-Host "Read the model card before first use: $MODEL_DIR\README.md (required llama.cpp version, recommended flags)"
+    Write-Host "Read the model card before first use: https://huggingface.co/$HF_REPO (required llama.cpp version, recommended flags)"
 }
 
 function Invoke-Login {

@@ -138,7 +138,7 @@ cmd_download() {
   [[ -n "$MODEL_SET" ]] && extra+=(--set "$MODEL_SET")
   [[ "$WITH_VISION" == "1" ]] && extra+=(--vision)
   "$VENV/bin/python" "$HERE/fetch_model.py" "$HF_REPO" "$MODEL_DIR" "${extra[@]}"
-  echo "Read the model card before first use: $MODEL_DIR/README.md (required llama.cpp version, recommended flags)"
+  echo "Read the model card before first use: https://huggingface.co/$HF_REPO (required llama.cpp version, recommended flags)"
 }
 
 cmd_login() {
