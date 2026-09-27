@@ -1,7 +1,8 @@
-"""vLLM backend: a local vLLM server's OpenAI-compatible Chat Completions API (any server speaking the same protocol works:
-SGLang, LM Studio, llama.cpp's llama-server).
+"""vLLM backend: the OpenAI-compatible Chat Completions API of vLLM servers (any server speaking the same protocol works:
+SGLang, LM Studio, llama.cpp's llama-server), set up in the Model providers menu or with VLLM_BASE_URL; each call goes to
+the server that serves its model.
 
-Each work cycle is a manual tool-use loop over POST {VLLM_BASE_URL}/chat/completions that drives Huntun's own file,
+Each work cycle is a manual tool-use loop over POST {server}/v1/chat/completions that drives Huntun's own file,
 shell and team tools, like the API backend; the message history (OpenAI format) is written to disk after every step so a
 cycle can be paused and resumed. Requests use only the standard library and run on daemon threads, so a slow local
 generation never holds up shutdown.
@@ -24,7 +25,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ..models import catalog_for, context_limit, vllm_api_key, vllm_base_url
+from ..models import catalog_for, context_limit, default_route, local_route
 from ..tools import ToolContext, available_tools, execute
 from ..types import CycleResult, HuntunConfig
 from . import looks_like_limit
@@ -168,8 +169,9 @@ class VllmBackend:
 
     def __init__(self, config: HuntunConfig) -> None:
         self.config = config
-        self.base_url = vllm_base_url()
-        self.api_key = vllm_api_key()
+        route = default_route("vllm")                                                     # the first vLLM server; each call goes to its model's
+        self.base_url = route["url"] + "/v1"
+        self.api_key = route["key"]
         self.timeout = float(os.environ.get("HUNTUN_VLLM_TIMEOUT", "1800"))
         self.forced_choice_ok = True                                                      # False once the server rejected a named / "none" tool_choice
 
@@ -180,7 +182,12 @@ class VllmBackend:
         return cat[0].id
 
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        return await _in_thread(_http, self.base_url + path, self.api_key, body, self.timeout)
+        """POST to the server that serves the body's model (several can be set up), under the name that server knows."""
+        base, key = self.base_url, self.api_key
+        route = local_route(body.get("model"))
+        if route is not None and route["type"] == "vllm":
+            base, key, body = route["url"] + "/v1", route["key"], {**body, "model": route["model"]}
+        return await _in_thread(_http, base + path, key, body, self.timeout)
 
     async def _send(self, body: dict[str, Any]) -> dict[str, Any]:
         """One chat completion. A max_tokens the context cannot fit is retried without it (the server then fills what is

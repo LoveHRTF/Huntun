@@ -1,8 +1,9 @@
 """Anthropic Messages API backend: a manual streaming tool-use loop whose message history is written
 to disk after every step so a cycle can be paused and resumed.
 
-The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic), a local
-Ollama server (http://127.0.0.1:11434) and a llama.cpp server (llama-server at HUNTUN_LLAMACPP_URL). In that "compat" mode the Anthropic-only extras (betas, server-side
+The same loop drives Anthropic-compatible providers: DeepSeek (https://api.deepseek.com/anthropic), Ollama servers
+and llama.cpp servers (llama-server), set up in the Model providers menu or the environment; a call goes to the server
+that serves its model. In that "compat" mode the Anthropic-only extras (betas, server-side
 fallbacks, effort, adaptive thinking, server tools, eager input streaming) are left out, and any field a provider
 still rejects with a 400 is dropped and the call retried.
 """
@@ -34,6 +35,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "llamacpp": {"label": "llama.cpp server", "base_url_env": "HUNTUN_LLAMACPP_URL", "base_url": "http://127.0.0.1:8080",
                  "key_env": "HUNTUN_LLAMACPP_KEY", "key": "none"},
 }
+LOCAL_PROVIDERS = ("ollama", "llamacpp")      # servers set up in the Model providers menu or the environment, possibly several
 OPTIONAL_FIELDS = ("fallbacks", "output_config", "thinking", "cache_control", "tool_choice", "eager_input_streaming")   # dropped one by one on a 400
 
 
@@ -77,8 +79,9 @@ class ApiBackend:
         self.dropped = set()
         spec = PROVIDERS[provider]
         self._client_for: tuple[str, str] | None = None
+        self._clients: dict[tuple[str, str], Any] = {}
         if self.compat:
-            base, key = self._endpoint()
+            base, key, _ = self._endpoint()
             if not key:
                 raise RuntimeError(f"{spec['label']}: set {spec['key_env']}")
             self.client = anthropic.AsyncAnthropic(api_key=key, base_url=base)
@@ -86,25 +89,41 @@ class ApiBackend:
         else:
             self.client = anthropic.AsyncAnthropic()
 
-    def _endpoint(self) -> tuple[str, str]:
-        """(base URL, API key) for a compatible provider; the llama.cpp server's come from the Projects page or the environment."""
+    def _endpoint(self, model: str | None = None) -> tuple[str, str, str]:
+        """(base URL, API key, model name to send) for a compatible provider. Ollama and llama.cpp servers can be several,
+        from the Model providers menu and the environment: the model decides which one; without one, the first."""
         spec = PROVIDERS[self.provider]
-        if self.provider == "llamacpp":
-            from ..models import llamacpp_key, llamacpp_url
+        if self.provider in LOCAL_PROVIDERS:
+            from ..models import default_route, local_route
 
-            return (llamacpp_url() or spec["base_url"]), llamacpp_key()
+            r = local_route(model) if model else None
+            if r is None or r["type"] != self.provider:
+                r = default_route(self.provider)
+            return r["url"], r["key"] or spec["key"], r["model"] or model or ""
         base = os.environ.get(spec.get("base_url_env", ""), "") or spec["base_url"]
         key = (os.environ.get(spec["key_env"]) if spec.get("key_env") else None) or spec.get("key")
-        return base.rstrip("/"), key or ""
+        return base.rstrip("/"), key or "", model or ""
 
     def _sync_client(self) -> None:
-        """A llama.cpp server can be re-pointed from the Projects page while a team runs: follow it on the next call."""
-        if self.provider != "llamacpp" or self._client_for is None:
+        """The first server of a type can change in the Model providers menu while a team runs: follow it."""
+        if self.provider not in LOCAL_PROVIDERS or self._client_for is None:
             return
-        current = self._endpoint()
-        if current != self._client_for:
-            self.client = anthropic.AsyncAnthropic(api_key=current[1], base_url=current[0])
-            self._client_for = current
+        base, key, _ = self._endpoint()
+        if (base, key) != self._client_for:
+            self.client = anthropic.AsyncAnthropic(api_key=key, base_url=base)
+            self._client_for = (base, key)
+
+    def _client(self, model: str | None) -> tuple[Any, str]:
+        """The client for the server that serves this model, and the model name that server knows."""
+        if self.provider not in LOCAL_PROVIDERS:
+            return self.client, model or ""
+        self.__dict__.setdefault("_clients", {})
+        base, key, served = self._endpoint(model)
+        if (base, key) == self._client_for:
+            return self.client, served
+        if (base, key) not in self._clients:
+            self._clients[(base, key)] = anthropic.AsyncAnthropic(api_key=key, base_url=base)
+        return self._clients[(base, key)], served
 
     def _default_model(self) -> str:
         if not self.compat:
@@ -128,13 +147,16 @@ class ApiBackend:
     async def _send(self, params: dict[str, Any]) -> Any:
         """One streamed call; on a 400 that names an optional field, drop that field for good and retry."""
         self._sync_client()
+        client, served = self._client(params.get("model"))
+        if served:
+            params = {**params, "model": served}
         while True:
             p = self._prepare(params)
             try:
                 if self.compat:
-                    async with self.client.messages.stream(**p) as stream:
+                    async with client.messages.stream(**p) as stream:
                         return await stream.get_final_message()
-                async with self.client.beta.messages.stream(**p) as stream:
+                async with client.beta.messages.stream(**p) as stream:
                     return await stream.get_final_message()
             except anthropic.BadRequestError as e:
                 msg = str(getattr(e, "message", e)).lower()
@@ -185,7 +207,8 @@ class ApiBackend:
     async def probe(self) -> bool:
         self._sync_client()
         try:
-            await self.client.messages.create(model="claude-haiku-4-5" if not self.compat else self._default_model(), max_tokens=5, messages=[{"role": "user", "content": "ping"}])
+            client, served = self._client(self._default_model() if self.compat else None)
+            await client.messages.create(model=served if self.compat else "claude-haiku-4-5", max_tokens=5, messages=[{"role": "user", "content": "ping"}])
             return True
         except anthropic.RateLimitError:
             return False

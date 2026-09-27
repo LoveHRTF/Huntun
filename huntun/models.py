@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -65,57 +66,17 @@ DEEPSEEK_CATALOG: list[ModelInfo] = [
     ModelInfo("deepseek-flash", "DeepSeek V4.1 Flash", "fast", 0.30, 1.20, 1_000_000,
               "very cheap and fast: routine implementation, tests, docs, scrum bookkeeping (peak-hour list price; off-peak is half)", "deepseek"),
 ]
-OLLAMA_CATALOG: list[ModelInfo] = []                                             # filled by refresh_ollama() from the local server
-VLLM_CATALOG: list[ModelInfo] = []                                               # filled by refresh_vllm() from the local server
-LLAMACPP_CATALOG: list[ModelInfo] = []                                           # filled by refresh_llamacpp() from HUNTUN_LLAMACPP_URL
+OLLAMA_CATALOG: list[ModelInfo] = []                                             # the Ollama servers' models, filled by refresh_local()
+VLLM_CATALOG: list[ModelInfo] = []                                               # the vLLM / OpenAI-compatible servers' models
+LLAMACPP_CATALOG: list[ModelInfo] = []                                           # the llama.cpp servers' models
 MODEL_BY_ID = {m.id: m for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG}
 MODEL_IDS = [m.id for m in MODEL_CATALOG + CODEX_CATALOG + KIMI_CATALOG + DEEPSEEK_CATALOG]
-_ollama_checked = 0.0
-_vllm_checked = 0.0
-_llamacpp_checked = 0.0
 
 
 def ollama_host() -> str:
     import os
 
     return (os.environ.get("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
-
-
-def refresh_ollama(force: bool = False) -> list[ModelInfo]:
-    """Models the local Ollama server has (GET /api/tags), or HUNTUN_OLLAMA_MODELS="name[@context],..."; cached for 30 s.
-
-    Context defaults to HUNTUN_OLLAMA_CONTEXT (32768): Ollama serves each model at its own OLLAMA_CONTEXT_LENGTH, and the
-    catalog needs the number Huntun should assume for the context gauge and compaction.
-    """
-    import json
-    import os
-    import time
-    import urllib.request
-
-    global _ollama_checked
-    if OLLAMA_CATALOG and not force and time.time() - _ollama_checked < 30:
-        return OLLAMA_CATALOG
-    _ollama_checked = time.time()
-    default_ctx = int(os.environ.get("HUNTUN_OLLAMA_CONTEXT", "32768"))
-    names: list[tuple[str, int]] = []
-    forced = os.environ.get("HUNTUN_OLLAMA_MODELS", "")
-    if forced.strip():
-        for item in forced.split(","):
-            if item.strip():
-                n, _, c = item.strip().partition("@")
-                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
-    else:
-        try:
-            with urllib.request.urlopen(ollama_host() + "/api/tags", timeout=1.5) as r:
-                data = json.loads(r.read().decode())
-            names = [(str(m.get("name") or m.get("model")), default_ctx) for m in data.get("models") or [] if m.get("name") or m.get("model")]
-        except Exception:
-            names = []
-    found = [ModelInfo(n, n, "ollama", 0.0, 0.0, c, "local model served by Ollama on this machine (no per-token cost; speed and quality depend on the hardware)", "ollama") for n, c in names]
-    OLLAMA_CATALOG[:] = found
-    for m in found:
-        MODEL_BY_ID[m.id] = m
-    return OLLAMA_CATALOG
 
 
 def vllm_base_url() -> str:
@@ -133,114 +94,19 @@ def vllm_api_key() -> str:
     return os.environ.get("VLLM_API_KEY", "")
 
 
-def refresh_vllm(force: bool = False) -> list[ModelInfo]:
-    """Models the vLLM server serves (GET /v1/models), or HUNTUN_VLLM_MODELS="name[@context],..."; cached for 30 s.
-
-    vLLM reports each model's max_model_len, which becomes its context; HUNTUN_VLLM_CONTEXT (32768) covers servers that
-    do not report one (other OpenAI-compatible servers) and forced names without @context.
-    """
-    import json
-    import os
-    import time
-    import urllib.request
-
-    global _vllm_checked
-    if VLLM_CATALOG and not force and time.time() - _vllm_checked < 30:
-        return VLLM_CATALOG
-    _vllm_checked = time.time()
-    default_ctx = int(os.environ.get("HUNTUN_VLLM_CONTEXT", "32768"))
-    names: list[tuple[str, int]] = []
-    forced = os.environ.get("HUNTUN_VLLM_MODELS", "")
-    if forced.strip():
-        for item in forced.split(","):
-            if item.strip():
-                n, _, c = item.strip().partition("@")
-                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
-    else:
-        try:
-            key = vllm_api_key()
-            req = urllib.request.Request(vllm_base_url() + "/models", headers={"Authorization": f"Bearer {key}"} if key else {})
-            with urllib.request.urlopen(req, timeout=1.5) as r:
-                data = json.loads(r.read().decode())
-            names = [(m["id"], int(m.get("max_model_len") or default_ctx)) for m in data.get("data") or [] if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
-        except Exception:
-            names = []
-    found = [ModelInfo(n, n, "vllm", 0.0, 0.0, c, "local model served by vLLM (no per-token cost; speed and quality depend on the hardware and the model's tool calling)", "vllm") for n, c in names]
-    VLLM_CATALOG[:] = found
-    for m in found:
-        MODEL_BY_ID[m.id] = m
-    return VLLM_CATALOG
-
-
-# ---- llama.cpp server: settings saved from the Projects page (~/.huntun/providers.json) win over HUNTUN_LLAMACPP_* ----
-_saved_cache: tuple[float, dict] = (-1.0, {})
-
-
-def _providers_file():
-    import os
-    from pathlib import Path
-
-    return Path(os.environ.get("HUNTUN_HOME") or Path.home() / ".huntun") / "providers.json"
-
-
-def saved_provider(name: str) -> dict:
-    """What the Projects page saved for a provider ({} when nothing); re-read whenever the file changes."""
-    import json
-
-    global _saved_cache
-    f = _providers_file()
-    try:
-        mtime = f.stat().st_mtime
-    except OSError:
-        return {}
-    if mtime != _saved_cache[0]:
-        try:
-            data = json.loads(f.read_text())
-        except (OSError, ValueError):
-            data = {}
-        _saved_cache = (mtime, data if isinstance(data, dict) else {})
-    entry = _saved_cache[1].get(name)
-    return dict(entry) if isinstance(entry, dict) else {}
-
-
-def save_provider(name: str, values: dict | None) -> None:
-    """Stores (or with None, forgets) a provider's settings; the file holds API keys, so only its owner may read it."""
-    import json
-    import os
-
-    global _saved_cache
-    f = _providers_file()
-    f.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        data = json.loads(f.read_text())
-        if not isinstance(data, dict):
-            data = {}
-    except (OSError, ValueError):
-        data = {}
-    if values is None:
-        data.pop(name, None)
-    else:
-        data[name] = values
-    tmp = f.with_suffix(".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as fh:
-        fh.write(json.dumps(data, indent=2))
-    os.replace(tmp, f)
-    _saved_cache = (-1.0, {})
-    if name == "llamacpp":
-        refresh_llamacpp(force=True)
-
-
-def llamacpp_settings() -> dict:
-    """The effective llama.cpp server settings and where they come from: {"url", "key", "note", "source"}."""
-    import os
-
-    saved = saved_provider("llamacpp")
-    if saved.get("url"):
-        return {"url": normalize_server_url(str(saved["url"])), "key": str(saved.get("key") or ""), "note": str(saved.get("note") or ""), "source": "saved"}
-    url = normalize_server_url(os.environ.get("HUNTUN_LLAMACPP_URL") or "")
-    return {"url": url, "key": os.environ.get("HUNTUN_LLAMACPP_KEY") or "", "note": os.environ.get("HUNTUN_LLAMACPP_NOTE", ""),
-            "source": "environment" if url else ""}
+# ---- local model servers: llama.cpp, Ollama and vLLM (or any OpenAI-compatible) servers on this machine or the network ----
+# The Model providers menu saves any number of them (~/.huntun/providers.json, private to the owner: it holds API keys);
+# the environment adds one of each type (HUNTUN_LLAMACPP_URL, OLLAMA_HOST, VLLM_BASE_URL), and Ollama and vLLM are also
+# looked for at their default local addresses. Every model they serve joins the catalog, and a call for a model goes to
+# the server that serves it. When two servers serve the same name, each copy gets the id "name@server".
+SERVER_TYPES = {"llamacpp": "llama.cpp server", "ollama": "Ollama server", "vllm": "vLLM / OpenAI-compatible server"}
+_DEFAULT_URL = {"llamacpp": "http://127.0.0.1:8080", "ollama": "http://127.0.0.1:11434", "vllm": "http://127.0.0.1:8000"}
+_CONTEXT_ENV = {"llamacpp": "HUNTUN_LLAMACPP_CONTEXT", "ollama": "HUNTUN_OLLAMA_CONTEXT", "vllm": "HUNTUN_VLLM_CONTEXT"}
+LOCAL_CATALOGS = {"llamacpp": LLAMACPP_CATALOG, "ollama": OLLAMA_CATALOG, "vllm": VLLM_CATALOG}
+ROUTES: dict[str, dict[str, str]] = {}                                           # model id -> {"server", "type", "url", "key", "model" (the name the server knows)}
+SERVER_STATUS: dict[str, dict[str, Any]] = {}                                    # server id -> what it answered on the last refresh
+_local_checked = 0.0
+_saved_cache: tuple[Any, dict] = (None, {})
 
 
 def normalize_server_url(url: str) -> str:
@@ -253,101 +119,339 @@ def normalize_server_url(url: str) -> str:
     return url
 
 
-def llamacpp_url() -> str:
-    return llamacpp_settings()["url"]
+def _providers_file():
+    import os
+    from pathlib import Path
+
+    return Path(os.environ.get("HUNTUN_HOME") or Path.home() / ".huntun") / "providers.json"
 
 
-def llamacpp_key() -> str:
-    """The llama-server's --api-key, or a placeholder a server without one ignores."""
-    return llamacpp_settings()["key"] or "none"
-
-
-def probe_llamacpp(url: str, key: str = "", timeout: float = 1.5) -> dict:
-    """Asks a llama-server what it serves: {"ok", "models", "context", "slots", "error"}.
-
-    The alias comes from GET /v1/models; GET /props gives the context of one slot (the whole pool when the server
-    shares its KV cache) and how many sessions it runs at once.
-    """
+def _read_providers() -> dict:
+    """The saved file, re-read whenever it changes; {} when there is none."""
     import json
-    import urllib.error
+
+    global _saved_cache
+    f = _providers_file()
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        return {}
+    if (str(f), mtime) != _saved_cache[0]:
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, ValueError):
+            data = {}
+        _saved_cache = ((str(f), mtime), data if isinstance(data, dict) else {})
+    return _saved_cache[1]
+
+
+def saved_servers() -> list[dict[str, Any]]:
+    """The servers saved from the Model providers menu, in the order they were added, keys included (never sent to the page)."""
+    data = _read_providers()
+    raw: list[Any] = []
+    legacy = data.get("llamacpp")                                                   # the single llama.cpp server earlier versions saved
+    if isinstance(legacy, dict) and legacy.get("url"):
+        raw.append({"id": "llamacpp", "type": "llamacpp", **legacy})
+    raw += data.get("servers") or []
+    out: list[dict[str, Any]] = []
+    for s in raw:
+        if not (isinstance(s, dict) and s.get("type") in SERVER_TYPES and s.get("url") and s.get("id")):
+            continue
+        try:
+            context = max(0, int(s.get("context") or 0))
+        except (TypeError, ValueError):
+            context = 0
+        out.append({"id": str(s["id"]), "type": s["type"], "name": str(s.get("name") or "").strip(), "url": normalize_server_url(str(s["url"])),
+                    "key": str(s.get("key") or ""), "note": str(s.get("note") or "").strip(), "context": context, "pinned": "", "source": "saved"})
+    return out
+
+
+def env_servers() -> list[dict[str, Any]]:
+    """The servers the environment names, plus Ollama's and vLLM's default local addresses (listed only once they answer)."""
+    import os
+
+    out: list[dict[str, Any]] = []
+    llama, pinned = normalize_server_url(os.environ.get("HUNTUN_LLAMACPP_URL") or ""), os.environ.get("HUNTUN_LLAMACPP_MODELS", "")
+    if llama or pinned.strip():
+        out.append({"id": "env-llamacpp", "type": "llamacpp", "name": "", "url": llama or _DEFAULT_URL["llamacpp"], "key": os.environ.get("HUNTUN_LLAMACPP_KEY") or "",
+                    "note": os.environ.get("HUNTUN_LLAMACPP_NOTE", "").strip(), "context": 0, "pinned": pinned, "source": "environment"})
+    out.append({"id": "env-ollama", "type": "ollama", "name": "", "url": normalize_server_url(ollama_host()), "key": "", "note": "", "context": 0,
+                "pinned": os.environ.get("HUNTUN_OLLAMA_MODELS", ""), "source": "environment" if os.environ.get("OLLAMA_HOST") else "default"})
+    out.append({"id": "env-vllm", "type": "vllm", "name": "", "url": normalize_server_url(vllm_base_url()), "key": vllm_api_key(), "note": "", "context": 0,
+                "pinned": os.environ.get("HUNTUN_VLLM_MODELS", ""), "source": "environment" if os.environ.get("VLLM_BASE_URL") else "default"})
+    return out
+
+
+def servers() -> list[dict[str, Any]]:
+    """Every local server: the saved ones first, then the environment's (unless a saved entry already names that address)."""
+    saved = saved_servers()
+    taken = {(s["type"], s["url"]) for s in saved}
+    return saved + [e for e in env_servers() if (e["type"], e["url"]) not in taken]
+
+
+def server_label(entry: dict[str, Any]) -> str:
+    """What the page and the master call a server: its name, else its address without the scheme."""
+    return entry.get("name") or entry.get("url", "").split("//", 1)[-1]
+
+
+def _slugs(entries: list[dict[str, Any]]) -> dict[str, str]:
+    """Server id -> the short, unique name that "model@server" ids use."""
+    import re
+
+    out: dict[str, str] = {}
+    for e in entries:
+        base = re.sub(r"[^a-z0-9]+", "-", server_label(e).lower()).strip("-") or e["id"]
+        slug, n = base, 2
+        while slug in out.values():
+            slug, n = f"{base}-{n}", n + 1
+        out[e["id"]] = slug
+    return out
+
+
+def _write_servers(entries: list[dict[str, Any]]) -> None:
+    import json
+    import os
+    import tempfile
+
+    global _saved_cache
+    f = _providers_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    data = {k: v for k, v in _read_providers().items() if k != "llamacpp"}
+    data["servers"] = [{k: e[k] for k in ("id", "type", "name", "url", "key", "note", "context")} for e in entries]
+    fd, tmp = tempfile.mkstemp(dir=f.parent, prefix=".providers-", suffix=".tmp")      # created owner-only
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps(data, indent=2))
+    os.replace(tmp, f)
+    _saved_cache = (None, {})
+    refresh_local(force=True)
+
+
+def save_server(values: dict[str, Any]) -> dict[str, Any]:
+    """Adds a server (no "id") or changes a saved one. A blank "key" keeps the saved key; "clear_key" removes it."""
+    import secrets
+
+    entries = saved_servers()
+    sid = str(values.get("id") or "")
+    current = next((e for e in entries if e["id"] == sid), None)
+    if sid and current is None:
+        raise ValueError("unknown server (servers set in the environment cannot be edited here)")
+    kind = str(values.get("type") or (current or {}).get("type") or "")
+    if kind not in SERVER_TYPES:
+        raise ValueError("type must be one of: " + ", ".join(SERVER_TYPES))
+    url = normalize_server_url(str(values.get("url") or ""))
+    if not url:
+        raise ValueError("the server address is required")
+    if any(e["type"] == kind and e["url"] == url and e is not current for e in entries):
+        raise ValueError(f"{url} is already in the list")
+    try:
+        context = max(0, int(values.get("context") or 0))
+    except (TypeError, ValueError):
+        raise ValueError("context must be a number of tokens") from None
+    key = "" if values.get("clear_key") else (str(values.get("key") or "").strip() or (current or {}).get("key", ""))
+    entry = {"id": sid or secrets.token_hex(4), "type": kind, "name": str(values.get("name") or "").strip()[:60], "url": url, "key": key,
+             "note": str(values.get("note") or "").strip()[:500], "context": context}
+    if current is None:
+        entries.append(entry)
+    else:
+        entries[entries.index(current)] = entry
+    _write_servers(entries)
+    return entry
+
+
+def delete_server(sid: str) -> bool:
+    entries = saved_servers()
+    keep = [e for e in entries if e["id"] != sid]
+    if len(keep) == len(entries):
+        return False
+    _write_servers(keep)
+    return True
+
+
+def _get_json(url: str, key: str, timeout: float) -> Any:
+    import json
     import urllib.request
 
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}"} if key else {})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+
+def probe_server(kind: str, url: str, key: str = "", timeout: float = 1.5, context: int = 0) -> dict[str, Any]:
+    """Asks a server what it serves: {"ok", "models", "contexts" (per model), "context", "slots", "error"}.
+
+    llama.cpp: the alias from GET /v1/models, then from GET /props the context of one slot (the whole pool when the server
+    shares its KV cache) and how many sessions it runs at once. Ollama: GET /api/tags; it does not say what context it
+    serves, so that is the server's own setting here, else HUNTUN_OLLAMA_CONTEXT (32768). vLLM: GET /v1/models, where each
+    model carries its max_model_len.
+    """
+    import os
+    import urllib.error
+
     url = normalize_server_url(url)
+    empty: dict[str, Any] = {"ok": False, "models": [], "contexts": {}, "context": 0, "slots": 0}
+    if kind not in SERVER_TYPES:
+        return {**empty, "error": f"unknown server type {kind!r}"}
     if not url:
-        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": "no server address set"}
-
-    def get(path: str) -> dict:
-        req = urllib.request.Request(url + path, headers={"Authorization": f"Bearer {key or 'none'}"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode())
-
+        return {**empty, "error": "no server address set"}
+    default_ctx = context or int(os.environ.get(_CONTEXT_ENV[kind]) or 32768)
     try:
-        ids = [str(m["id"]) for m in get("/v1/models").get("data") or [] if m.get("id")]
+        data = _get_json(url + ("/api/tags" if kind == "ollama" else "/v1/models"), key, timeout)
     except urllib.error.HTTPError as e:
-        err = "the server rejected the API key" if e.code == 401 else f"the server answered HTTP {e.code}"
-        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": err}
+        return {**empty, "error": "the server rejected the API key" if e.code in (401, 403) else f"the server answered HTTP {e.code}"}
     except Exception as e:
-        reason = getattr(e, "reason", None) or e
-        return {"ok": False, "models": [], "context": 0, "slots": 0, "error": f"cannot reach {url}: {reason}"}
-    context = slots = 0
+        return {**empty, "error": f"cannot reach {url}: {getattr(e, 'reason', None) or e}"}
+    contexts: dict[str, int] = {}
+    reported = slots = 0
     try:
-        props = get("/props")
-        context = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0)
-        slots = int(props.get("total_slots") or 0)
-    except Exception:
-        pass
-    if not ids:
-        return {"ok": False, "models": [], "context": context, "slots": slots, "error": "the server lists no model"}
-    return {"ok": True, "models": ids, "context": context, "slots": slots, "error": ""}
+        if kind == "ollama":
+            for m in data.get("models") or []:
+                if m.get("name") or m.get("model"):
+                    contexts[str(m.get("name") or m.get("model"))] = default_ctx
+            reported = context
+        else:
+            for m in data.get("data") or []:
+                if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]:
+                    contexts[m["id"]] = int(m.get("max_model_len") or 0) or default_ctx
+                    reported = reported or int(m.get("max_model_len") or 0)
+    except (AttributeError, TypeError, ValueError):
+        return {**empty, "error": "the answer is not a model list; is this the right type of server?"}
+    if kind == "llamacpp":
+        try:
+            props = _get_json(url + "/props", key, timeout)
+            reported = int((props.get("default_generation_settings") or {}).get("n_ctx") or 0)
+            slots = int(props.get("total_slots") or 0)
+        except Exception:
+            pass
+        if reported:
+            contexts = {n: reported for n in contexts}
+    if not contexts:
+        return {**empty, "context": reported, "slots": slots, "error": "the server lists no model"}
+    return {"ok": True, "models": list(contexts), "contexts": contexts, "context": reported, "slots": slots, "error": ""}
 
 
-def refresh_llamacpp(force: bool = False) -> list[ModelInfo]:
-    """The model the configured llama.cpp server serves, as catalog entries; cached for 30 s.
+def probe_llamacpp(url: str, key: str = "", timeout: float = 1.5) -> dict[str, Any]:
+    return probe_server("llamacpp", url, key, timeout)
 
-    Settings come from the Projects page or HUNTUN_LLAMACPP_URL / _KEY / _NOTE. HUNTUN_LLAMACPP_MODELS="name[@context],..."
-    skips the discovery. The note is added to the model's description in the catalog the master chooses from.
+
+def _pinned(spec: str, default_ctx: int) -> dict[str, int]:
+    """HUNTUN_*_MODELS="name[@context],...": models named up front instead of asking the server."""
+    out: dict[str, int] = {}
+    for item in spec.split(","):
+        if item.strip():
+            n, _, c = item.strip().partition("@")
+            out[n.strip()] = int(c) if c.strip().isdigit() else default_ctx
+    return out
+
+
+def _use_for(entry: dict[str, Any], status: dict[str, Any]) -> str:
+    kind = {"llamacpp": "llama.cpp", "ollama": "Ollama", "vllm": "vLLM"}[entry["type"]]
+    where = entry["url"].split("//", 1)[-1] + (f" ({entry['name']})" if entry.get("name") else "")
+    text = (f"local model served by {kind} at {where} (no per-token cost; speed and quality depend on that machine"
+            + (" and the model's tool calling)" if entry["type"] == "vllm" else ")"))
+    slots = status.get("slots") or 0
+    if slots:
+        text += f"; it runs {slots} session{'s' if slots != 1 else ''} at once, so give it at most {slots} seat{'s' if slots != 1 else ''}"
+    if entry.get("note"):
+        text += f"; {entry['note']}"
+    return text
+
+
+def refresh_local(force: bool = False) -> dict[str, list[ModelInfo]]:
+    """Asks every local server what it serves, all at once, and rebuilds the catalogs and routes; cached for 30 s.
+
+    An empty or failed answer is cached too: a server on another machine that is switched off would otherwise cost a
+    connection timeout on every page refresh. The note of a server is added to its models' descriptions for the master.
     """
     import os
     import time
+    from collections import Counter
+    from concurrent.futures import ThreadPoolExecutor
 
-    global _llamacpp_checked
-    # an empty answer is cached too: the server is usually another machine, and one that is switched off would
-    # otherwise cost a connection timeout on every page refresh
-    if not force and time.time() - _llamacpp_checked < 30:
-        return LLAMACPP_CATALOG
-    _llamacpp_checked = time.time()
-    cfg = llamacpp_settings()
-    url = cfg["url"]
-    default_ctx = int(os.environ.get("HUNTUN_LLAMACPP_CONTEXT", "32768"))
-    forced = os.environ.get("HUNTUN_LLAMACPP_MODELS", "")
-    names: list[tuple[str, int]] = []
-    slots = 0
-    if forced.strip():
-        for item in forced.split(","):
-            if item.strip():
-                n, _, c = item.strip().partition("@")
-                names.append((n, int(c) if c.strip().isdigit() else default_ctx))
-    elif url:
-        info = probe_llamacpp(url, cfg["key"])
-        slots = info["slots"]
-        names = [(i, info["context"] or default_ctx) for i in info["models"]]
-    where = url.split("//", 1)[-1] if url else "your network"
-    use_for = f"local model served by llama.cpp at {where} (no per-token cost; speed and quality depend on that machine)"
-    if slots:
-        use_for += f"; it runs {slots} session{'s' if slots != 1 else ''} at once, so give it at most {slots} seat{'s' if slots != 1 else ''}"
-    note = cfg["note"].strip()
-    if note:
-        use_for += f"; {note}"
-    found = [ModelInfo(n, n, "llamacpp", 0.0, 0.0, c, use_for, "llamacpp") for n, c in names]
-    LLAMACPP_CATALOG[:] = found
-    for m in found:
-        MODEL_BY_ID[m.id] = m
-    return LLAMACPP_CATALOG
+    global _local_checked
+    if not force and time.time() - _local_checked < 30:
+        return LOCAL_CATALOGS
+    _local_checked = time.time()
+    entries = servers()
+
+    def ask(e: dict[str, Any]) -> dict[str, Any]:
+        if e.get("pinned", "").strip():
+            contexts = _pinned(e["pinned"], e.get("context") or int(os.environ.get(_CONTEXT_ENV[e["type"]]) or 32768))
+            return {"ok": bool(contexts), "models": list(contexts), "contexts": contexts, "context": 0, "slots": 0, "error": "", "pinned": True}
+        return probe_server(e["type"], e["url"], e["key"], context=e.get("context", 0))
+
+    with ThreadPoolExecutor(max_workers=min(8, len(entries))) as pool:
+        results = list(pool.map(ask, entries))
+    served = Counter(n for r in results for n in dict.fromkeys(r["models"]))
+    slugs = _slugs(entries)
+    fresh: dict[str, list[ModelInfo]] = {t: [] for t in SERVER_TYPES}
+    routes: dict[str, dict[str, str]] = {}
+    for e, r in zip(entries, results):
+        for n in r["models"]:
+            mid = n if served[n] == 1 else f"{n}@{slugs[e['id']]}"
+            if mid in routes:
+                continue
+            fresh[e["type"]].append(ModelInfo(mid, f"{n} · {server_label(e)}", e["type"], 0.0, 0.0, r["contexts"][n], _use_for(e, r), e["type"]))
+            routes[mid] = {"server": e["id"], "type": e["type"], "url": e["url"], "key": e["key"], "model": n}
+    for t, cat in fresh.items():
+        for m in cat:
+            MODEL_BY_ID[m.id] = m
+        LOCAL_CATALOGS[t][:] = cat
+    _replace(ROUTES, routes)                                                        # in place and never empty in between: calls route from other threads
+    _replace(SERVER_STATUS, {e["id"]: r for e, r in zip(entries, results)})
+    return LOCAL_CATALOGS
+
+
+def _replace(target: dict, fresh: dict) -> None:
+    target.update(fresh)
+    for k in [k for k in list(target) if k not in fresh]:
+        target.pop(k, None)
+
+
+def refresh_ollama(force: bool = False) -> list[ModelInfo]:
+    return refresh_local(force)["ollama"]
+
+
+def refresh_vllm(force: bool = False) -> list[ModelInfo]:
+    return refresh_local(force)["vllm"]
+
+
+def refresh_llamacpp(force: bool = False) -> list[ModelInfo]:
+    return refresh_local(force)["llamacpp"]
+
+
+def local_route(model_id: str | None) -> dict[str, str] | None:
+    """Which server serves a local model, and under what name: {"server", "type", "url", "key", "model"}, or None."""
+    if not model_id:
+        return None
+    route = ROUTES.get(model_id)
+    if route is None:
+        refresh_local()
+        route = ROUTES.get(model_id) or next((r for r in list(ROUTES.values()) if r["model"] == model_id), None)   # a plain name another server now shares
+    if route is None and "@" in model_id:                                                               # "name@server" while that server is away
+        name, _, slug = model_id.rpartition("@")
+        entries = servers()
+        slugs = _slugs(entries)
+        e = next((x for x in entries if slugs[x["id"]] == slug), None)
+        if e:
+            route = {"server": e["id"], "type": e["type"], "url": e["url"], "key": e["key"], "model": name}
+    return route
+
+
+def default_route(kind: str) -> dict[str, str]:
+    """Where calls of this type go when they name no known model: the first server of the type that serves one, else the first listed."""
+    entries = [e for e in servers() if e["type"] == kind]
+    routes = list(ROUTES.values())
+    for e in entries:
+        for r in routes:
+            if r["server"] == e["id"] and r["url"] == e["url"]:
+                return r
+    e = entries[0] if entries else {"id": "", "url": _DEFAULT_URL[kind], "key": ""}
+    return {"server": e["id"], "type": kind, "url": e["url"], "key": e["key"], "model": ""}
 
 
 def model_ids() -> list[str]:
-    """Every model id an agent can be put on: the fixed catalogs plus what the local Ollama, vLLM and llama.cpp servers serve now."""
-    local = [m.id for m in refresh_ollama() + refresh_vllm() + refresh_llamacpp()]
+    """Every model id an agent can be put on: the fixed catalogs plus what the local servers serve now."""
+    local = [m.id for cat in refresh_local().values() for m in cat]
     return MODEL_IDS + [i for i in dict.fromkeys(local) if i not in MODEL_IDS]
 
 

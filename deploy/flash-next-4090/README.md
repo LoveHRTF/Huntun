@@ -139,10 +139,12 @@ FIT_TARGET_MIB=1536   # if a desktop session shares the GPU
 
 ## Connecting Huntun
 
-On Huntun's Projects page (the Mac mini), fill in **Model providers → llama.cpp server** with what
-`setup.ps1 connect` / `setup.sh connect` prints: the server address, the API key and, optionally, a note for the
-master. **Test** shows the model, context and sessions it finds; **Save** makes it available right away. Setting
-`HUNTUN_LLAMACPP_URL`, `HUNTUN_LLAMACPP_KEY` and `HUNTUN_LLAMACPP_NOTE` before starting Huntun works too.
+In Huntun (the Mac mini), open **⚙ Model providers** in the header, choose **+ Add a server** and fill in what
+`setup.ps1 connect` / `setup.sh connect` prints: type *llama.cpp server*, a name (e.g. "4090 box"), the server address,
+the API key and, optionally, a note for the master. **Test** shows the model, context and sessions it finds; **Save** makes
+it available right away. The entry then shows in the list; click it to change or delete it (the saved key shows as
+`*****`). Setting `HUNTUN_LLAMACPP_URL`, `HUNTUN_LLAMACPP_KEY` and `HUNTUN_LLAMACPP_NOTE` before starting Huntun works too.
+More GPU boxes (or an Ollama or vLLM server) can be added the same way.
 
 "llama.cpp server" then appears among the providers on the setup page, and the model
 (`qwen3.8-flash-next-uncensored`) among the choices for each seat, next to Claude, Codex and Ollama models. Huntun reads
@@ -159,7 +161,7 @@ Huntun relies on. Whether the model thinks is up to the server (Qwen's template 
 `llama-server` answers anyone who can reach its port, and without an API key any web page opened on the network could
 use it (it allows all origins). Set a key (`setup.ps1 apikey` / `setup.sh apikey`), and keep the firewall to the local
 network (`ALLOW_FROM`, default `LocalSubnet`) or to the machines that need it. The chat page asks for the key under
-Settings; Huntun sends `HUNTUN_LLAMACPP_KEY`. Never forward the port to the internet.
+Settings; Huntun sends the key saved under Model providers (or `HUNTUN_LLAMACPP_KEY`). Never forward the port to the internet.
 
 ## Troubleshooting
 

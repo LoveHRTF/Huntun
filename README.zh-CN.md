@@ -43,12 +43,14 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 | OpenAI Codex | `npm i -g @openai/codex`，然后 `codex login`。 | PATH 中存在 `codex` |
 | Kimi Code | `npm i -g @moonshot-ai/kimi-code`（或 `brew install kimi-code`），然后 `kimi login` 并选择模型。 | PATH 中存在 `kimi` 且已配置模型 |
 | DeepSeek | 在 platform.deepseek.com 创建 API key 并导出：`export DEEPSEEK_API_KEY=sk-...`。 | 已设置 `DEEPSEEK_API_KEY` |
-| Ollama（本地） | 安装 Ollama 0.14 或更新版本，拉取一个支持工具调用的模型，并用适合内存的上下文长度启动服务：`ollama pull qwen3:27b`，然后 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`。可选：指定 Huntun 使用的模型与上下文：`export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`。 | `OLLAMA_HOST`（默认 `http://127.0.0.1:11434`）上有可响应且已加载模型的服务 |
-| vLLM（本地） | 用开启工具调用的方式部署一个支持工具调用的模型：`vllm serve Qwen/Qwen3-32B --enable-auto-tool-choice --tool-call-parser hermes`。如果服务不在默认地址，告诉 Huntun 它在哪里：`export VLLM_BASE_URL=http://gpu-box:8000/v1`（若服务以 `--api-key` 启动，再设置 `VLLM_API_KEY`）。其他 OpenAI 兼容服务（SGLang、LM Studio）用法相同；llama.cpp 的 `llama-server` 请使用下面的 llama.cpp 提供方。 | `VLLM_BASE_URL`（默认 `http://127.0.0.1:8000/v1`）上有可响应且已加载模型的服务 |
-| llama.cpp 服务器（本机或局域网） | 在本机或另一台机器上用 `--jinja`（工具调用需要）运行 `llama-server`，然后在 Huntun 项目页的 **模型提供方** 中填写它的地址（以及 API 密钥，如有），点 **测试** 可查看它提供的模型；也可以在启动 Huntun 前设置 `HUNTUN_LLAMACPP_URL` 和 `HUNTUN_LLAMACPP_KEY`。Huntun 会从服务器读取模型名、每个槽位的上下文和可并行的会话数；可选的说明（`HUNTUN_LLAMACPP_NOTE`）会在主管分配席位时提供参考（例如模型擅长什么、速度多快）。[`deploy/flash-next-4090`](deploy/flash-next-4090/README.md) 可为 Qwen3.8-Flash-Next 搭建这样的服务器。 | 已配置的服务器可响应且已加载模型 |
+| Ollama（本机或局域网） | 安装 Ollama 0.14 或更新版本，拉取一个支持工具调用的模型，并用适合内存的上下文长度启动服务：`ollama pull qwen3:27b`，然后 `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`。本机的服务会被自动发现；其他机器上的服务在 **⚙ 模型提供方** 中添加（或设置 `OLLAMA_HOST`）。也可以固定 Huntun 使用的模型与上下文：`export HUNTUN_OLLAMA_MODELS="qwen3:27b@32768"`。 | 默认地址、`OLLAMA_HOST` 或在模型提供方中添加的服务器上有可响应且已加载模型的服务 |
+| vLLM（本机或局域网） | 用开启工具调用的方式部署一个支持工具调用的模型：`vllm serve Qwen/Qwen3-32B --enable-auto-tool-choice --tool-call-parser hermes`。默认地址（`http://127.0.0.1:8000`）上的服务会被自动发现；其他服务在 **⚙ 模型提供方** 中添加（地址，以及 `--api-key`，如有），或设置 `VLLM_BASE_URL` / `VLLM_API_KEY`。其他 OpenAI 兼容服务（SGLang、LM Studio）用法相同；llama.cpp 的 `llama-server` 请使用下面的 llama.cpp 提供方。 | 默认地址、`VLLM_BASE_URL` 或在模型提供方中添加的服务器上有可响应且已加载模型的服务 |
+| llama.cpp 服务器（本机或局域网） | 在本机或另一台机器上用 `--jinja`（工具调用需要）运行 `llama-server`，然后在 Huntun 顶栏的 **⚙ 模型提供方** 中添加它：地址、API 密钥（如有）以及可选的给主管的说明（例如模型擅长什么、速度多快）；保存前点 **测试** 可查看它提供的模型。也可以在启动 Huntun 前设置 `HUNTUN_LLAMACPP_URL`、`HUNTUN_LLAMACPP_KEY` 和 `HUNTUN_LLAMACPP_NOTE`。Huntun 会从服务器读取模型名、每个槽位的上下文和可并行的会话数。[`deploy/flash-next-4090`](deploy/flash-next-4090/README.md) 可为 Qwen3.8-Flash-Next 搭建这样的服务器。 | 在模型提供方中添加或由 `HUNTUN_LLAMACPP_URL` 指定的服务器可响应且已加载模型 |
 | Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...`。 | 已设置 `ANTHROPIC_API_KEY` |
 
 可用 `HUNTUN_BACKEND=claude-code|codex|kimi|deepseek|ollama|vllm|llamacpp|api` 强制指定提供方，或在设置页面选择。
+
+**模型提供方**（项目页和设置页顶栏的 ⚙ 按钮）列出 Huntun 使用的模型服务器：可以添加任意多个本机或局域网中的 llama.cpp、Ollama 和 vLLM 服务器，点击某一项即可编辑或删除。它们提供的每个模型都可以分配给任何席位，包括主管；两台服务器提供同名模型时，各自以 `模型@服务器` 列出。
 
 **安装**
 

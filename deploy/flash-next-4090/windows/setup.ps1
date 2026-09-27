@@ -178,7 +178,7 @@ function Invoke-ApiKey {
     Set-Content $local $lines
     Write-Host "API key written to config.local.ps1: $key"
     Write-Host "Restart the server to apply it. Every client needs it: the chat page asks for it under Settings > API Key,"
-    Write-Host "and Huntun reads it from HUNTUN_LLAMACPP_KEY (.\setup.ps1 connect prints the lines)."
+    Write-Host "and Huntun needs it too (.\setup.ps1 connect prints what to enter under Model providers)."
 }
 
 function Invoke-Firewall {
@@ -264,7 +264,7 @@ function Invoke-Connect {
     foreach ($ip in $ips) { Write-Host "  http://${ip}:$PORT" }
     if ($API_KEY) { Write-Host "  (enter the API key under Settings > API Key: $API_KEY)" }
     Write-Host ""
-    Write-Host "Huntun: enter these under Model providers > llama.cpp server on its Projects page, or export them before starting it:"
+    Write-Host "Huntun: add a server under Model providers (the gear button in its header) with these, or export them before starting it:"
     Write-Host "  export HUNTUN_LLAMACPP_URL=http://$($ips[0]):$PORT"
     if ($API_KEY) { Write-Host "  export HUNTUN_LLAMACPP_KEY=$API_KEY" }
     Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse`""

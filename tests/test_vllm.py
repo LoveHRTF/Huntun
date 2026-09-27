@@ -11,6 +11,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from huntun import models
 from huntun.backends import make_backend
@@ -133,6 +134,23 @@ class DiscoveryTests(VllmTestCase):
         self.assertNotIn("vllm", models.available_backends())
         with self.assertRaises(RuntimeError):
             make_backend("vllm", self.config)._default_model()
+
+
+    def test_a_saved_server_joins_and_gets_the_calls_for_its_models(self) -> None:
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        other = StubServer()
+        self.addCleanup(other.close)
+        with mock.patch.dict(os.environ, {"HUNTUN_HOME": home.name}):
+            models.save_server({"type": "vllm", "name": "lab", "url": other.url + "/v1", "key": "k2"})
+            port = self.server.url.rsplit(":", 1)[1]
+            self.assertEqual([m.id for m in models.refresh_vllm()],                           # both list the same models: server ids
+                             ["Qwen/Qwen3-32B@lab", "llama-4@lab", f"Qwen/Qwen3-32B@127-0-0-1-{port}", f"llama-4@127-0-0-1-{port}"])
+            other.script = [completion("hi")]
+            b = make_backend("vllm", self.config)
+            asyncio.run(b._post("/chat/completions", {"model": "llama-4@lab", "messages": [{"role": "user", "content": "hello"}]}))
+            self.assertEqual((other.requests[-1]["model"], other.headers[-1].get("Authorization")), ("llama-4", "Bearer k2"))
+            self.assertEqual(self.server.requests, [])
 
 
 class CycleTests(VllmTestCase):

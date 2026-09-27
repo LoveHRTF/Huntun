@@ -149,6 +149,7 @@ class Orchestrator:
             "next_probe_at": first.get("next_probe_at"),
             "last_probe": first.get("last_probe"),
             "auto": bool(first.get("auto")),
+            "probing": self._probing,                                            # a check is running right now (the office's guard is on the radio)
         }
 
     def on_limit(self, agent: str, backend: str, reason: str, resets_at: float | None) -> None:

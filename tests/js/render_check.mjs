@@ -16,7 +16,7 @@ const errors = [];
 const finish = () => {
   const view = dom?.window.document.querySelector("#view")?.textContent?.trim() || "";
   const main = dom?.window.document.querySelector("#main")?.textContent?.trim() || "";
-  console.log(JSON.stringify({ route, errors, viewChars: view.length, mainChars: main.length, status: dom?.window.document.querySelector("#hstatus")?.textContent || "", lang: dom?.window.document.documentElement.lang || "", sample: main.replace(/\s+/g, " ").slice(0, 220), text: main.replace(/\s+/g, " ").slice(0, 20000), header: (dom?.window.document.querySelector("header")?.textContent || "").replace(/\s+/g, " ") }));
+  console.log(JSON.stringify({ route, errors, viewChars: view.length, mainChars: main.length, status: dom?.window.document.querySelector("#hstatus")?.textContent || "", lang: dom?.window.document.documentElement.lang || "", sample: main.replace(/\s+/g, " ").slice(0, 220), text: main.replace(/\s+/g, " ").slice(0, 20000), header: (dom?.window.document.querySelector("header")?.textContent || "").replace(/\s+/g, " "), dialog: [...(dom?.window.document.querySelectorAll("dialog[open]") || [])].map(d => d.textContent).join(" ").replace(/\s+/g, " ") }));
   process.exit(errors.length || main.length < 40 ? 1 : 0);
 };
 process.on("uncaughtException", (e) => { errors.push("uncaught: " + (e.stack || e)); finish(); });

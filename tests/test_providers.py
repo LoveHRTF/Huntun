@@ -1,5 +1,5 @@
 """DeepSeek, Ollama and llama.cpp as Anthropic-compatible providers of the API backend: client wiring, request shaping,
-discovery, and the llama.cpp settings saved from the Projects page."""
+discovery, and the local servers saved from the Model providers menu."""
 from __future__ import annotations
 
 import asyncio
@@ -56,6 +56,7 @@ LLAMACPP_ENV = ("HUNTUN_LLAMACPP_URL", "HUNTUN_LLAMACPP_KEY", "HUNTUN_LLAMACPP_M
 class _FakeLlamaServer(BaseHTTPRequestHandler):
     """The parts of llama-server Huntun talks to: /v1/models and /props for discovery, /v1/messages for calls."""
     key = "secret"
+    alias = "qwen3.8-flash-next-uncensored"
     seen_keys: list[str] = []
 
     def log_message(self, *a: Any) -> None:
@@ -82,7 +83,7 @@ class _FakeLlamaServer(BaseHTTPRequestHandler):
         if not self._authorized():
             return
         if self.path == "/v1/models":
-            self._send(200, {"object": "list", "data": [{"id": "qwen3.8-flash-next-uncensored", "object": "model"}]})
+            self._send(200, {"object": "list", "data": [{"id": self.alias, "object": "model"}]})
         elif self.path == "/props":
             self._send(200, {"default_generation_settings": {"n_ctx": 131072}, "total_slots": 2})
         else:
@@ -92,9 +93,23 @@ class _FakeLlamaServer(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if not self._authorized():
             return
-        self._send(200, {"id": "msg_1", "type": "message", "role": "assistant", "model": body["model"],
-                         "content": [{"type": "text", "text": "pong"}], "stop_reason": "end_turn", "stop_sequence": None,
-                         "usage": {"input_tokens": 3, "output_tokens": 1}})
+        message = {"id": "msg_1", "type": "message", "role": "assistant", "model": body["model"], "content": [{"type": "text", "text": "pong"}],
+                   "stop_reason": "end_turn", "stop_sequence": None, "usage": {"input_tokens": 3, "output_tokens": 1}}
+        if not body.get("stream"):
+            self._send(200, message)
+            return
+        events = [("message_start", {"message": {**message, "content": [], "stop_reason": None}}),
+                  ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
+                  ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "pong"}}),
+                  ("content_block_stop", {"index": 0}),
+                  ("message_delta", {"delta": {"stop_reason": "end_turn", "stop_sequence": None}, "usage": {"output_tokens": 1}}),
+                  ("message_stop", {})]
+        data = "".join(f"event: {name}\ndata: {json.dumps({'type': name, **ev})}\n\n" for name, ev in events).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
 
 def isolate_huntun_home(test: unittest.TestCase) -> Path:
@@ -282,33 +297,60 @@ def _FakeResp() -> Any:  # noqa: N802
     return httpx.Response(400, request=httpx.Request("POST", "http://test/v1/messages"), json={"error": {"message": "cache_control is not supported"}})
 
 
-class LlamacppSettingsTests(unittest.TestCase):
-    """Settings saved from the Projects page: stored privately, preferred over the environment, applied without a restart."""
+CLOSED = "127.0.0.1:9"                                                           # nothing listens there: refused at once
+
+
+class ServerSettingsTests(unittest.TestCase):
+    """Servers saved from the Model providers menu: stored privately, any number next to the environment's, used without a restart."""
 
     def setUp(self) -> None:
-        for k in LLAMACPP_ENV:
+        env = (*LLAMACPP_ENV, "OLLAMA_HOST", "HUNTUN_OLLAMA_MODELS", "VLLM_BASE_URL", "VLLM_API_KEY", "HUNTUN_VLLM_MODELS")
+        for k in env:
             os.environ.pop(k, None)
-        self.addCleanup(lambda: [os.environ.pop(k, None) for k in LLAMACPP_ENV])
-        self.addCleanup(lambda: models.refresh_llamacpp(force=True))
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in env])
+        self.addCleanup(lambda: models.refresh_local(force=True))
         self.home = isolate_huntun_home(self)
 
-    def _llama_server(self, key: str = "secret") -> str:
-        _FakeLlamaServer.key, _FakeLlamaServer.seen_keys = key, []
-        srv = HTTPServer(("127.0.0.1", 0), _FakeLlamaServer)
+    def _llama_server(self, key: str = "secret", alias: str = "qwen3.8-flash-next-uncensored") -> tuple[str, type]:
+        handler = type("Llama", (_FakeLlamaServer,), {"key": key, "alias": alias, "seen_keys": []})
+        srv = HTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         self.addCleanup(srv.shutdown)
-        return f"127.0.0.1:{srv.server_port}"                                          # typed without http://, as people do
+        return f"127.0.0.1:{srv.server_port}", handler                                   # typed without http://, as people do
 
-    def test_saved_settings_win_over_the_environment_and_stay_private(self) -> None:
-        os.environ["HUNTUN_LLAMACPP_URL"] = "http://env-box:8080"
-        self.assertEqual(models.llamacpp_settings()["source"], "environment")
-        models.save_provider("llamacpp", {"url": "http://saved-box:8080", "key": "k", "note": "fast"})
-        cfg = models.llamacpp_settings()
-        self.assertEqual((cfg["url"], cfg["key"], cfg["note"], cfg["source"]), ("http://saved-box:8080", "k", "fast", "saved"))
+    def test_saved_servers_join_the_environment_ones_and_stay_private(self) -> None:
+        os.environ["HUNTUN_LLAMACPP_URL"] = "http://127.0.0.1:10"
+        models.save_server({"type": "llamacpp", "name": "4090 box", "url": CLOSED + "/v1/", "key": "k", "note": "fast"})
+        models.save_server({"type": "ollama", "name": "M3 Max", "url": "http://127.0.0.1:11"})
+        listed = [(e["type"], e["url"], e["source"]) for e in models.servers() if e["source"] != "default"]
+        self.assertEqual(listed, [("llamacpp", "http://" + CLOSED, "saved"), ("ollama", "http://127.0.0.1:11", "saved"), ("llamacpp", "http://127.0.0.1:10", "environment")])
         mode = stat.S_IMODE((self.home / "providers.json").stat().st_mode)
-        self.assertEqual(mode & 0o077, 0, oct(mode))                                   # holds an API key: owner only
-        models.save_provider("llamacpp", None)
-        self.assertEqual(models.llamacpp_settings()["url"], "http://env-box:8080")
+        self.assertEqual(mode & 0o077, 0, oct(mode))                                   # holds API keys: owner only
+        with self.assertRaises(ValueError):
+            models.save_server({"type": "llamacpp", "url": "http://" + CLOSED})         # already in the list
+        with self.assertRaises(ValueError):
+            models.save_server({"type": "gpt", "url": CLOSED})
+        with self.assertRaises(ValueError):
+            models.save_server({"id": "env-llamacpp", "type": "llamacpp", "url": CLOSED})   # the environment's is not editable here
+
+        box = models.saved_servers()[0]
+        models.save_server({"id": box["id"], "name": "4090 box", "url": CLOSED, "key": "", "note": "faster"})   # a blank key keeps the saved one
+        self.assertEqual({k: models.saved_servers()[0][k] for k in ("type", "key", "note")}, {"type": "llamacpp", "key": "k", "note": "faster"})
+        models.save_server({"id": box["id"], "name": "4090 box", "url": CLOSED, "clear_key": True})
+        self.assertEqual(models.saved_servers()[0]["key"], "")
+        models.save_server({"type": "llamacpp", "url": "127.0.0.1:10"})                  # the environment's address, saved: listed once
+        self.assertEqual([e["source"] for e in models.servers() if e["url"] == "http://127.0.0.1:10"], ["saved"])
+        self.assertTrue(models.delete_server(box["id"]))
+        self.assertFalse(models.delete_server(box["id"]))
+        self.assertEqual([e["name"] for e in models.saved_servers()], ["M3 Max", ""])
+
+    def test_the_single_server_earlier_versions_saved_is_kept(self) -> None:
+        (self.home / "providers.json").write_text(json.dumps({"llamacpp": {"url": CLOSED, "key": "old", "note": "n"}}))
+        self.assertEqual([(e["id"], e["url"], e["key"], e["note"]) for e in models.saved_servers()], [("llamacpp", "http://" + CLOSED, "old", "n")])
+        models.save_server({"type": "ollama", "url": "127.0.0.1:11"})
+        data = json.loads((self.home / "providers.json").read_text())
+        self.assertNotIn("llamacpp", data)
+        self.assertEqual([(s["type"], s["key"]) for s in data["servers"]], [("llamacpp", "old"), ("ollama", "")])
 
     def test_addresses_are_normalized(self) -> None:
         self.assertEqual(models.normalize_server_url(" 10.0.0.72:8080/v1/ "), "http://10.0.0.72:8080")
@@ -316,35 +358,59 @@ class LlamacppSettingsTests(unittest.TestCase):
         self.assertEqual(models.normalize_server_url(""), "")
 
     def test_saving_makes_the_model_available_at_once(self) -> None:
-        addr = self._llama_server()
+        addr, _ = self._llama_server()
         self.assertNotIn("llamacpp", models.available_backends())
-        models.save_provider("llamacpp", {"url": addr, "key": "secret", "note": "Flash-Next"})
+        models.save_server({"type": "llamacpp", "url": addr, "key": "secret", "note": "Flash-Next"})
         avail = models.available_backends()
         self.assertIn("llamacpp", avail)
         m = models.model_info("qwen3.8-flash-next-uncensored")
         self.assertIsNotNone(m)
         self.assertTrue(m.use_for.endswith("Flash-Next"))
+        self.assertEqual(m.context, 131072)
+
+    def test_servers_sharing_a_model_get_their_own_ids_and_calls(self) -> None:
+        a, ha = self._llama_server(key="ka", alias="qwen")
+        b, hb = self._llama_server(key="kb", alias="qwen")
+        c, hc = self._llama_server(key="", alias="gemma")
+        models.save_server({"type": "llamacpp", "name": "4090 box", "url": a, "key": "ka"})
+        models.save_server({"type": "llamacpp", "name": "M3 Max", "url": b, "key": "kb"})
+        models.save_server({"type": "llamacpp", "url": c})
+        cat = models.refresh_llamacpp()
+        self.assertEqual([(m.id, m.label) for m in cat], [("qwen@4090-box", "qwen · 4090 box"), ("qwen@m3-max", "qwen · M3 Max"), ("gemma", f"gemma · {c}")])
+        self.assertIn("qwen@m3-max", models.model_ids())
+        backend = make_backend("llamacpp", default_config("Mock goal"))
+        ask = lambda model: asyncio.run(backend._send({"model": model, "max_tokens": 5, "messages": [{"role": "user", "content": "ping"}]}))   # noqa: E731
+        before = len(ha.seen_keys)
+        self.assertEqual(ask("qwen@m3-max").model, "qwen")                              # the server gets the name it knows
+        self.assertEqual((hb.seen_keys[-1], len(ha.seen_keys)), ("kb", before))         # and the other one nothing
+        ask("qwen@4090-box")
+        self.assertEqual(ha.seen_keys[-1], "ka")
+        ask("gemma")
+        self.assertEqual(hc.seen_keys[-1], "none")                                      # no key set: the placeholder llama-server ignores
+        self.assertEqual(models.local_route("qwen")["server"], models.saved_servers()[0]["id"])   # a plain name now shared: the first server
 
     def test_a_running_backend_follows_a_changed_server(self) -> None:
-        models.save_provider("llamacpp", {"url": "http://old-box:8080", "key": "one", "note": ""})
+        box = models.save_server({"type": "llamacpp", "url": "http://127.0.0.1:12", "key": "one"})
         b = make_backend("llamacpp", default_config("Mock goal"))
-        self.assertEqual((str(b.client.base_url).rstrip("/"), b.client.api_key), ("http://old-box:8080", "one"))
-        models.save_provider("llamacpp", {"url": "10.0.0.72:8080", "key": "two", "note": ""})
+        self.assertEqual((str(b.client.base_url).rstrip("/"), b.client.api_key), ("http://127.0.0.1:12", "one"))
+        models.save_server({"id": box["id"], "url": "127.0.0.1:13", "key": "two"})
         b._sync_client()
-        self.assertEqual((str(b.client.base_url).rstrip("/"), b.client.api_key), ("http://10.0.0.72:8080", "two"))
+        self.assertEqual((str(b.client.base_url).rstrip("/"), b.client.api_key), ("http://127.0.0.1:13", "two"))
 
     def test_probe_explains_what_is_wrong(self) -> None:
-        addr = self._llama_server()
+        addr, _ = self._llama_server()
         self.assertIn("rejected the API key", models.probe_llamacpp(addr, "wrong")["error"])
-        self.assertIn("cannot reach", models.probe_llamacpp("127.0.0.1:1", "")["error"])
+        self.assertIn("cannot reach", models.probe_llamacpp(CLOSED, "")["error"])
         ok = models.probe_llamacpp(addr, "secret")
         self.assertEqual((ok["ok"], ok["models"], ok["context"], ok["slots"]), (True, ["qwen3.8-flash-next-uncensored"], 131072, 2))
+        self.assertIn("HTTP 404", models.probe_server("ollama", addr, "secret")["error"])   # the wrong type of server
+        self.assertIn("unknown server type", models.probe_server("gpt", addr)["error"])
 
-    def test_projects_page_endpoints(self) -> None:
+    def test_model_providers_endpoints(self) -> None:
         from huntun.hub import Hub
         from huntun.server import start_server
 
-        addr = self._llama_server()
+        addr, _ = self._llama_server()
         server = start_server(Hub(self.home), 0)
         self.addCleanup(server.shutdown)
         base = f"http://127.0.0.1:{server.server_address[1]}"
@@ -360,31 +426,37 @@ class LlamacppSettingsTests(unittest.TestCase):
                 raw = e.read().decode()
                 return e.code, json.loads(raw), raw
 
-        self.assertEqual(call("/api/providers")[1]["llamacpp"]["url"], "")
-        code, res, _ = call("/api/providers/llamacpp/test", {"url": addr, "key": "wrong"})
+        code, res, _ = call("/api/providers")
+        self.assertEqual((res["servers"], sorted(res["types"])), ([], ["llamacpp", "ollama", "vllm"]))
+        code, res, _ = call("/api/providers/servers/test", {"type": "llamacpp", "url": addr, "key": "wrong"})
         self.assertIn("rejected the API key", res["error"])
-        code, res, _ = call("/api/providers/llamacpp/test", {"url": addr, "key": "secret"})
+        code, res, _ = call("/api/providers/servers/test", {"type": "llamacpp", "url": addr, "key": "secret"})
         self.assertTrue(res["ok"])
-        self.assertEqual(models.llamacpp_settings()["url"], "")                       # testing does not save
+        self.assertEqual(models.saved_servers(), [])                                    # testing does not save
 
-        code, res, raw = call("/api/providers/llamacpp", {"url": addr, "key": "secret", "note": "fast"})
+        code, res, raw = call("/api/providers/servers", {"type": "llamacpp", "name": "4090 box", "url": addr, "key": "secret", "note": "fast"})
         self.assertEqual(code, 200)
-        self.assertEqual((res["llamacpp"]["url"], res["llamacpp"]["has_key"], res["llamacpp"]["status"]["ok"]), (f"http://{addr}", True, True))
+        entry = res["servers"][0]
+        self.assertEqual((entry["label"], entry["url"], entry["has_key"], entry["status"]["ok"], entry["models"]),
+                         ("4090 box", f"http://{addr}", True, True, ["qwen3.8-flash-next-uncensored"]))
         self.assertIn("llamacpp", res["backends"])
         self.assertNotIn("secret", raw)                                                # the key never goes back to the page
         self.assertNotIn("secret", call("/api/providers")[2])
 
-        call("/api/providers/llamacpp", {"url": addr, "key": "", "note": "faster"})     # blank key field keeps the key
-        self.assertEqual((models.llamacpp_settings()["key"], models.llamacpp_settings()["note"]), ("secret", "faster"))
-        call("/api/providers/llamacpp", {"url": addr, "clear_key": True, "note": ""})
-        self.assertEqual(models.llamacpp_settings()["key"], "")
+        form = {"id": entry["id"], "type": "llamacpp", "name": "4090 box", "url": addr, "note": "faster"}
+        self.assertTrue(call("/api/providers/servers/test", {**form, "key": ""})[1]["ok"])    # a blank key field tests with the saved key
+        call("/api/providers/servers", {**form, "key": ""})                                   # and saving keeps it
+        self.assertEqual((models.saved_servers()[0]["key"], models.saved_servers()[0]["note"]), ("secret", "faster"))
+        call("/api/providers/servers", {**form, "clear_key": True})
+        self.assertEqual(models.saved_servers()[0]["key"], "")
 
-        self.assertEqual(call("/api/providers/llamacpp", {"url": "http://evil:1"}, {"content-type": "text/plain"})[0], 415)
-        self.assertEqual(call("/api/providers/llamacpp", {"url": "http://evil:1"}, {"origin": "https://evil.example"})[0], 403)
-        self.assertEqual(models.llamacpp_settings()["url"], f"http://{addr}")
+        self.assertEqual(call("/api/providers/servers", {"type": "llamacpp", "url": "http://evil:1"}, {"content-type": "text/plain"})[0], 415)
+        self.assertEqual(call("/api/providers/servers", {"type": "llamacpp", "url": "http://evil:1"}, {"origin": "https://evil.example"})[0], 403)
+        self.assertEqual(call("/api/providers/servers", {"type": "bogus", "url": CLOSED})[0], 400)
+        self.assertEqual(len(models.saved_servers()), 1)
 
-        call("/api/providers/llamacpp", {"url": ""})                                    # an empty address removes the settings
-        self.assertEqual(models.llamacpp_settings()["source"], "")
+        self.assertEqual(call("/api/providers/servers/delete", {"id": entry["id"]})[1]["servers"], [])
+        self.assertEqual(call("/api/providers/servers/delete", {"id": entry["id"]})[0], 404)
 
 
 if __name__ == "__main__":

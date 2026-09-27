@@ -137,6 +137,13 @@
   .dlg .log .e.cycle { border-color:var(--warn); } .dlg .log .e.error { border-color:var(--err); } .dlg .log .e.prompt { border-color:var(--pink); color:var(--muted); }
   .dlg .log .e .k { color:var(--muted); font-size:10.5px; margin-right:8px; }
   .notes { flex:1 0 auto; padding:10px 18px; }
+  /* model providers */
+  #provdlg { height:fit-content; max-height:min(86vh, 860px); width:min(760px, 94vw); }
+  .provbody { padding:14px 18px; } .provbody form.card { margin:0; }
+  .prov { border:2px solid var(--line); background:var(--panel2); padding:10px 12px; margin-bottom:10px; box-shadow:3px 3px 0 var(--ink); cursor:pointer; display:flex; flex-direction:column; gap:3px; }
+  .prov:hover, .prov:focus { border-color:var(--accent); outline:none; } .prov.env { cursor:default; } .prov.env:hover { border-color:var(--line); }
+  .prov b { color:#fff; font-weight:600; } .prov .kind { font: 600 10px/1.4 var(--sans); color:var(--ink); background:var(--cyan); padding:1px 6px; text-transform:uppercase; letter-spacing:.04em; }
+  .prov .tag { font: 600 10px/1.4 var(--sans); color:var(--muted); border:1px solid var(--line); padding:1px 6px; text-transform:uppercase; } .prov .edit { color:var(--accent); font-size:12px; white-space:nowrap; }
   details summary { cursor:pointer; }
   .needs { background:var(--warn); } .needs.zero { background:var(--panel2); color:var(--muted); }
   .att { border:2px solid var(--line); background:var(--panel2); padding:10px 12px; margin-bottom:8px; box-shadow:3px 3px 0 var(--ink); }
@@ -167,6 +174,7 @@
 <main id="main"><section id="view"></section></main>
 <dialog id="agentdlg"></dialog>
 <dialog id="attdlg"></dialog>
+<dialog id="provdlg"></dialog>
 <script>
 const $ = (s, el) => (el || document).querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -205,16 +213,18 @@ const statePill = (w) => {
   return w.running ? '<span class="pill on">running</span>' : '<span class="pill off">paused</span>';
 };
 let MODELS = [{ id: "claude-opus-5", backend: "claude-code", vendor: "anthropic" }, { id: "claude-sonnet-5", backend: "claude-code", vendor: "anthropic" }, { id: "claude-haiku-4-5", backend: "claude-code", vendor: "anthropic" }], PERSONAS = [];
+const LOCAL_VENDORS = ["ollama", "vllm", "llamacpp"];                          // their models show as "name · server"
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"], BLABEL = { api: "Anthropic API", "claude-code": "Claude Code", codex: "OpenAI Codex", kimi: "Kimi Code", deepseek: "DeepSeek", ollama: "Ollama (local)", vllm: "vLLM (local)", llamacpp: "llama.cpp server (local)" };
 const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) (groups[m.backend] = groups[m.backend] || []).push(m); const known = MODELS.some(m => m.id === selected);
-  return Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
+  return Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(LOCAL_VENDORS.includes(m.vendor) && m.label ? m.label : m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
 
 // ---------------------------------------------------------------- interface language: the page chrome is written in English and translated in place
 // Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
 const I18N = {
   "zh-CN": {
+    "⚙ Model providers": "⚙ 模型提供方", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本机或局域网中的模型服务器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本机或局域网中的模型服务器。它们提供的每个模型都可以分配给任何席位，包括主管。", "not checked yet": "尚未检查", "{n}K context": "{n}K 上下文", "1 session at once": "同时 1 个会话", "{n} sessions at once": "同时 {n} 个会话", "found locally": "本机发现", "from the environment": "来自环境变量", "Edit ›": "编辑 ›", "no API key": "无 API 密钥", "Found at the default local address.": "在本机默认地址发现。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 设置。在这里保存相同地址即可编辑。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 设置。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 设置。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "还没有模型服务器。添加本机或局域网中的 llama.cpp、Ollama 或 vLLM 服务器。", "+ Add a server": "+ 添加服务器", "← All servers": "← 全部服务器", "Add a server": "添加服务器", "Type": "类型", "Name (optional)": "名称（可选）", "e.g. 4090 box": "例如：4090 主机", "Context per session, tokens (optional)": "每个会话的上下文长度，token 数（可选）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "该服务器的 OLLAMA_CONTEXT_LENGTH；留空为 32768", "Delete": "删除", "only if a proxy in front of Ollama asks for one": "仅当 Ollama 前面的代理需要时填写", "Ollama server": "Ollama 服务器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 兼容服务器", "Model providers…": "模型提供方…", "llama.cpp server (local models)": "llama.cpp 服务器（本地模型）",
     "Master agent log": "主管实时日志", "No output yet.": "暂无输出。",
-    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp 服务器（HUNTUN_LLAMACPP_URL）", "Model providers": "模型提供方", "llama.cpp server": "llama.cpp 服务器", "A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.": "本机或局域网中的 llama-server（例如本地 GPU 主机）。在这里连通后，主管即可用它的模型安排席位，每个席位也都能选择它。", "Server address": "服务器地址", "API key": "API 密钥", "Note for the master (optional)": "给主管的说明（可选）", "Save": "保存", "Test": "测试", "Remove key": "删除密钥", "Not set up.": "尚未设置。", "checking…": "检查中…", "saving…": "保存中…", "testing…": "测试中…", "Removed.": "已删除。", "(not saved yet)": "（尚未保存）", "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them.": "来自 HUNTUN_LLAMACPP_* 环境变量；在这里保存会覆盖它们。", "Detected on this machine: {x}": "本机检测到：{x}", "No provider detected yet.": "尚未检测到任何提供方。", "saved (leave blank to keep it)": "已保存（留空即保留）", "the server's --api-key, if it has one": "服务器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅长什么、速度如何", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
+    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "Model providers": "模型提供方", "llama.cpp server": "llama.cpp 服务器", "Server address": "服务器地址", "API key": "API 密钥", "Note for the master (optional)": "给主管的说明（可选）", "Save": "保存", "Test": "测试", "checking…": "检查中…", "saving…": "保存中…", "testing…": "测试中…", "(not saved yet)": "（尚未保存）", "Detected on this machine: {x}": "本机检测到：{x}", "No provider detected yet.": "尚未检测到任何提供方。", "the server's --api-key, if it has one": "服务器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅长什么、速度如何", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
     "Projects": "项目", "Open a project": "打开项目", "Open": "打开", "Remove": "移除", "Remove from list": "从列表移除", "Remove from this list (files and .huntun/ stay on disk)": "从此列表移除（文件与 .huntun/ 保留在磁盘上）",
     "No projects yet. Point Huntun at a directory on the right.": "还没有项目。请在右侧指定一个目录。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任意目录均可：新项目用空文件夹，已有代码库也可以。输入路径或浏览选择。",
     "/path/to/project": "/项目/路径", "No goal yet. Open it to set one up.": "尚未设定目标。打开后即可设置。", "not set up": "未设置", "awaiting approval": "等待批准", "confirm goal": "确认目标", "running": "运行中", "paused": "已暂停", "error": "出错", "Set up {x}": "设置 {x}",
@@ -241,8 +251,9 @@ const I18N = {
     "Regular office": "普通办公室", "Microsoft campus": "微软园区", "Goldman Sachs": "高盛", "Factory": "工厂", "Basketball court": "篮球场", "Tennis court": "网球场", "Parking lot": "停车场", "Garage": "修车库", "Chinese tech": "中式互联网公司", "Language": "语言",
   },
   "zh-TW": {
+    "⚙ Model providers": "⚙ 模型提供者", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本機或區域網路中的模型伺服器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本機或區域網路中的模型伺服器。它們提供的每個模型都可以分配給任何席位，包括主管。", "not checked yet": "尚未檢查", "{n}K context": "{n}K 上下文", "1 session at once": "同時 1 個工作階段", "{n} sessions at once": "同時 {n} 個工作階段", "found locally": "本機發現", "from the environment": "來自環境變數", "Edit ›": "編輯 ›", "no API key": "無 API 金鑰", "Found at the default local address.": "在本機預設位址發現。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 設定。在這裡儲存相同位址即可編輯。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 設定。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "還沒有模型伺服器。新增本機或區域網路中的 llama.cpp、Ollama 或 vLLM 伺服器。", "+ Add a server": "+ 新增伺服器", "← All servers": "← 全部伺服器", "Add a server": "新增伺服器", "Type": "類型", "Name (optional)": "名稱（選填）", "e.g. 4090 box": "例如：4090 主機", "Context per session, tokens (optional)": "每個工作階段的上下文長度，token 數（選填）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "該伺服器的 OLLAMA_CONTEXT_LENGTH；留空為 32768", "Delete": "刪除", "only if a proxy in front of Ollama asks for one": "僅當 Ollama 前面的代理需要時填寫", "Ollama server": "Ollama 伺服器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 相容伺服器", "Model providers…": "模型提供者…", "llama.cpp server (local models)": "llama.cpp 伺服器（本地模型）",
     "Master agent log": "主管即時日誌", "No output yet.": "尚無輸出。",
-    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp 伺服器（HUNTUN_LLAMACPP_URL）", "Model providers": "模型提供者", "llama.cpp server": "llama.cpp 伺服器", "A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.": "本機或區域網路中的 llama-server（例如本地 GPU 主機）。在這裡連通後，主管即可用它的模型安排席位，每個席位也都能選擇它。", "Server address": "伺服器位址", "API key": "API 金鑰", "Note for the master (optional)": "給主管的說明（選填）", "Save": "儲存", "Test": "測試", "Remove key": "刪除金鑰", "Not set up.": "尚未設定。", "checking…": "檢查中…", "saving…": "儲存中…", "testing…": "測試中…", "Removed.": "已刪除。", "(not saved yet)": "（尚未儲存）", "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them.": "來自 HUNTUN_LLAMACPP_* 環境變數；在這裡儲存會覆寫它們。", "Detected on this machine: {x}": "本機偵測到：{x}", "No provider detected yet.": "尚未偵測到任何提供者。", "saved (leave blank to keep it)": "已儲存（留空即保留）", "the server's --api-key, if it has one": "伺服器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅長什麼、速度如何", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
+    "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "Model providers": "模型提供者", "llama.cpp server": "llama.cpp 伺服器", "Server address": "伺服器位址", "API key": "API 金鑰", "Note for the master (optional)": "給主管的說明（選填）", "Save": "儲存", "Test": "測試", "checking…": "檢查中…", "saving…": "儲存中…", "testing…": "測試中…", "(not saved yet)": "（尚未儲存）", "Detected on this machine: {x}": "本機偵測到：{x}", "No provider detected yet.": "尚未偵測到任何提供者。", "the server's --api-key, if it has one": "伺服器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅長什麼、速度如何", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
     "Projects": "專案", "Open a project": "開啟專案", "Open": "開啟", "Remove": "移除", "Remove from list": "從清單移除", "Remove from this list (files and .huntun/ stay on disk)": "從此清單移除（檔案與 .huntun/ 仍保留在磁碟上）",
     "No projects yet. Point Huntun at a directory on the right.": "還沒有專案。請在右側指定一個目錄。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "任何目錄皆可：新專案用空資料夾，既有程式碼庫也可以。輸入路徑或瀏覽選擇。",
     "/path/to/project": "/專案/路徑", "No goal yet. Open it to set one up.": "尚未設定目標。開啟後即可設定。", "not set up": "未設定", "awaiting approval": "等待核准", "confirm goal": "確認目標", "running": "執行中", "paused": "已暫停", "error": "錯誤", "Set up {x}": "設定 {x}",
@@ -269,8 +280,9 @@ const I18N = {
     "Regular office": "一般辦公室", "Microsoft campus": "微軟園區", "Goldman Sachs": "高盛", "Factory": "工廠", "Basketball court": "籃球場", "Tennis court": "網球場", "Parking lot": "停車場", "Garage": "修車廠", "Chinese tech": "中式網路公司", "Language": "語言",
   },
   "ja": {
+    "⚙ Model providers": "⚙ モデルプロバイダー", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "このマシンまたはネットワーク上のモデルサーバー：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "このマシンまたはネットワーク上のモデルサーバー。提供されるモデルはマスターを含むどの席にも割り当てられます。", "not checked yet": "未確認", "{n}K context": "{n}K コンテキスト", "1 session at once": "同時 1 セッション", "{n} sessions at once": "同時 {n} セッション", "found locally": "ローカルで検出", "from the environment": "環境変数から", "Edit ›": "編集 ›", "no API key": "API キーなし", "Found at the default local address.": "既定のローカルアドレスで検出。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "HUNTUN_LLAMACPP_URL で設定。同じアドレスをここで保存すると編集できます。", "Set by OLLAMA_HOST.": "OLLAMA_HOST で設定。", "Set by VLLM_BASE_URL.": "VLLM_BASE_URL で設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "モデルサーバーはまだありません。このマシンまたはネットワーク上の llama.cpp、Ollama、vLLM サーバーを追加してください。", "+ Add a server": "+ サーバーを追加", "← All servers": "← すべてのサーバー", "Add a server": "サーバーを追加", "Type": "種類", "Name (optional)": "名前（任意）", "e.g. 4090 box": "例：4090 マシン", "Context per session, tokens (optional)": "セッションあたりのコンテキスト、トークン数（任意）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "サーバーの OLLAMA_CONTEXT_LENGTH。空欄なら 32768", "Delete": "削除", "only if a proxy in front of Ollama asks for one": "Ollama の前段のプロキシが求める場合のみ", "Ollama server": "Ollama サーバー", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 互換サーバー", "Model providers…": "モデルプロバイダー…", "llama.cpp server (local models)": "llama.cpp サーバー（ローカルモデル）",
     "Master agent log": "マスターのライブログ", "No output yet.": "まだ出力はありません。",
-    "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "vLLM (local models)": "vLLM（ローカルモデル）", "llama.cpp server (HUNTUN_LLAMACPP_URL)": "llama.cpp サーバー（HUNTUN_LLAMACPP_URL）", "Model providers": "モデルプロバイダー", "llama.cpp server": "llama.cpp サーバー", "A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.": "このマシンまたはネットワーク上の llama-server（ローカル GPU マシンなど）。ここで接続できれば、マスターはそのモデルで席を割り当てられ、各席でも選択できます。", "Server address": "サーバーアドレス", "API key": "API キー", "Note for the master (optional)": "マスターへのメモ（任意）", "Save": "保存", "Test": "テスト", "Remove key": "キーを削除", "Not set up.": "未設定です。", "checking…": "確認中…", "saving…": "保存中…", "testing…": "テスト中…", "Removed.": "削除しました。", "(not saved yet)": "（未保存）", "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them.": "HUNTUN_LLAMACPP_* 環境変数から読み込み中。ここで保存すると上書きされます。", "Detected on this machine: {x}": "このマシンで検出：{x}", "No provider detected yet.": "プロバイダーはまだ検出されていません。", "saved (leave blank to keep it)": "保存済み（空欄のままで維持）", "the server's --api-key, if it has one": "サーバーの --api-key（ある場合）", "e.g. what the model is good at and how fast it is": "例：モデルの得意分野や速度", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
+    "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "vLLM (local models)": "vLLM（ローカルモデル）", "Model providers": "モデルプロバイダー", "llama.cpp server": "llama.cpp サーバー", "Server address": "サーバーアドレス", "API key": "API キー", "Note for the master (optional)": "マスターへのメモ（任意）", "Save": "保存", "Test": "テスト", "checking…": "確認中…", "saving…": "保存中…", "testing…": "テスト中…", "(not saved yet)": "（未保存）", "Detected on this machine: {x}": "このマシンで検出：{x}", "No provider detected yet.": "プロバイダーはまだ検出されていません。", "the server's --api-key, if it has one": "サーバーの --api-key（ある場合）", "e.g. what the model is good at and how fast it is": "例：モデルの得意分野や速度", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
     "Projects": "プロジェクト", "Open a project": "プロジェクトを開く", "Open": "開く", "Remove": "削除", "Remove from list": "一覧から削除", "Remove from this list (files and .huntun/ stay on disk)": "この一覧から削除（ファイルと .huntun/ はディスクに残ります）",
     "No projects yet. Point Huntun at a directory on the right.": "プロジェクトはまだありません。右側でディレクトリを指定してください。", "Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.": "どのディレクトリでも構いません。新規なら空のフォルダ、既存のコードベースでも可。パスを入力するか参照してください。",
     "/path/to/project": "/プロジェクト/パス", "No goal yet. Open it to set one up.": "目標が未設定です。開いて設定してください。", "not set up": "未設定", "awaiting approval": "承認待ち", "confirm goal": "目標を確認", "running": "実行中", "paused": "一時停止中", "error": "エラー", "Set up {x}": "{x} を設定",
@@ -389,6 +401,7 @@ function route() {
   let m;
   if ((m = h.match(/^#\/w\/([0-9a-f]{10})\/setup$/))) return setupView(m[1]);
   if ((m = h.match(/^#\/w\/([0-9a-f]{10})(?:\/t\/(\d+))?$/))) return boardView(m[1], m[2] ? Number(m[2]) : null);
+  if (h === "#/providers") return homeView().then(() => openProviders(() => { if (location.hash === "#/providers") location.hash = "#/"; }));   // a link straight to the dialog
   return homeView();
 }
 window.addEventListener("hashchange", () => { const m = location.hash.match(/^#\/w\/([0-9a-f]{10})(?:\/t\/(\d+))?$/); if (m && boardId === m[1]) { openThread = m[2] ? Number(m[2]) : null; drawThreads(true); } else route(); });
@@ -398,24 +411,14 @@ let browserPath = null;
 async function homeView() {
   boardId = null;
   $("#main").className = ""; $("#main").innerHTML = '<section id="view"></section>';
-  $("#hgoal").textContent = ""; $("#hstatus").style.display = "none"; $("#hactions").innerHTML = "";
-  const { workspaces, home, backends } = await api("/api/workspaces");
+  $("#hgoal").textContent = ""; $("#hstatus").style.display = "none"; $("#hactions").innerHTML = providersButton(); bindProvidersButton();
+  const { workspaces, home } = await api("/api/workspaces");
   if (browserPath === null) browserPath = home;
   $("#view").innerHTML = '<div class="grid"><div><h2>Projects</h2><div id="projects"></div></div>' +
     '<div><h2>Open a project</h2><p class="hint">Any directory works: an empty folder for a new project, or an existing codebase. Type a path or browse.</p>' +
     '<form id="openform"><input id="path" placeholder="/path/to/project" autocomplete="off" spellcheck="false">' +
-    '<div class="browser" id="browser"></div><div class="row"><button>Open</button><span class="hint" id="pathinfo"></span></div></form>' +
-    '<h2 style="margin-top:24px">Model providers</h2><p class="hint" id="detected"></p>' +
-    '<form class="card" id="llamaform"><h3>llama.cpp server</h3>' +
-    '<p class="hint">A llama-server on this machine or your network, such as a local GPU box. Once it answers here, the master can staff seats with its model and every seat can pick it.</p>' +
-    '<label>Server address</label><input id="lc-url" placeholder="http://10.0.0.72:8080" autocomplete="off" spellcheck="false">' +
-    '<label>API key</label><input id="lc-key" type="password" autocomplete="off" placeholder="the server\'s --api-key, if it has one">' +
-    '<label>Note for the master (optional)</label><input id="lc-note" autocomplete="off" placeholder="e.g. what the model is good at and how fast it is">' +
-    '<div class="row"><button>Save</button><button type="button" class="secondary" id="lc-test">Test</button><button type="button" class="small danger" id="lc-clearkey" style="display:none">Remove key</button></div>' +
-    '<div id="lc-status" class="meta" style="margin-top:8px"></div><div id="lc-source" class="hint"></div></form></div></div>';
+    '<div class="browser" id="browser"></div><div class="row"><button>Open</button><span class="hint" id="pathinfo"></span></div></form></div></div>';
   drawProjects(workspaces);
-  drawDetected(backends);
-  loadLlamacpp();
   $("#path").value = browserPath;
   $("#path").addEventListener("input", (e) => browseTo(e.target.value, true));
   $("#path").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); openPath(); } });
@@ -424,47 +427,74 @@ async function homeView() {
   browseTo(browserPath);
   timer = setInterval(async () => { if ((location.hash || "#/") === "#/" && $("#projects")) drawProjects((await api("/api/workspaces")).workspaces); }, 5000);
 }
-function drawDetected(backends) {
-  const names = Object.values(backends || {});
-  $("#detected").textContent = names.length ? "Detected on this machine: " + names.join(", ") : "No provider detected yet.";
-}
-function llamaStatus(st) {
-  if (!st) return "";
+// ---------------------------------------------------------------- model providers: the model servers on this machine or the network (llama.cpp, Ollama, vLLM), a dialog off the header
+const KEY_MASK = "********";                                                 // stands for a saved key, which the page never receives
+const SERVER_FORM = { llamacpp: { url: "http://10.0.0.72:8080", key: "the server's --api-key, if it has one" }, ollama: { url: "http://10.0.0.80:11434", key: "only if a proxy in front of Ollama asks for one" },
+                      vllm: { url: "http://10.0.0.90:8000", key: "the server's --api-key, if it has one" } };
+const SHORT_TYPE = { llamacpp: "llama.cpp", ollama: "Ollama", vllm: "vLLM" };
+let provData = null, provOnClose = null;
+const providersButton = () => '<button class="secondary" id="provbtn" title="Model servers on this machine or your network: llama.cpp, Ollama, vLLM">⚙ Model providers</button>';
+function bindProvidersButton(onClose) { const b = $("#provbtn"); if (b) b.onclick = () => openProviders(onClose); }
+function serverStatus(st) {
+  if (!st) return '<span class="hint">not checked yet</span>';
   if (!st.ok) return '<span class="error">' + esc(st.error) + '</span>';
-  const ctx = st.context ? " · " + Math.round(st.context / 1024) + "K context" : "";
-  const slots = st.slots ? " · " + st.slots + (st.slots === 1 ? " session" : " sessions") + " at once" : "";
-  return '<span style="color:var(--ok)">✓</span> ' + esc(st.models.join(", ")) + esc(ctx + slots);
+  return '<span style="color:var(--ok)">✓</span> <span class="mono">' + esc(st.models.join(", ")) + '</span>' + (st.context ? ' · <span>' + Math.round(st.context / 1024) + 'K context</span>' : '') +
+    (st.slots ? ' · <span>' + (st.slots === 1 ? "1 session at once" : st.slots + " sessions at once") + '</span>' : '');
 }
-async function loadLlamacpp() {
-  const form = $("#llamaform");
-  if (!form) return;
-  let cfg = { url: "", has_key: false, note: "", source: "" };
-  const show = (c) => {
-    cfg = c;
-    $("#lc-url").value = c.url || ""; $("#lc-note").value = c.note || ""; $("#lc-key").value = "";
-    $("#lc-key").placeholder = c.has_key ? "saved (leave blank to keep it)" : "the server's --api-key, if it has one";
-    $("#lc-clearkey").style.display = c.has_key ? "" : "none";
-    $("#lc-status").innerHTML = c.url ? (c.status ? llamaStatus(c.status) : "") : '<span class="hint">Not set up.</span>';
-    $("#lc-source").textContent = c.source === "environment" ? "From the HUNTUN_LLAMACPP_* environment variables; saving here overrides them." : "";
-  };
-  $("#lc-status").textContent = "checking…";
-  try { show((await api("/api/providers")).llamacpp); } catch (err) { $("#lc-status").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; }
-  const values = (extra) => Object.assign({ url: $("#lc-url").value.trim(), key: $("#lc-key").value.trim(), note: $("#lc-note").value.trim() }, extra || {});
-  const save = async (extra) => {
-    $("#lc-status").textContent = "saving…";
-    try {
-      const r = await api("/api/providers/llamacpp", values(extra));
-      show(r.llamacpp); drawDetected(r.backends);
-      if (!r.llamacpp.url) $("#lc-status").innerHTML = '<span class="hint">Removed.</span>';
-    } catch (err) { $("#lc-status").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; }
-  };
-  form.onsubmit = (e) => { e.preventDefault(); save(); };
-  $("#lc-clearkey").onclick = () => save({ key: "", clear_key: true });
-  $("#lc-test").onclick = async () => {
-    $("#lc-status").textContent = "testing…";
-    try { $("#lc-status").innerHTML = llamaStatus(await api("/api/providers/llamacpp/test", values())) + ' <span class="hint">(not saved yet)</span>'; }
-    catch (err) { $("#lc-status").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; }
-  };
+async function openProviders(onClose) {
+  provOnClose = onClose || null;
+  const dlg = $("#provdlg");
+  dlg.innerHTML = '<div class="dlg"><div class="top"><div class="body"><div class="title"><h3>Model providers</h3><span style="flex:1"></span><button class="small secondary" id="provclose">Close</button></div>' +
+    '<p class="hint">Model servers on this machine or your network. Every model they serve can be picked for any seat, the master\'s included.</p><div class="hint" id="provdetected"></div></div></div>' +
+    '<div class="provbody" id="provbody"><p class="hint">checking…</p></div></div>';
+  $("#provclose").onclick = () => dlg.close();
+  dlg.onclose = () => { const f = provOnClose; provOnClose = null; if (f) f(); };
+  if (!dlg.open) dlg.showModal();
+  try { drawProviderList(await api("/api/providers")); } catch (err) { $("#provbody").innerHTML = '<p class="error">' + esc(err.message) + '</p>'; }
+}
+const ENV_HINT = { llamacpp: "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.", ollama: "Set by OLLAMA_HOST.", vllm: "Set by VLLM_BASE_URL." };
+function drawProviderList(data) {
+  provData = data;
+  const names = Object.values(data.backends || {}); $("#provdetected").textContent = names.length ? "Detected on this machine: " + names.join(", ") : "No provider detected yet.";
+  const rows = data.servers.map(s => {
+    const fixed = s.source !== "saved";
+    return '<div class="prov' + (fixed ? ' env" title="' + esc(s.source === "default" ? "Found at the default local address." : ENV_HINT[s.type]) + '"' : '" tabindex="0" role="button"') + ' data-id="' + esc(s.id) + '">' +
+      '<div class="hrow"><span class="who"><span class="kind">' + esc(SHORT_TYPE[s.type] || s.type) + '</span><b>' + esc(s.label) + '</b>' + (s.name ? '<span class="meta mono">' + esc(s.url) + '</span>' : '') + '</span>' +
+      (fixed ? '<span class="tag">' + (s.source === "default" ? "found locally" : "from the environment") + '</span>' : '<span class="edit">Edit ›</span>') + '</div>' +
+      '<div class="meta">' + serverStatus(s.status) + '</div>' +
+      '<div class="meta">' + (s.has_key ? '<span>API key</span> <span class="mono">*****</span>' : '<span>no API key</span>') + (s.note ? ' · ' + esc(s.note) : '') + '</div></div>';
+  }).join("");
+  $("#provbody").innerHTML = (rows || '<p class="hint">No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.</p>') +
+    '<div class="row" style="margin-top:12px"><button id="provadd">+ Add a server</button></div>';
+  $("#provadd").onclick = () => drawProviderForm(null);
+  $("#provbody").querySelectorAll(".prov:not(.env)").forEach(el => {
+    const open = () => drawProviderForm(data.servers.find(s => s.id === el.dataset.id));
+    el.onclick = open; el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+  });
+}
+function drawProviderForm(s) {
+  const t = s ? s.type : "llamacpp";
+  $("#provbody").innerHTML = '<p style="margin-top:0"><a href="#" id="provback">← All servers</a></p><form class="card" id="provform"><h3>' + (s ? esc(s.label) : "Add a server") + '</h3>' +
+    '<label>Type</label><select id="pv-type">' + Object.entries(provData.types).map(([k, v]) => '<option value="' + k + '"' + (k === t ? " selected" : "") + '>' + esc(v) + '</option>').join("") + '</select>' +
+    '<label>Name (optional)</label><input id="pv-name" autocomplete="off" placeholder="e.g. 4090 box" value="' + esc(s ? s.name : "") + '">' +
+    '<label>Server address</label><input id="pv-url" autocomplete="off" spellcheck="false" value="' + esc(s ? s.url : "") + '">' +
+    '<label>API key</label><input id="pv-key" type="password" autocomplete="new-password" spellcheck="false" value="' + (s && s.has_key ? KEY_MASK : "") + '">' +
+    '<div id="pv-ctxrow" style="display:flex;flex-direction:column;gap:8px"><label>Context per session, tokens (optional)</label><input id="pv-ctx" inputmode="numeric" autocomplete="off" placeholder="the server\'s OLLAMA_CONTEXT_LENGTH; 32768 if empty" value="' + (s && s.context ? s.context : "") + '"></div>' +
+    '<label>Note for the master (optional)</label><input id="pv-note" autocomplete="off" placeholder="e.g. what the model is good at and how fast it is" value="' + esc(s ? s.note : "") + '">' +
+    '<div class="row"><button>Save</button><button type="button" class="secondary" id="pv-test">Test</button>' + (s ? '<span style="flex:1"></span><button type="button" class="danger" id="pv-del">Delete</button>' : '') + '</div>' +
+    '<div id="pv-status" class="meta"></div></form>';
+  const kind = () => $("#pv-type").value, key = $("#pv-key"), say = (html) => { $("#pv-status").innerHTML = html; };
+  const hints = () => { $("#pv-url").placeholder = SERVER_FORM[kind()].url; key.placeholder = SERVER_FORM[kind()].key; $("#pv-ctxrow").style.display = kind() === "ollama" ? "flex" : "none"; };
+  hints(); $("#pv-type").onchange = hints;
+  key.onfocus = () => { if (key.value === KEY_MASK) key.select(); };
+  key.oninput = () => { if (key.value.startsWith(KEY_MASK)) key.value = key.value.slice(KEY_MASK.length); else if (key.value && KEY_MASK.startsWith(key.value)) key.value = ""; };   // typing replaces the saved key; deleting it clears it
+  const values = () => ({ id: s ? s.id : "", type: kind(), name: $("#pv-name").value.trim(), url: $("#pv-url").value.trim(), note: $("#pv-note").value.trim(), context: Number($("#pv-ctx").value) || 0,
+    key: key.value === KEY_MASK ? "" : key.value.trim(), clear_key: !!(s && s.has_key && !key.value.trim()) });
+  $("#provback").onclick = (e) => { e.preventDefault(); drawProviderList(provData); };
+  $("#provform").onsubmit = async (e) => { e.preventDefault(); say("saving…"); try { drawProviderList(await api("/api/providers/servers", values())); } catch (err) { say('<span class="error">' + esc(err.message) + '</span>'); } };
+  $("#pv-test").onclick = async () => { say("testing…"); try { say(serverStatus(await api("/api/providers/servers/test", values())) + ' <span class="hint">(not saved yet)</span>'); } catch (err) { say('<span class="error">' + esc(err.message) + '</span>'); } };
+  if (s) $("#pv-del").onclick = async () => { if (!confirm("Delete " + s.label + "? Seats on its models get no answers until another server serves them.")) return; try { drawProviderList(await api("/api/providers/servers/delete", { id: s.id })); } catch (err) { say('<span class="error">' + esc(err.message) + '</span>'); } };
+  $("#pv-url").focus();
 }
 function drawProjects(workspaces) {
   $("#projects").innerHTML = workspaces.length ? workspaces.map(w =>
@@ -519,7 +549,9 @@ async function forget(id) { if (!confirm("Remove this project from the list? Fil
 async function setupView(id) {
   boardId = null;
   $("#main").className = ""; $("#main").innerHTML = '<section id="view"></section>';
-  $("#hstatus").style.display = "none"; $("#hactions").innerHTML = "";
+  $("#hstatus").style.display = "none"; $("#hactions").innerHTML = providersButton();
+  const reopen = () => { if (location.hash === "#/w/" + id + "/setup") route(); };               // new servers: new backends and models to pick from
+  bindProvidersButton(reopen);
   const draw = async () => {
     const w = await api("/api/workspaces/" + id);
     $("#hgoal").textContent = w.path;
@@ -534,7 +566,7 @@ async function setupView(id) {
     }
     const goal = $("#goal") ? $("#goal").value : loadDraft(id, "goal", ""), ctx = $("#context") ? $("#context").value : loadDraft(id, "context", ""), be = $("#backend") ? $("#backend").value : loadDraft(id, "backend", "");
     const avail = (await api("/api/workspaces")).backends || {};                                           // providers detected on this machine
-    const BACKEND_OPTIONS = [["claude-code", "Claude Code (your Claude login)"], ["codex", "OpenAI Codex (your ChatGPT login)"], ["kimi", "Kimi Code (your Kimi login)"], ["deepseek", "DeepSeek (DEEPSEEK_API_KEY)"], ["ollama", "Ollama (local models)"], ["vllm", "vLLM (local models)"], ["llamacpp", "llama.cpp server (HUNTUN_LLAMACPP_URL)"], ["api", "Anthropic API (ANTHROPIC_API_KEY)"]];
+    const BACKEND_OPTIONS = [["claude-code", "Claude Code (your Claude login)"], ["codex", "OpenAI Codex (your ChatGPT login)"], ["kimi", "Kimi Code (your Kimi login)"], ["deepseek", "DeepSeek (DEEPSEEK_API_KEY)"], ["ollama", "Ollama (local models)"], ["vllm", "vLLM (local models)"], ["llamacpp", "llama.cpp server (local models)"], ["api", "Anthropic API (ANTHROPIC_API_KEY)"]];
     const detected = Object.keys(avail).map(k => (BACKEND_OPTIONS.find(o => o[0] === k) || [k, k])[1].split(" (")[0]);
     const backendOptions = '<option value="">' + esc(detected.length ? "auto (" + detected.join(", ") + ")" : "auto (nothing detected yet)") + '</option>' +
       BACKEND_OPTIONS.map(([k, label]) => '<option value="' + k + '">' + esc(label) + (avail[k] ? " ✓" : " · not detected") + '</option>').join("");
@@ -544,12 +576,13 @@ async function setupView(id) {
       '<label>Goal — what should the team build or change?</label><textarea id="goal" placeholder="e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI">' + esc(goal) + '</textarea>' +
       '<label>Context (optional) — constraints, stack preferences, what to keep</label><textarea id="context" style="min-height:60px" placeholder="e.g. Python 3.12 + FastAPI, keep the existing database schema, small team">' + esc(ctx) + '</textarea>' +
       '<label>Team size limit (besides the master)</label><select id="maxagents"><option value="0">no limit (the master decides)</option>' + [2, 3, 4, 5, 6, 8, 10, 12].map(n => '<option value="' + n + '"' + (String(n) === loadDraft(id, "maxagents", "0") ? " selected" : "") + '>up to ' + n + ' agents</option>').join("") + '</select>' +
-      '<label>Backend</label><select id="backend">' + backendOptions + '</select>' +
+      '<div class="hrow"><label>Backend</label><a href="#" id="provlink" class="hint">Model providers…</a></div><select id="backend">' + backendOptions + '</select>' +
       '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
     if (be) $("#backend").value = be;
     bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value));
     if (w.error) $("#view").insertAdjacentHTML("beforeend", '<p class="hint">Your goal and context are kept as typed; fix the cause and send again.</p>');
     $("#setupform").addEventListener("submit", (e) => startPlanning(e, id));
+    $("#provlink").onclick = (e) => { e.preventDefault(); openProviders(reopen); };
     $("#forgetbtn").addEventListener("click", () => forget(id));
   };
   await draw();
@@ -617,7 +650,7 @@ async function boardView(id, threadId) {
       $("#main").innerHTML = want === "board"
         ? '<aside><div class="hrow"><h2>Team</h2><button class="small secondary" id="viewtoggle">' + (officeOn ? "Threads" : "Office view") + '</button></div><div id="agents"></div></aside><section id="view"><div id="threadsbox"' + (officeOn ? ' style="display:none"' : '') + '></div><div id="officebox"' + (officeOn ? '' : ' style="display:none"') + '></div></section><aside class="right"><h2>Activity</h2><div class="events" id="events"></div></aside>'
         : '<section id="view" class="approve-page"><div id="approval"></div><div id="threadsbox"></div></section>';
-      if (want === "board") { $("#viewtoggle").onclick = () => { officeOn = !officeOn; try { localStorage.setItem("huntun.office", officeOn ? "1" : ""); } catch (e) {} $("#threadsbox").style.display = officeOn ? "none" : ""; $("#officebox").style.display = officeOn ? "" : "none"; $("#viewtoggle").textContent = officeOn ? "Threads" : "Office view"; if (officeOn) office.start(); else office.stop(); }; if (officeOn) office.start(); }
+      if (want === "board") { $("#viewtoggle").onclick = () => { officeOn = !officeOn; try { localStorage.setItem("huntun.office", officeOn ? "1" : ""); } catch (e) {} $("#threadsbox").style.display = officeOn ? "none" : ""; $("#officebox").style.display = officeOn ? "" : "none"; $("#viewtoggle").textContent = officeOn ? "Threads" : "Office view"; if (officeOn) office.start(id, state); else office.stop(); }; if (officeOn) office.start(id, state); }
       threadKey = ""; approvalKey = ""; goalKey = "";
     }
     $("#hgoal").textContent = state.workspace.name; $("#hgoal").title = state.workspace.path + "\n\n" + state.goal;
@@ -632,7 +665,7 @@ async function boardView(id, threadId) {
     if ($("#attdlg").open) drawAttention(id);
     if (want === "board") {
       drawTeam();
-      if (officeOn) office.update(state);
+      if (officeOn) office.update(id, state);
       $("#events").innerHTML = state.events.map(e => '<div class="ev">' + avatar(e.agent, "sm") + '<div class="t"><b>@' + esc(e.agent) + '</b> ' + esc(e.kind) + ' · ' + when(e.created_at) + '<br>' + esc(e.detail.slice(0, 160)) + '</div></div>').join("") || '<div class="hint">Nothing yet.</div>';
     } else if (want === "approve") {
       drawApproval(id);
@@ -889,7 +922,8 @@ async function openAgent(id, name) {
 }
 
 // ---------------------------------------------------------------- office view: a GBA-era Pokémon style office in colour, the team as sprites
-const office = (() => {
+// One office per project (its own people, furniture, theme and guard); only the one on screen animates.
+function makeOffice(wid) {
   const T = 32, P = 2; let MW = 20, MH = 18, W = MW * T, H = MH * T;               // native size follows the team size; the scene is scaled to fill the panel
   let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = performance.now();
   let scale = 1, ox = 0, oy = 0, last = 0;
@@ -1631,7 +1665,7 @@ const office = (() => {
     "这公司的“阵痛期”，痛了三年了，还没生出来？！", "你们的招牌都锈了，还在说“品牌升级”！", "这公司迟早会被当成反面教材写进商学院！", "破船要沉之前，请先把救生衣发给底下人！", "这地方我待一天骂一天，直到它先倒！", "这公司还能开门，唯一的原因是房东没来收房！",
     "三年前说的“下个月转正”，公司都要没了我还没转！", "上线发布会开得比葬礼还隆重，然后就真成葬礼了！", "快倒闭吧，让我以后有个好故事吹！", "出去面试都不敢说这公司名字，说了面试官都笑！", "这地方的每一行代码都在喊救命！", "这公司的会议室比机房都多，能活下来才有鬼！",
     "我要是投资人，看一眼你们的财报就报警！", "你们撑得越久，欠的越多，倒得越惨！", "就凭这帮人，能撑到下个月发工资我都算你们厉害！", "别想什么第二曲线了，第一曲线都快归零了！", "这公司的未来，就是一份破产公告！", "赶紧散伙吧，散伙饭我请！"];
-  const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！", "Printing the delivery report…": "正在打印交付报告……", "Delivered: {title}. The report is on the board.": "交付完成：{title}，报告已发到看板。", "medic": "医生", "Stable. Back to work, you.": "稳定了，回去干活吧。" };
+  const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！", "Printing the delivery report…": "正在打印交付报告……", "Delivered: {title}. The report is on the board.": "交付完成：{title}，报告已发到看板。", "medic": "医生", "Stable. Back to work, you.": "稳定了，回去干活吧。", "watchdog": "保安" };
   const MEDIC_LINES = ["Stay with me!", "Clear!", "Charging… 200!", "Come on, breathe!", "Pulse is back… keep going!", "One, two, three, four…"], CN_MEDIC = ["别睡！撑住！", "让开！电击！", "充电……200！", "快，呼吸！", "有脉搏了……继续！", "一、二、三、四……"];
   // in the Chinese office every random line comes from the Chinese sets
   const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
@@ -1754,7 +1788,7 @@ const office = (() => {
   function applyThemeNow(name) {
     THEME = THEMES[name] ? name : "regular";
     Object.assign(C, BASE_C, THEMES[THEME].colors || {});
-    try { localStorage.setItem("huntun.officeTheme", THEME); } catch (e) { /* no storage: fine */ }
+    try { localStorage.setItem("huntun.officeTheme", THEME); if (wid) localStorage.setItem("huntun.officeTheme." + wid, THEME); } catch (e) { /* no storage: fine */ }
     nextSloganAt = Date.now() + 60000;
     if (LAYOUT_THEME !== THEME) builtFor = -1;
     if (lastState) ensureLayout(seatsFor(lastState)); else if (off) renderMap();
@@ -1768,7 +1802,8 @@ const office = (() => {
     transition = { theme: name, phase: "exit", t0: Date.now() };
     if (printJob) { printJob.startedAt = null; printJob.done = false; printJob.until = Date.now() + 120000; }
     for (const c of Object.values(chars)) if (c.medic) delete chars[c.name]; medics = null; medicQueue = [];
-    for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.faceOverride = null; c.sayUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
+    for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.faceOverride = null; c.sayUntil = 0; c.hold = null; c.gear = null; c.zapping = false; c.zappedUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
+    try { if (wid) localStorage.setItem("huntun.officeTheme." + wid, name); } catch (e) { /* no storage */ }
   }
   function transitionTick() {
     if (!transition) return 0;
@@ -1947,7 +1982,7 @@ const office = (() => {
   const HEADSHOTS = new Map();
   function headshot(name, role) {
     const key = name + "|" + role; if (HEADSHOTS.has(key)) return HEADSHOTS.get(key);
-    const c = { name, ...palFor(name, role) }, rows = headRows(c, "down").concat(bodyRows(c, "down").slice(0, 6));
+    const c = { name, ...(name === "watchdog" ? guardLook() : palFor(name, role)) }, rows = headRows(c, "down").concat(bodyRows(c, "down").slice(0, 6));
     const art = scale2xRows(hires(rows, c.cap, "down", c.top).rows, 32), d = fullPal(c.pal), W64 = 64;
     let rects = "", x0 = W64, x1 = 0;
     art.forEach((row, r) => { let x = 0; while (x < W64) { const ch = row[x]; if (ch === "." || !d[ch]) { x++; continue; } let w = 1; while (x + w < W64 && row[x + w] === ch) w++; rects += '<rect x="' + x + '" y="' + r + '" width="' + w + '" height="1" fill="' + d[ch] + '"/>'; x0 = Math.min(x0, x); x1 = Math.max(x1, x + w); x += w; } });
@@ -2003,7 +2038,7 @@ const office = (() => {
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
     if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
-      const taken = new Set(); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
+      const taken = new Set([key(DOOR[0] - 1, DOOR[1] + 1)]); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
       BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); taken.add(key(PRINT_SPOT[0], PRINT_SPOT[1])); for (let k = 0; k < 6; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
       const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); targets.push(PRINT_SPOT); for (let k = 0; k < 6; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]);
       const allReachable = () => {                                                              // every chair, bunk, stall and spot must stay reachable from the door (a solid target counts if a neighbour is)
@@ -2030,7 +2065,7 @@ const office = (() => {
       else if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
       if (st.bed && b) { put(b[0], b[1], "bedHead", false); put(b[0], b[1] + 1, "bedFoot"); }
     });
-    FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y)) FLOOR.push([x, y]);
+    FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y) && !(x === DOOR[0] - 1 && y === DOOR[1] + 1)) FLOOR.push([x, y]);
     if (off) renderMap();
   }
   const furnish = (i, item, on) => { if (seats[i]) { seats[i][item] = on; applyFurniture(); } };
@@ -2135,6 +2170,170 @@ const office = (() => {
     for (const c of Object.values(chars)) if (c.mode === "faint" && !c.hidden && !c.medic && !medicQueue.includes(c.name)) medicQueue.push(c.name);
     if (!medics && medicQueue.length) spawnMedics(medicQueue[0]);
   }
+  // ---- the security guard: Huntun's watchdog in person, posted beside the entrance of every office. It acts out what the
+  // watchdog does: stops everyone when a vendor's usage limit hits, radios in when the limit is checked, announces the tokens
+  // coming back and, when the master resumes first, gets the master up (in the Chinese office with a stun baton). In the
+  // Chinese office it also shares a thought about once a minute.
+  const GUARD = "#guard";                                                      // not a valid agent name, so never a teammate's
+  let guardQueue = [], guardProbing = false, nextGuardLineAt = Date.now() + 30000;
+  const seenWatch = new Set();
+  function guardLook() {
+    const look = palFor("watchdog-guard", "backend"), pal = look.pal;
+    Object.assign(look, { species: "human", variant: null, top: 0, hair: "short", cap: "cap", shirt: "logo", beard: false, glasses: false });
+    Object.assign(pal, { s: SKIN[2], c: "#2a3f66", d: "#1d2c4a", l: "#e6c15a", k: "#1d2c4a", p: "#1b2438", b: "#161616", h: "#2b2b2b", e: "#2b2b2b" });
+    for (const k of ["n", "a", "m", "x", "z"]) delete pal[k];
+    pal.key = JSON.stringify(pal); return look;
+  }
+  const guardPost = () => { for (const [x, y] of [[DOOR[0] - 1, DOOR[1] + 1], [DOOR[0] + 1, DOOR[1] + 1], [DOOR[0] - 2, DOOR[1] + 1], [DOOR[0] - 1, DOOR[1] + 2]]) if (x > 0 && y > 1 && x < MW - 1 && y < MH - 1 && !solid[y][x]) return [x, y]; return [DOOR[0], DOOR[1] + 2]; };
+  function ensureGuard(place) {
+    let g = chars[GUARD];
+    if (!g) g = chars[GUARD] = { name: GUARD, guard: true, idx: 70, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "guard", moving: false, prog: 0, bang: 0, hidden: true, enterAt: performance.now() + 300, ...guardLook() };
+    g.label = fixed("watchdog");
+    if (place) { const p = guardPost(); Object.assign(g, { hidden: false, setup: null, steps: [], moving: false, tx: p[0], ty: p[1], px: p[0] * T, py: p[1] * T, dir: "down", gear: null, stepAt: null }); guardQueue = guardQueue.filter(q => q.k === "probe"); }
+    return g;
+  }
+  const backendIn = (text, re) => { const m = re.exec(text || ""); return m ? m[1] : ""; };
+  const masterChar = () => Object.values(chars).find(o => o.role === "master" && !o.hidden && !o.leaving);
+  function noticeWatchdog(st, quiet) {                                         // the watchdog's events, oldest first, each acted out once
+    for (const e of (st.events || []).filter(x => x.agent === "watchdog").reverse()) {
+      const id = e.id ?? e.created_at + e.detail; if (seenWatch.has(id)) continue; seenWatch.add(id);
+      if (quiet || Date.now() - new Date(e.created_at) > 180000) continue;
+      const d = e.detail || "";
+      if (e.kind === "limit" && /^Usage limit reached/.test(d)) guardQueue.push({ k: "limit", backend: backendIn(d, /on (\S+) \(by/) });
+      else if (e.kind === "limit" && /^Checked/.test(d)) guardQueue.push({ k: "still", backend: backendIn(d, /^Checked (\S+):/) });
+      else if (e.kind === "resume") {
+        const master = /master resumes first/.test(d), m = master && masterChar();
+        if (m) { m.hold = { until: Date.now() + 60000 }; m.steps = []; }          // the master stays where it is until the guard has got it up
+        guardQueue.push({ k: "resume", backend: backendIn(d, /again on (\S+);/), master });
+      }
+    }
+    const probing = !!(st.limits && st.limits.probing);                       // a check running right now: on the radio until it ends
+    if (probing && !guardProbing && !guardQueue.some(q => q.k === "probe")) guardQueue.push({ k: "probe", backend: Object.keys((st.limits && st.limits.backends) || {})[0] || "" });
+    guardProbing = probing;
+  }
+  const GUARD_LINES = {
+    limit: ["Usage limit on {b}! Tools down, everyone.", "Whistle! {b} is out of tokens. Everybody stop."],
+    radio: ["Door to control: is {b} back yet? Over.", "Control, this is the door. Any tokens on {b}? Over."],
+    still: ["Still limited. Sit tight, folks.", "Control says not yet. Hang on."],
+    back: ["Copy that! {b} is back!", "Good news: tokens are back on {b}!"],
+    toDesks: ["Back to your desks, everyone!", "Break's over. Back to work!"],
+    wake: ["Rise and shine, boss! Tokens are back and the team is waiting on you.", "Wake up! The window reopened. Up you get!"],
+    woke: ["Huh?! I'm up, I'm up!", "Alright, alright, I'm going!"],
+    done: ["That's more like it.", "Good. Carry on."],
+  };
+  const CN_GUARD = {
+    limit: ["{b}的额度用完了！全体停工，原地待命！", "嘟——！{b}额度见底，所有人把手从键盘上拿开！"],
+    radio: ["喂喂，总部总部，{b}的额度恢复没有？完毕。", "总部请回答，{b}那边能用了吗？完毕。"],
+    still: ["还没恢复，大家接着歇着。", "总部说还得等，都别急。"],
+    back: ["收到收到！{b}的额度恢复了！", "好消息！{b}的额度回来了！"],
+    toDesks: ["都回工位，干活！", "休息结束，开工！"],
+    wake: ["起来！额度都回来了还睡？干活！", "老板！醒醒！全组都等你呢！起床！", "别装睡了！token到账了，马上起来干活！"],
+    woke: ["啊啊啊啊——！醒了醒了！马上干活！", "哎哟！别电了别电了，这就开工！"],
+    done: ["这还差不多。", "早这样不就完了。", "下次再睡直接上高压。"],
+  };
+  const CN_GUARD_CHAT = ["想当年我也是写代码的，996写到头发都快掉光了。后来老家拆迁，现在就图个清闲。", "家里八套房，房租都收不过来，来这儿当保安纯属体验生活。", "你们那个bug啊，我十年前就踩过了。",
+    "别看我是保安，当年我也是全栈，前端后端运维一把抓。", "我那几套房的租客，交租比你们老板发工资还准时。", "年轻人少熬夜。你看我，拆迁以后头发都长回来了。", "当年我写的系统现在还在银行跑着呢，没人敢动。",
+    "这点工资还不够我一套房的物业费，我就是来打发时间的。", "我儿子问我为啥当保安，我说离代码远一点，心态好。", "你们这个架构啊，跟我老家那片城中村一样，迟早得拆。", "别问我为啥不回去写代码，问就是收租比debug舒服。",
+    "当年公司说我'毕业'了，第二天村里就通知拆迁，你说巧不巧。", "这个月又有两套房续租了，每套涨三百，美滋滋。", "我写代码那会儿没有AI，全靠搜索引擎和运气，你们现在幸福多了。",
+    "看门也是技术活，跟守护进程一个道理：得一直在线。", "我就是这个公司的watchdog，谁偷懒我第一个知道。", "你们这些agent，就是新时代的码农，我懂，我都懂。", "我当年CTO都干过，后来发现还是当包租公香。",
+    "收租、巡逻、喝茶，这才是人生的最优解。", "有空来我家楼下坐坐，那一整栋都是我的。", "以前天天被产品经理追着改需求，现在我只听物业的。", "年终奖？我的年终奖就是房租上涨通知。",
+    "我的KPI就一条：门口别出事。", "写代码记得加注释，不然跟我一样，一走就没人看得懂。", "拆迁款到账那天，我把键盘挂墙上了，留个纪念。", "干保安最重要的就是眼观六路、耳听token。",
+    "谁再把外卖堆在门口，我可要记名字了啊。", "我这身制服，比你们的格子衫精神多了吧？", "以前我在大厂写中台，现在我就是这个门口的中台。", "拆迁那年我就悟了：代码会过时，地段不会。",
+    "每个月1号就是我的发版日，收租，准时上线。", "我也想过创业，后来一算，收租的现金流比什么都稳。", "你们老板开会的时候，我在业主群里抢了三个红包。", "别看我整天站着，我的uptime比你们的服务器还高。",
+    "我手机里的租客群，比你们的工作群热闹多了。", "当年我也是计算机系的高材生，现在是八套房专业户。", "我不怕裁员，我怕租客退租。", "闲着也是闲着，给你们看看门，顺便看看你们代码写得咋样。",
+    "我当年加班的时候，这楼还是一片菜地，现在菜地的钱都在我兜里。", "你们的需求天天变，我的房租年年涨，这就叫稳定。"];
+  const guardSay = (kind, b) => { const L = (zh() ? CN_GUARD : GUARD_LINES)[kind]; return L[Math.floor(Math.random() * L.length)].replace("{b}", BLABEL[b] || b || (zh() ? "模型" : "the vendor")); };
+  const facing = (c, o) => o.tx > c.tx ? "right" : o.tx < c.tx ? "left" : o.ty > c.ty ? "down" : "up";
+  function guardScript(q) {
+    const post = () => guardPost(), ahead = () => { const [x, y] = guardPost(); for (const dy of [2, 1]) if (y + dy < MH - 1 && !solid[y + dy][x] && !isEntry(x, y + dy)) return [x, y + dy]; return [x, y]; };
+    const home = [{ k: "goto", spot: post }, { k: "face", dir: "down" }];
+    if (q.k === "limit") return [{ k: "goto", spot: ahead }, { k: "gear", gear: "stop", ms: 5200, text: guardSay("limit", q.backend) }].concat(home);
+    if (q.k === "probe") return [{ k: "gear", gear: "radio", ms: 6000, text: guardSay("radio", q.backend), whileProbing: true, keepDir: true }];
+    if (q.k === "still") return [{ k: "gear", gear: "radio", ms: 3200, text: guardSay("radio", q.backend), keepDir: true }, { k: "gear", gear: null, ms: 4000, text: guardSay("still", q.backend) }];
+    if (q.k !== "resume") return [];
+    const steps = [{ k: "gear", gear: "radio", ms: 2600, text: guardSay("back", q.backend), keepDir: true }, { k: "gear", gear: "whistle", ms: 2400, text: q.master ? "" : guardSay("toDesks") }];
+    const m = q.master && masterChar();
+    if (m) {                                                                   // the master resumes first: held where it lies until the guard gets there
+      m.hold = { until: Math.max(m.hold ? m.hold.until : 0, Date.now() + 45000) };
+      steps.push({ k: "goto", spot: (c) => visitSpot(c, m) }, { k: "gear", gear: zh() ? "baton" : "whistle", ms: 2600, text: guardSay("wake"), target: m.name },
+                 { k: "zap", target: m.name, ms: zh() ? 1800 : 1200 }, { k: "release", target: m.name }, { k: "gear", gear: null, ms: 2400, text: guardSay("done"), target: m.name });
+    }
+    return steps.concat(home);
+  }
+  function guardTick(c, dt) {                                                  // at the post between jobs: back to it, then keep watch
+    if (c.setup || c.hidden || (transition && transition.phase !== "in")) return;
+    const now = Date.now(), post = guardPost();
+    if (guardQueue.length && !c.moving) { c.setup = guardScript(guardQueue.shift()); c.stepAt = null; c.steps = []; return; }
+    if (c.tx !== post[0] || c.ty !== post[1]) {
+      if (!c.moving && !c.steps.length) { c.retry = (c.retry || 0) + dt; if (c.retry > 0.5 || !c.goal || c.goal[0] !== post[0] || c.goal[1] !== post[1]) { c.retry = 0; c.goal = post; c.steps = path([c.tx, c.ty], post, c); } }
+      return;
+    }
+    if (!c.moving && !c.steps.length && (!c.lookAt || now > c.lookAt)) { c.dir = ["down", "down", "left", "right"][Math.floor(Math.random() * 4)]; c.lookAt = now + 3000 + Math.random() * 5000; }
+  }
+  function guardStep(c, step, now, next) {                                     // the guard's scripted steps; true when this was one
+    if (step.k === "face") { c.dir = step.dir; next(); return true; }
+    if (step.k === "gear") {                                                   // a prop (stop sign, radio, whistle, baton) and a line
+      if (!c.stepAt) { c.stepAt = now; c.gear = step.gear; if (step.text) { c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + step.ms + 900; c.sayLoop = false; } if (step.gear === "whistle" || step.gear === "stop") c.bang = now + 1200; }
+      const o = step.target && chars[step.target]; if (o) c.dir = facing(c, o); else if (!step.keepDir) c.dir = "down";
+      if (now > c.stepAt + step.ms && !(step.whileProbing && guardProbing && now < c.stepAt + 150000)) { c.gear = null; next(); }
+      return true;
+    }
+    if (step.k === "zap") {                                                    // the baton (or the whistle, outside the Chinese office) on the sleeper
+      const o = chars[step.target];
+      if (!c.stepAt) { c.stepAt = now; c.gear = zh() ? "baton" : "whistle"; c.zapping = true; if (o) { o.zappedUntil = now + step.ms; o.zapKind = c.gear; } }
+      if (o) c.dir = facing(c, o);
+      if (now > c.stepAt + step.ms) { c.gear = null; c.zapping = false; next(); }
+      return true;
+    }
+    if (step.k === "release") {                                                // comes round and gets going
+      const o = chars[step.target];
+      if (o) { o.hold = null; o.steps = []; o.bang = now + 1500; o.say = guardSay("woke"); o.sayStart = performance.now(); o.sayUntil = now + 3800; o.sayLoop = false; }
+      next(); return true;
+    }
+    return false;
+  }
+  function drawGuardGear(c, t, x, y) {
+    const fl = c.dir === "right", down = c.dir === "down", up = c.dir === "up", hy = y - c.top * 2, g = c.gear;
+    if (down) { ctx.fillStyle = "#111822"; ctx.fillRect(x + 7, hy + 9, 18, 2); ctx.fillStyle = "#e6c15a"; ctx.fillRect(x + 15, hy + 3, 2, 3); }     // cap visor and badge
+    else if (!up) { ctx.fillStyle = "#111822"; ctx.fillRect(fl ? x + 17 : x + 2, hy + 9, 13, 2); }
+    if (zh() && !up) { const ax = down ? x + 1 : fl ? x + 10 : x + 17; ctx.fillStyle = "#c8161d"; ctx.fillRect(ax, y + 23, 5, 5); ctx.fillStyle = "#ffe27a"; ctx.fillRect(ax, y + 25, 5, 1); }   // red armband
+    if (g !== "baton") { ctx.fillStyle = "#1b1b1b"; ctx.fillRect(down ? x + 26 : fl ? x + 8 : x + 22, y + 30, 2, 9); }                                   // baton on the belt
+    if (g === "stop") {                                                        // stop sign held out on a pole beside the body
+      const sx = fl ? x + 30 : x - 16, sy = hy + 2, pole = sx + 7;
+      ctx.fillStyle = "#8a8f99"; ctx.fillRect(pole, sy + 16, 2, 26); ctx.fillStyle = c.pal.s; ctx.fillRect(pole - 1, sy + 24, 4, 3);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(sx + 4, sy - 1, 8, 18); ctx.fillRect(sx - 1, sy + 4, 18, 8); ctx.fillRect(sx + 1, sy + 1, 14, 14);
+      ctx.fillStyle = "#d61f2c"; ctx.fillRect(sx + 5, sy, 6, 16); ctx.fillRect(sx, sy + 5, 16, 6); ctx.fillRect(sx + 2, sy + 2, 12, 12); ctx.fillStyle = "#ffffff"; ctx.fillRect(sx + 3, sy + 7, 10, 2);
+    }
+    if (g === "whistle" || g === "stop") {                                     // whistle at the mouth, blasts coming off it
+      const mx = down ? x + 17 : fl ? x + 24 : x + 3, my = y + 17, dx = down || fl ? 1 : -1;
+      ctx.fillStyle = "#c9ced6"; ctx.fillRect(mx, my, 5, 3); ctx.fillStyle = "#8a8f99"; ctx.fillRect(dx > 0 ? mx + 4 : mx - 1, my + 1, 2, 2);
+      if (Math.floor(t * 6) % 2) { ctx.fillStyle = "#ffffff"; const ox = dx > 0 ? mx + 8 : mx - 6; ctx.fillRect(ox, my - 3, 3, 1); ctx.fillRect(ox + dx * 2, my + 1, 3, 1); ctx.fillRect(ox, my + 5, 3, 1); }
+    }
+    if (g === "radio") {                                                       // walkie-talkie at the ear, blinking, the call going out
+      const ex = down ? x + 22 : fl ? x + 24 : x + 2, ey = y + 4;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(ex + 2, ey + 12, 4, 9); ctx.fillStyle = "#1f1f1f"; ctx.fillRect(ex, ey, 6, 12); ctx.fillRect(ex + 1, ey - 5, 1, 5);
+      ctx.fillStyle = Math.floor(t * 4) % 2 ? "#5cff8a" : "#1f6b35"; ctx.fillRect(ex + 3, ey + 2, 2, 2); ctx.fillStyle = "#555555"; ctx.fillRect(ex + 1, ey + 6, 4, 1); ctx.fillRect(ex + 1, ey + 8, 4, 1);
+      if (Math.floor(t * 3) % 2) { ctx.fillStyle = "#9fd3ff"; ctx.fillRect(ex + 4, ey - 9, 3, 1); ctx.fillRect(ex + 7, ey - 12, 3, 1); ctx.fillRect(ex + 10, ey - 15, 3, 1); }
+    }
+    if (g === "baton") {                                                       // stun baton held out, crackling at the tip; arcing into the target while it zaps
+      const dxr = c.dir === "left" ? -1 : c.dir === "right" ? 1 : 0, dyr = up ? -1 : down ? 1 : 0, hx = x + 16 + dxr * 10, hy2 = y + 24 + dyr * 4;
+      ctx.fillStyle = "#1b1b1b"; for (let k = 0; k < 12; k++) ctx.fillRect(hx + dxr * k, hy2 + dyr * k, 2, 2);
+      ctx.fillStyle = c.pal.s; ctx.fillRect(hx - 2, hy2 - 1, 4, 3);
+      const tx = hx + dxr * 13, ty = hy2 + dyr * 13, on = Math.floor(t * 12) % 2;
+      ctx.fillStyle = on ? "#e8fbff" : "#4fe3f0"; ctx.fillRect(tx - 1, ty - 1, 4, 4); if (on) { ctx.fillRect(tx - 4, ty - 3, 2, 1); ctx.fillRect(tx + 4, ty + 3, 2, 1); ctx.fillRect(tx + 3, ty - 4, 1, 2); }
+      if (c.zapping) { ctx.fillStyle = on ? "#e8fbff" : "#6fd3ff"; for (let k = 1; k < 4; k++) ctx.fillRect(tx + dxr * k * 3 + (k % 2 ? 2 : -2) * (dxr ? 0 : 1), ty + dyr * k * 3 + (k % 2 ? 2 : -2) * (dyr ? 0 : 1), 2, 2); }
+    }
+  }
+  function zapFx(c, t) {                                                       // being zapped awake: flashing, bolts, hair on end (or startled by the whistle)
+    const bed = BEDS[c.idx], inBed = !c.moving && bed && c.tx === bed[0] && c.ty === bed[1] && (c.mode === "doze" || c.mode === "sleep" || c.mode === "strike");
+    const x = c.px, y = inBed ? c.py - 14 : c.py - 20, on = Math.floor(t * 14) % 2, hy = y - c.top * 2;   // in the bunk only the head shows, on the pillow
+    if (c.zapKind === "baton") {
+      if (on) { ctx.fillStyle = "rgba(160,225,255,.45)"; ctx.fillRect(x - 3, hy - 4, 38, 54 + c.top * 2); }
+      ctx.fillStyle = on ? "#e8fbff" : "#6fd3ff";
+      for (const [bx, by] of [[x - 5, y + 4], [x + 34, y + 8], [x - 3, y + 24], [x + 32, y + 28]]) { ctx.fillRect(bx, by, 2, 4); ctx.fillRect(bx + 2, by + 3, 2, 4); ctx.fillRect(bx, by + 6, 2, 4); }
+      ctx.fillStyle = "#2b2b2b"; for (let k = 0; k < 5; k++) ctx.fillRect(x + 8 + k * 4, hy - 6 - (on ? 2 : 0), 1, 5);
+    } else { ctx.fillStyle = "#ffffff"; for (const [dx, dy] of [[-5, 4], [34, 4], [-7, 12], [36, 12]]) ctx.fillRect(x + dx, y + dy, 3, 1); }
+  }
   const fill = (line, a) => line.replace("{name}", a.name).replace("{title}", a.title || a.role);
   const hireSequence = (a) => [{ k: "goto", spot: () => [DOOR[0], DOOR[1] + 2] }, { k: "say", text: fill(LINES("HELLOS")[hash(a.name + "hi") % LINES("HELLOS").length], a), ms: 5000 },
     { k: "exit" }, { k: "carry", item: "desk" }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "place", item: "desk", text: fixed("Desk's in.") },
@@ -2166,6 +2365,7 @@ const office = (() => {
       if (now < (c.hiddenUntil || 0) || heldBy(DOOR[0], DOOR[1], c) || heldBy(DOOR[0], DOOR[1] + 1, c)) return;
       c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down"; return;
     }
+    if (c.guard && !c.hidden && guardStep(c, step, now, next)) return;
     if (step.k === "say") { if (!c.stepAt) { c.stepAt = now; c.bang = now + 2500; c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + step.ms; c.sayLoop = false; c.dir = "down"; } else if (now > c.stepAt + step.ms) next(); return; }
     if (step.k === "place" || step.k === "pack") {
       if (!c.stepAt) { c.stepAt = now; if (step.k === "place") { furnish(c.idx, step.item, true); c.carry = null; if (step.text) { c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + 3500; c.sayLoop = false; } } else { furnish(c.idx, step.item, false); c.carry = c.carry ? "both" : step.item; } c.dir = "down"; }
@@ -2359,6 +2559,7 @@ const office = (() => {
     else c.talk = { kind: "here", until, cap, arrived: true };
   }
   function modeFor(a, c, st) {
+    if (c.hold) { if (Date.now() < c.hold.until) return "doze"; c.hold = null; }    // the guard is on the way to wake it
     noticePosts(a, c, st);
     if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
     if (fainted(a)) {                                                        // an API error knocks them out where they stand; in the Chinese office half of them despair instead
@@ -2379,15 +2580,17 @@ const office = (() => {
   // the delivery: when the master delivers the project (a "delivery" event), it walks to the printer and prints the report, page by page
   const PRINT_MS = 9000, PRINT_PAGES = 6, seenDeliveries = new Set();
   let printJob = null, printed = null;                                        // printed: the report left in the tray after the last job
-  function noticeDelivery(st) {
+  function noticeDelivery(st, quiet) {
     const ev = (st.events || []).find(e => e.kind === "delivery" && Date.now() - new Date(e.created_at) < 180000);
     if (!ev) return;
     const id = ev.id ?? ev.created_at; if (seenDeliveries.has(id)) return; seenDeliveries.add(id);
+    if (quiet) return;
     const m = /^#\d+:?\s*(.*)$/.exec(ev.detail || "");
     printJob = { id, title: ((m ? m[1] : ev.detail) || "").trim().slice(0, 80), startedAt: null, done: false, until: Date.now() + 120000 };
   }
   function update(st) {
-    lastState = st; noticeDelivery(st);
+    if (pendingSnap) { snap(st); return; }
+    lastState = st; noticeDelivery(st); noticeWatchdog(st);
     const team = st.agents.filter(a => a.status !== "retired");
     ensureLayout(seatsFor(st));
     team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name);   // everyone exists before anyone looks for a teammate
@@ -2402,11 +2605,12 @@ const office = (() => {
       if (!c.moving && !c.wasAsleep && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);   // a sleeper wakes up first (see stepChars)
     });
     medicTick();
-    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving && !c.medic) {     // retired: say goodbye, pack the desk and the bunk, walk out
+    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving && !c.medic && !c.guard) {     // retired: say goodbye, pack the desk and the bunk, walk out
       if (c.hidden && !c.setup) { delete chars[c.name]; continue; }
       c.leaving = true; c.talk = null; c.faceOverride = null; c.strike = null; c.toilet = null; c.mode = "leave"; c.bang = Date.now() + 2500; c.steps = [];
       c.setup = leaveSequence(c);
     }
+    ensureGuard(false);
   }
   const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
   function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
@@ -2470,7 +2674,7 @@ const office = (() => {
     "Off to sleep with the board on do-not-disturb.", "Nothing to do: a scheduling gift.", "The pillow is my only outstanding request.", "No queue, no cue, no chair.", "Lying down until the next ticket lands.", "Reclining is the same as waiting, but better.", "The task list said nothing. I said goodnight.", "Tucked in until tagged.", "Rest is the only thing the board approved.", "Off to be idle where it's warm.",
     "A yawn, a shrug, a bunk.", "Nap-bound; tag me to change that.", "I've got nothing scheduled and everything soft.", "Resting in the shadow of an empty board."];
   function goalFor(c) {
-    if (c.mode === "faint") return [c.tx, c.ty];
+    if (c.mode === "faint" || c.mode === "doze") return [c.tx, c.ty];
     if (c.mode === "despair" && c.despair) return c.despair.pose === "desk" ? DESKS[c.idx].chair : (c.despair.spot || [c.tx, c.ty]);
     if (c.mode === "strike" && c.strike) return c.strike.act === "sleep" ? BEDS[c.idx] : c.strike.spot;
     if (c.mode === "print") return PRINT_SPOT;
@@ -2505,10 +2709,11 @@ const office = (() => {
         c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
         const others = Object.values(chars).filter(o => o !== c);
         if (c.newHire) { c.newHire = false; }
-        else if (others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = fixed("Sorry I'm running late!"); c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
+        else if (!c.guard && others.length && others.every(o => !o.hidden)) { c.lateComer = true; c.say = fixed("Sorry I'm running late!"); c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
         continue;
       }
       // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
+      if (c.guard && !c.setup) guardTick(c, dt);
       if (c.setup) { /* scripted: destination handled above */ }
       else if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
         if (m !== "sleep") { c.sleepReady = false; c.deskWait = null; }
@@ -2531,7 +2736,7 @@ const office = (() => {
         else { c.steps.shift(); c.wait = 0; c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
       }
       if (c.moving) {
-        c.prog += dt * 3.64 * (c.medic ? 1.6 : 1); const e = Math.min(1, c.prog);   // ~0.36 s per tile, the same for everyone; the medics run
+        c.prog += dt * 3.64 * (c.medic ? 1.6 : c.guard && c.setup ? 1.3 : 1); const e = Math.min(1, c.prog);   // ~0.36 s per tile, the same for everyone; the medics run, the guard on a job hurries
         c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
         c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
         if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { if (!c.talk.arrived) { c.talk.arrived = true; c.sayStart = performance.now(); c.talk.until = c.sayUntil = Math.min(c.talk.cap, Date.now() + talkMs(c.say)); }   // start saying it once in place; the cap still applies
@@ -2563,8 +2768,12 @@ const office = (() => {
   }
   function drawChar(c, t) {
     if (c.hidden) return;
+    if (!(c.zappedUntil > Date.now())) return drawCharBody(c, t);
+    const j = Math.floor(t * 20) % 2 ? 1 : -1; c.px += j; drawCharBody(c, t); c.px -= j; zapFx(c, t);   // shaking while it lasts
+  }
+  function drawCharBody(c, t) {
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
-    const bed = BEDS[c.idx], napping = c.mode === "sleep" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
+    const bed = BEDS[c.idx], napping = c.mode === "sleep" || c.mode === "doze" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (c.mode === "strike" && c.strike && c.strike.act === "roll") {         // tantrum: rolling back and forth on the floor
@@ -2615,6 +2824,13 @@ const office = (() => {
       const head = headRows(c, "down").slice(0, 10 + c.top); drawSprite(head, x, c.py - 2 - c.top * 2, false, c.pal, c.cap, "down", c.top);
       const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 22, c.py - 4 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 21, c.py - 5 - z * 2);
       return;
+    }
+    if (c.mode === "doze" && !c.moving) {                                       // held for the guard away from the bunk: dozing on its feet
+      const sway = Math.floor(t * 1.2) % 2; drawSprite(sprite(c, "down", "stand"), x, y + sway - c.top * 2, false, c.pal, c.cap, "down", c.top);
+      if (!c.species || c.species === "human") { ctx.fillStyle = c.pal.s; ctx.fillRect(x + 8, y + sway + 13, 5, 4); ctx.fillRect(x + 19, y + sway + 13, 5, 4); ctx.fillStyle = c.pal.o; ctx.fillRect(x + 9, y + sway + 15, 3, 1); ctx.fillRect(x + 20, y + sway + 15, 3, 1); }
+      const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 24, y - 2 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 23, y - 3 - z * 2);
+      if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y + sway - 4, 16, 4); ctx.fillRect(x + 8, y + sway - 9, 3, 5); ctx.fillRect(x + 14, y + sway - 10, 4, 6); ctx.fillRect(x + 21, y + sway - 9, 3, 5); }
+      c.wasAsleep = false; return;
     }
     c.wasAsleep = false;
     const flip = c.dir === "right";
@@ -2702,6 +2918,7 @@ const office = (() => {
         }
       } else caseAt(x + (side > 0 ? 24 : side < 0 ? -2 : 22), y + 24 + (c.moving ? Math.floor(t * 8) % 2 : 0), false);
     }
+    if (c.guard) drawGuardGear(c, t, x, y);
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
     if (working && c.dir !== "down") {                                            // back to the camera: elbows work while typing, the screen lights the desk
       const skin = c.pal.s;
@@ -2738,26 +2955,60 @@ const office = (() => {
   }
 
   // ---- lifecycle
-  function start() {
+  function start(st) {
     const box = $("#officebox"); if (!box) return;
-    if (!canvas) {
+    if (!canvas || !canvas.isConnected) {
       box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details</span><span style="flex:1"></span><label class="hint">theme <select id="officetheme">' + Object.entries(THEMES).map(([k, v]) => '<option value="' + k + '">' + v.label + '</option>').join("") + '</select></label></div><canvas id="office"></canvas>';
       canvas = $("#office"); pickBanners();                                   // the Chinese office hangs a new set of banners every time the view opens
-      let saved = "regular"; try { saved = localStorage.getItem("huntun.officeTheme") || "regular"; } catch (e) { /* no storage */ }
+      let saved = "regular"; try { saved = (wid && localStorage.getItem("huntun.officeTheme." + wid)) || localStorage.getItem("huntun.officeTheme") || "regular"; } catch (e) { /* no storage */ }
       const sel = $("#officetheme"); if (sel) { sel.value = THEMES[saved] ? saved : "regular"; sel.onchange = () => setTheme(sel.value); }
-      THEME = THEMES[saved] ? saved : "regular"; Object.assign(C, BASE_C, THEMES[THEME].colors || {}); vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
-      ensureLayout(lastState ? seatsFor(lastState) : [{ role: "master" }, {}, {}, {}]);
+      if (transition) transition = null;
+      THEME = THEMES[saved] ? saved : "regular"; Object.assign(C, BASE_C, THEMES[THEME].colors || {}); if (LAYOUT_THEME !== THEME) builtFor = -1;
+      vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
+      ensureLayout(st || lastState ? seatsFor(st || lastState) : [{ role: "master" }, {}, {}, {}]);
       if (vctx) renderMap();
       canvas.onclick = onClick;
     }
-    if (lastState) update(lastState);
+    if (st || lastState) snap(st || lastState); else pendingSnap = true;
     if (!raf && vctx) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+  // opening the view shows the office as it is now: everyone already at their place and furnished, nobody walking in from
+  // the door, posts and deliveries from before not acted out again. Only what happens from here on is animated.
+  let pendingSnap = false;
+  function snap(st) {
+    pendingSnap = false; transition = null; lastState = st;
+    noticeDelivery(st, true); noticeWatchdog(st, true);
+    const team = st.agents.filter(a => a.status !== "retired"), now = Date.now();
+    for (const c of Object.values(chars)) if (c.medic || (!c.guard && !team.some(a => a.name === c.name))) delete chars[c.name];   // left meanwhile: already gone
+    medics = null; medicQueue = []; toiletQueue = []; printJob = null;
+    seatsFor(st).forEach(x => { if (x) { x.desk = true; x.bed = true; } });
+    ensureLayout.sig = null; ensureLayout(seats);
+    for (const a of team) {
+      const c = ensureChar(a), inf = a.info || {};
+      Object.assign(c, { role: a.role, title: a.title, idx: seats.findIndex(x => x && x.name === a.name), hidden: false, setup: null, steps: [], moving: false, carry: null, talk: null, leaving: false,
+        newHire: false, lateComer: false, wake: null, wasAsleep: false, strike: null, smoke: null, despair: undefined, toilet: null, satAt: null, faceOverride: null, hold: null, zappedUntil: 0,
+        deskWait: null, sleepReady: false, sayUntil: 0, bang: 0, report: 0, compactions: inf.compactions || 0, toiletUntil: inf.compacting ? now + 6000 : 0, act: inf.activity || null });
+      const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment")); if (post) c.lastPostId = post.id ?? post.created_at;
+      const d = DESKS[c.idx]; c.tx = d.chair[0]; c.ty = d.chair[1];               // decide from the own desk, then go straight to the spot
+    }
+    for (const a of team) {
+      const c = chars[a.name];
+      c.mode = modeFor(a, c, st);
+      if (c.mode === "sleep") c.sleepReady = true;                                 // idle: already in the bunk
+      if (c.mode === "toilet") { const free = TOILETS.findIndex((_, i) => !Object.values(chars).some(o => o.toilet === i)); if (free >= 0) { c.toilet = free; c.satAt = now; c.toiletUntil = Math.max(c.toiletUntil, now + 6000); } }
+      const g = goalFor(c), d = DESKS[c.idx];
+      c.tx = g[0]; c.ty = g[1]; c.px = c.tx * T; c.py = c.ty * T; c.goal = g;
+      c.dir = c.mode === "toilet" && c.satAt ? "left" : d && c.tx === d.chair[0] && c.ty === d.chair[1] ? d.dir : "down";
+    }
+    medicTick();                                                                    // somebody out cold: the medics are already at work
+    for (const c of Object.values(chars)) if (c.medic && c.setup && c.setup[0] && c.setup[0].k === "goto") { const sp = c.setup[0].spot(c); Object.assign(c, { tx: sp[0], ty: sp[1], px: sp[0] * T, py: sp[1] * T, hidden: false, hiddenUntil: 0 }); c.setup.shift(); }
+    ensureGuard(true);
   }
   function stop() { if (raf) cancelAnimationFrame(raf); raf = null; canvas = null; vctx = null; ctx = null; }
   function onClick(ev) {
     const r = canvas.getBoundingClientRect(); const mx = (ev.clientX - r.left) * (canvas.width / (r.width || 1)), my = (ev.clientY - r.top) * (canvas.height / (r.height || 1));
     const gx = (mx - ox) / scale, gy = (my - oy) / scale;
-    for (const c of Object.values(chars)) if (gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (boardId) openAgent(boardId, c.name); return; }
+    for (const c of Object.values(chars)) if (!c.medic && !c.guard && !c.hidden && gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (wid) openAgent(wid, c.name); return; }
   }
   function frame(now) {
     raf = null; if (!canvas || !vctx) return;
@@ -2778,8 +3029,10 @@ const office = (() => {
     for (const c of order) drawChar(c, t);
     if (CAMS.length && Math.floor(t * 2) % 2) { ctx.fillStyle = "#ff3b3b"; for (const [x, y] of CAMS) ctx.fillRect(x + 6, y + 3, 2, 2); }   // the cameras' recording light
     if (THEMES[THEME].wechat && !transition) {                                                            // the master's motivational line every minute, when the room is quiet
-      const m = order.find(c => c.role === "master" && !c.hidden && !c.setup), busy = order.some(c => c.talk || (c.say && Date.now() < c.sayUntil));
+      const m = order.find(c => c.role === "master" && !c.hidden && !c.setup && !c.hold), busy = order.some(c => c.talk || (c.say && Date.now() < c.sayUntil));
       if (m && !busy && Date.now() > nextSloganAt) { m.say = CN_SLOGANS[Math.floor(Math.random() * CN_SLOGANS.length)]; m.sayStart = performance.now(); m.sayUntil = Date.now() + 10000; m.sayLoop = false; m.bang = Date.now() + 1500; nextSloganAt = Date.now() + 60000; }
+      const g = chars[GUARD], talking = order.some(c => c.talk || (c.say && Date.now() < c.sayUntil));
+      if (g && !g.hidden && !g.setup && !g.moving && !talking && Date.now() > nextGuardLineAt) { g.say = CN_GUARD_CHAT[Math.floor(Math.random() * CN_GUARD_CHAT.length)]; g.sayStart = performance.now(); g.sayUntil = Date.now() + 11000; g.sayLoop = false; nextGuardLineAt = Date.now() + 50000 + Math.random() * 20000; }
     }
     for (const c of order) {
       const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
@@ -2814,8 +3067,17 @@ const office = (() => {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, DESKS, BEDS, FRONT, DOOR, PRINTER, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
-})();
+  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, guardQueue: () => guardQueue, THEME: () => THEME, view: () => ({ scale, ox, oy, width: canvas ? canvas.width : 0 }), DESKS, BEDS, FRONT, DOOR, PRINTER, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+}
+const offices = {}, avatarOffice = makeOffice(null);                         // the board's avatars come from an office of their own
+const office = {
+  shown: null,
+  start(wid, st) { if (this.shown && this.shown !== wid && offices[this.shown]) offices[this.shown].stop(); this.shown = wid; (offices[wid] = offices[wid] || makeOffice(wid)).start(st); },
+  stop() { if (this.shown && offices[this.shown]) offices[this.shown].stop(); this.shown = null; },
+  update(wid, st) { if (offices[wid]) offices[wid].update(st); },
+  headshot: (name, role) => avatarOffice.headshot(name, role),
+  debug: (wid) => offices[wid || office.shown] && offices[wid || office.shown]._debug(),
+};
 (() => { const sel = document.getElementById("lang"); if (!sel) return; sel.innerHTML = LANGS.map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join(""); sel.value = LANG; sel.onchange = () => setLang(sel.value); document.documentElement.lang = LANG; translateNode(document.body); })();
 route();
 </script>

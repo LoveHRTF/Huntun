@@ -14,8 +14,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .hub import Hub, browse
-from .models import (BACKEND_LABEL, available_backends, catalog_available, catalog_for, llamacpp_settings, normalize_server_url,
-                     probe_llamacpp, save_provider)
+from .models import (BACKEND_LABEL, ROUTES, SERVER_STATUS, SERVER_TYPES, available_backends, catalog_available, catalog_for, delete_server,
+                     probe_server, refresh_local, save_server, saved_servers, server_label, servers)
 from .personalities import PERSONALITIES
 
 PAGE = (Path(__file__).parent / "app.html").read_text()
@@ -40,16 +40,24 @@ def _totals(orch: Any, path: Path) -> dict[str, float]:
 def _limits_from(store: Any) -> dict[str, Any]:
     g = store.get_control
     return {"paused": False, "backends": {}, "since": None, "resets_at": None, "reason": None, "pause_count": int(g("limit_pause_count", "0") or 0),
-            "resume_count": int(g("limit_resume_count", "0") or 0), "gate": g("resume_gate", "") or None, "next_probe_at": None, "last_probe": None, "auto": False}
+            "resume_count": int(g("limit_resume_count", "0") or 0), "gate": g("resume_gate", "") or None, "next_probe_at": None, "last_probe": None, "auto": False, "probing": False}
 
 
-def _llamacpp_view(probe: bool = True) -> dict[str, Any]:
-    """The llama.cpp server settings for the Projects page: never the key itself, only whether one is set."""
-    cfg = llamacpp_settings()
-    view: dict[str, Any] = {"url": cfg["url"], "has_key": bool(cfg["key"]), "note": cfg["note"], "source": cfg["source"]}
-    if probe and cfg["url"]:
-        view["status"] = probe_llamacpp(cfg["url"], cfg["key"])
-    return view
+def _providers_view(probe: bool = True) -> dict[str, Any]:
+    """The Model providers menu: every local server with what it serves, and the providers detected on this machine.
+    A key never leaves the server, only whether one is set. Ollama and vLLM at their default local addresses are listed
+    only while something answers there."""
+    if probe:
+        refresh_local(force=True)
+    out = []
+    for e in servers():
+        st = SERVER_STATUS.get(e["id"])
+        if e["source"] == "default" and not (st and st.get("ok")):
+            continue
+        out.append({"id": e["id"], "type": e["type"], "type_label": SERVER_TYPES[e["type"]], "name": e["name"], "label": server_label(e), "url": e["url"],
+                    "has_key": bool(e["key"]), "note": e["note"], "context": e["context"], "source": e["source"], "pinned": bool(e["pinned"].strip()),
+                    "status": st, "models": [mid for mid, r in list(ROUTES.items()) if r["server"] == e["id"]]})
+    return {"servers": out, "types": SERVER_TYPES, "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}}
 
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
@@ -159,7 +167,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 if path == "/api/workspaces":
                     return self._json(200, {"workspaces": hub.list(), "home": str(Path.home()), "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/providers":
-                    return self._json(200, {"llamacpp": _llamacpp_view()})
+                    return self._json(200, _providers_view())
                 if path == "/api/fs":
                     q = parse_qs(url.query)
                     return self._json(200, browse((q.get("path") or [None])[0]))
@@ -233,23 +241,21 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             try:
                 self._guard(write=True)
                 body = self._body()
-                if path in ("/api/providers/llamacpp", "/api/providers/llamacpp/test"):
-                    current = llamacpp_settings()
-                    url = normalize_server_url(str(body.get("url") or ""))
-                    if body.get("clear_key"):
-                        key = ""
-                    elif body.get("key"):
-                        key = str(body["key"]).strip()
-                    else:
-                        key = current["key"]                                      # blank field: keep the key already set
-                    if path.endswith("/test"):
-                        return self._json(200, probe_llamacpp(url, key))
-                    if url:
-                        save_provider("llamacpp", {"url": url, "key": key, "note": str(body.get("note") or "").strip()})
-                    else:
-                        save_provider("llamacpp", None)                           # back to HUNTUN_LLAMACPP_* if set
-                    return self._json(200, {"llamacpp": _llamacpp_view(),
-                                            "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
+                if path == "/api/providers/servers":                                # add a server, or change one ("id")
+                    save_server(body)
+                    return self._json(200, _providers_view())
+                if path == "/api/providers/servers/delete":
+                    if not delete_server(str(body.get("id") or "")):
+                        raise HttpError(404, "unknown server")
+                    return self._json(200, _providers_view())
+                if path == "/api/providers/servers/test":                           # probe what the form holds, without saving it
+                    saved = next((e for e in saved_servers() if e["id"] == body.get("id")), None)
+                    key = "" if body.get("clear_key") else str(body.get("key") or "").strip() or (saved or {}).get("key", "")
+                    try:
+                        context = int(body.get("context") or 0)
+                    except (TypeError, ValueError):
+                        context = 0
+                    return self._json(200, probe_server(str(body.get("type") or ""), str(body.get("url") or ""), key, context=context))
                 if path == "/api/workspaces":
                     e = hub.add(str(body.get("path") or ""))
                     if e.orchestrator is None and e.state == "ready":
