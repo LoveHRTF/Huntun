@@ -168,6 +168,12 @@ class Bench(unittest.TestCase):
         self.assertIn("plan >4000", out)
         self.assertIn("within expectation", out)  # 650 t/s prefill
 
+    def test_custom_prompt_sizes_set_the_long_context_depth(self) -> None:
+        code, out = self._run("--skip-messages", "--sizes", "2048,100000")
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 request at 97K context depth", out)
+        self.assertNotIn("32K", out)
+
     def test_fails_when_messages_returns_no_tool_call(self) -> None:
         _FakeServer.tool_use = False
         code, out = self._run()

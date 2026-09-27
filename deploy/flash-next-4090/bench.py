@@ -5,7 +5,7 @@
 2. Prefill: prompt processing speed at a few prompt lengths (prompt cache off).
 3. Decode: generation speed with 1..N concurrent requests, and at a long context depth.
 
-Standard library only. Usage: ./bench.py [--url http://127.0.0.1:8080] [--parallel 2] [--quick]
+Standard library only. Usage: ./bench.py [--url http://127.0.0.1:8080] [--parallel 2] [--quick] [--sizes 4096,65536,250000]
 """
 from __future__ import annotations
 
@@ -126,6 +126,8 @@ def main() -> int:
     ap.add_argument("--api-key", default="ollama", help="what Huntun sends; only checked if the server has --api-key")
     ap.add_argument("--parallel", type=int, default=2, help="the server's -np")
     ap.add_argument("--quick", action="store_true", help="shorter prompts and generations")
+    ap.add_argument("--sizes", default="", help="comma-separated prompt lengths for the prefill test; the last one is also "
+                    "the depth of the long-context decode test and must fit in one slot (CTX_PER_SLOT)")
     ap.add_argument("--skip-messages", action="store_true")
     a = ap.parse_args()
     base = a.url.rstrip("/")
@@ -140,7 +142,10 @@ def main() -> int:
         ok_messages = check_messages(base, a.model, a.api_key)
 
     print("\n2) Prefill (prompt cache off)")
-    sizes = [4096, 16384] if a.quick else [4096, 16384, 32768]
+    if a.sizes:
+        sizes = [int(x) for x in a.sizes.split(",") if x.strip()]
+    else:
+        sizes = [4096, 16384] if a.quick else [4096, 16384, 32768]
     prefill: dict[int, float] = {}
     for i, n in enumerate(sizes):
         t = complete(base, filler(base, n, seed + 100 + i), 1)
