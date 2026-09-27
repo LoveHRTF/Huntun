@@ -59,6 +59,8 @@ class HuntunConfig:
     estimate: dict[str, Any] = field(default_factory=dict)
     # Maximum number of agents besides the master (0 = no limit).
     max_agents: int = 0
+    # False: no team lead; the master leads the team technically as well (fewer agents, lower cost).
+    team_lead: bool = True
     # Claude Code / Codex: how many cycles an agent keeps one continuous session before starting a fresh one (0 = never reset).
     session_max_cycles: int = 25
     backend: str = "auto"

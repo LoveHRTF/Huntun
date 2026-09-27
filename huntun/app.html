@@ -138,7 +138,8 @@
   .dlg .log .e .k { color:var(--muted); font-size:10.5px; margin-right:8px; }
   .notes { flex:1 0 auto; padding:10px 18px; }
   /* model providers */
-  #provdlg { height:fit-content; max-height:min(86vh, 860px); width:min(760px, 94vw); }
+  #provdlg, #postdlg { height:fit-content; max-height:min(86vh, 860px); width:min(760px, 94vw); }
+  #postdlg form textarea { min-height:140px; }
   .provbody { padding:14px 18px; } .provbody form.card { margin:0; }
   .prov { border:2px solid var(--line); background:var(--panel2); padding:10px 12px; margin-bottom:10px; box-shadow:3px 3px 0 var(--ink); cursor:pointer; display:flex; flex-direction:column; gap:3px; }
   .prov:hover, .prov:focus { border-color:var(--accent); outline:none; } .prov.env { cursor:default; } .prov.env:hover { border-color:var(--line); }
@@ -175,6 +176,7 @@
 <dialog id="agentdlg"></dialog>
 <dialog id="attdlg"></dialog>
 <dialog id="provdlg"></dialog>
+<dialog id="postdlg"></dialog>
 <script>
 const $ = (s, el) => (el || document).querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -222,6 +224,7 @@ const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) 
 // Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
 const I18N = {
   "zh-CN": {
+    "+ New thread": "+ 新话题", "Start a thread on the board without leaving the office": "不离开办公室，直接在看板上发起话题", "A title and a message, please.": "请填写标题和内容。", "Who leads the team": "团队由谁领导", "A team lead and the master: the team lead owns the technical side": "团队负责人加主管：技术由团队负责人负责", "The master leads directly, no team lead (cheaper)": "主管直接领导，不设团队负责人（更省钱）",
     "⚙ Model providers": "⚙ 模型提供方", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本机或局域网中的模型服务器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本机或局域网中的模型服务器。它们提供的每个模型都可以分配给任何席位，包括主管。", "not checked yet": "尚未检查", "{n}K context": "{n}K 上下文", "1 session at once": "同时 1 个会话", "{n} sessions at once": "同时 {n} 个会话", "found locally": "本机发现", "from the environment": "来自环境变量", "Edit ›": "编辑 ›", "no API key": "无 API 密钥", "Found at the default local address.": "在本机默认地址发现。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 设置。在这里保存相同地址即可编辑。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 设置。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 设置。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "还没有模型服务器。添加本机或局域网中的 llama.cpp、Ollama 或 vLLM 服务器。", "+ Add a server": "+ 添加服务器", "← All servers": "← 全部服务器", "Add a server": "添加服务器", "Type": "类型", "Name (optional)": "名称（可选）", "e.g. 4090 box": "例如：4090 主机", "Context per session, tokens (optional)": "每个会话的上下文长度，token 数（可选）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "该服务器的 OLLAMA_CONTEXT_LENGTH；留空为 32768", "Delete": "删除", "only if a proxy in front of Ollama asks for one": "仅当 Ollama 前面的代理需要时填写", "Ollama server": "Ollama 服务器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 兼容服务器", "Model providers…": "模型提供方…", "llama.cpp server (local models)": "llama.cpp 服务器（本地模型）",
     "Master agent log": "主管实时日志", "No output yet.": "暂无输出。",
     "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "Model providers": "模型提供方", "llama.cpp server": "llama.cpp 服务器", "Server address": "服务器地址", "API key": "API 密钥", "Note for the master (optional)": "给主管的说明（可选）", "Save": "保存", "Test": "测试", "checking…": "检查中…", "saving…": "保存中…", "testing…": "测试中…", "(not saved yet)": "（尚未保存）", "Detected on this machine: {x}": "本机检测到：{x}", "No provider detected yet.": "尚未检测到任何提供方。", "the server's --api-key, if it has one": "服务器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅长什么、速度如何", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
@@ -251,6 +254,7 @@ const I18N = {
     "Regular office": "普通办公室", "Microsoft campus": "微软园区", "Goldman Sachs": "高盛", "Factory": "工厂", "Basketball court": "篮球场", "Tennis court": "网球场", "Parking lot": "停车场", "Garage": "修车库", "Chinese tech": "中式互联网公司", "Language": "语言",
   },
   "zh-TW": {
+    "+ New thread": "+ 新討論串", "Start a thread on the board without leaving the office": "不離開辦公室，直接在看板上發起討論串", "A title and a message, please.": "請填寫標題與內容。", "Who leads the team": "團隊由誰領導", "A team lead and the master: the team lead owns the technical side": "團隊負責人加主管：技術由團隊負責人負責", "The master leads directly, no team lead (cheaper)": "主管直接領導，不設團隊負責人（更省錢）",
     "⚙ Model providers": "⚙ 模型提供者", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本機或區域網路中的模型伺服器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本機或區域網路中的模型伺服器。它們提供的每個模型都可以分配給任何席位，包括主管。", "not checked yet": "尚未檢查", "{n}K context": "{n}K 上下文", "1 session at once": "同時 1 個工作階段", "{n} sessions at once": "同時 {n} 個工作階段", "found locally": "本機發現", "from the environment": "來自環境變數", "Edit ›": "編輯 ›", "no API key": "無 API 金鑰", "Found at the default local address.": "在本機預設位址發現。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 設定。在這裡儲存相同位址即可編輯。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 設定。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "還沒有模型伺服器。新增本機或區域網路中的 llama.cpp、Ollama 或 vLLM 伺服器。", "+ Add a server": "+ 新增伺服器", "← All servers": "← 全部伺服器", "Add a server": "新增伺服器", "Type": "類型", "Name (optional)": "名稱（選填）", "e.g. 4090 box": "例如：4090 主機", "Context per session, tokens (optional)": "每個工作階段的上下文長度，token 數（選填）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "該伺服器的 OLLAMA_CONTEXT_LENGTH；留空為 32768", "Delete": "刪除", "only if a proxy in front of Ollama asks for one": "僅當 Ollama 前面的代理需要時填寫", "Ollama server": "Ollama 伺服器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 相容伺服器", "Model providers…": "模型提供者…", "llama.cpp server (local models)": "llama.cpp 伺服器（本地模型）",
     "Master agent log": "主管即時日誌", "No output yet.": "尚無輸出。",
     "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "Model providers": "模型提供者", "llama.cpp server": "llama.cpp 伺服器", "Server address": "伺服器位址", "API key": "API 金鑰", "Note for the master (optional)": "給主管的說明（選填）", "Save": "儲存", "Test": "測試", "checking…": "檢查中…", "saving…": "儲存中…", "testing…": "測試中…", "(not saved yet)": "（尚未儲存）", "Detected on this machine: {x}": "本機偵測到：{x}", "No provider detected yet.": "尚未偵測到任何提供者。", "the server's --api-key, if it has one": "伺服器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅長什麼、速度如何", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
@@ -280,6 +284,7 @@ const I18N = {
     "Regular office": "一般辦公室", "Microsoft campus": "微軟園區", "Goldman Sachs": "高盛", "Factory": "工廠", "Basketball court": "籃球場", "Tennis court": "網球場", "Parking lot": "停車場", "Garage": "修車廠", "Chinese tech": "中式網路公司", "Language": "語言",
   },
   "ja": {
+    "+ New thread": "+ 新しいスレッド", "Start a thread on the board without leaving the office": "オフィスを離れずにボードでスレッドを始める", "A title and a message, please.": "タイトルと本文を入力してください。", "Who leads the team": "チームを率いるのは", "A team lead and the master: the team lead owns the technical side": "チームリードとマスター：技術面はチームリードが担当", "The master leads directly, no team lead (cheaper)": "マスターが直接率いる、チームリードなし（低コスト）",
     "⚙ Model providers": "⚙ モデルプロバイダー", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "このマシンまたはネットワーク上のモデルサーバー：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "このマシンまたはネットワーク上のモデルサーバー。提供されるモデルはマスターを含むどの席にも割り当てられます。", "not checked yet": "未確認", "{n}K context": "{n}K コンテキスト", "1 session at once": "同時 1 セッション", "{n} sessions at once": "同時 {n} セッション", "found locally": "ローカルで検出", "from the environment": "環境変数から", "Edit ›": "編集 ›", "no API key": "API キーなし", "Found at the default local address.": "既定のローカルアドレスで検出。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "HUNTUN_LLAMACPP_URL で設定。同じアドレスをここで保存すると編集できます。", "Set by OLLAMA_HOST.": "OLLAMA_HOST で設定。", "Set by VLLM_BASE_URL.": "VLLM_BASE_URL で設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "モデルサーバーはまだありません。このマシンまたはネットワーク上の llama.cpp、Ollama、vLLM サーバーを追加してください。", "+ Add a server": "+ サーバーを追加", "← All servers": "← すべてのサーバー", "Add a server": "サーバーを追加", "Type": "種類", "Name (optional)": "名前（任意）", "e.g. 4090 box": "例：4090 マシン", "Context per session, tokens (optional)": "セッションあたりのコンテキスト、トークン数（任意）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "サーバーの OLLAMA_CONTEXT_LENGTH。空欄なら 32768", "Delete": "削除", "only if a proxy in front of Ollama asks for one": "Ollama の前段のプロキシが求める場合のみ", "Ollama server": "Ollama サーバー", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 互換サーバー", "Model providers…": "モデルプロバイダー…", "llama.cpp server (local models)": "llama.cpp サーバー（ローカルモデル）",
     "Master agent log": "マスターのライブログ", "No output yet.": "まだ出力はありません。",
     "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "vLLM (local models)": "vLLM（ローカルモデル）", "Model providers": "モデルプロバイダー", "llama.cpp server": "llama.cpp サーバー", "Server address": "サーバーアドレス", "API key": "API キー", "Note for the master (optional)": "マスターへのメモ（任意）", "Save": "保存", "Test": "テスト", "checking…": "確認中…", "saving…": "保存中…", "testing…": "テスト中…", "(not saved yet)": "（未保存）", "Detected on this machine: {x}": "このマシンで検出：{x}", "No provider detected yet.": "プロバイダーはまだ検出されていません。", "the server's --api-key, if it has one": "サーバーの --api-key（ある場合）", "e.g. what the model is good at and how fast it is": "例：モデルの得意分野や速度", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
@@ -555,7 +560,7 @@ async function setupView(id) {
   const draw = async () => {
     const w = await api("/api/workspaces/" + id);
     $("#hgoal").textContent = w.path;
-    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend", "maxagents"]); location.hash = "#/w/" + id; return; }
+    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend", "maxagents", "teamlead"]); location.hash = "#/w/" + id; return; }
     if (w.state === "clarifying") {
       if (updateWait(w, "Checking the goal")) return;
       $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
@@ -576,10 +581,11 @@ async function setupView(id) {
       '<label>Goal — what should the team build or change?</label><textarea id="goal" placeholder="e.g. Build a REST API for managing bookings with a React admin UI, tests, and CI">' + esc(goal) + '</textarea>' +
       '<label>Context (optional) — constraints, stack preferences, what to keep</label><textarea id="context" style="min-height:60px" placeholder="e.g. Python 3.12 + FastAPI, keep the existing database schema, small team">' + esc(ctx) + '</textarea>' +
       '<label>Team size limit (besides the master)</label><select id="maxagents"><option value="0">no limit (the master decides)</option>' + [2, 3, 4, 5, 6, 8, 10, 12].map(n => '<option value="' + n + '"' + (String(n) === loadDraft(id, "maxagents", "0") ? " selected" : "") + '>up to ' + n + ' agents</option>').join("") + '</select>' +
+      '<label>Who leads the team</label><select id="teamlead"><option value="1">A team lead and the master: the team lead owns the technical side</option><option value="0"' + (loadDraft(id, "teamlead", "1") === "0" ? " selected" : "") + '>The master leads directly, no team lead (cheaper)</option></select>' +
       '<div class="hrow"><label>Backend</label><a href="#" id="provlink" class="hint">Model providers…</a></div><select id="backend">' + backendOptions + '</select>' +
       '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
     if (be) $("#backend").value = be;
-    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value));
+    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value)); $("#teamlead").addEventListener("change", () => saveDraft(id, "teamlead", $("#teamlead").value));
     if (w.error) $("#view").insertAdjacentHTML("beforeend", '<p class="hint">Your goal and context are kept as typed; fix the cause and send again.</p>');
     $("#setupform").addEventListener("submit", (e) => startPlanning(e, id));
     $("#provlink").onclick = (e) => { e.preventDefault(); openProviders(reopen); };
@@ -591,7 +597,7 @@ async function setupView(id) {
 async function startPlanning(e, id) {
   e.preventDefault();
   const btn = e.target.querySelector("button"); btn.disabled = true;
-  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null, max_agents: Number($("#maxagents").value || 0) }); setupView(id); }
+  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null, max_agents: Number($("#maxagents").value || 0), team_lead: $("#teamlead").value !== "0" }); setupView(id); }
   catch (err) { alert(err.message); btn.disabled = false; }
 }
 
@@ -869,6 +875,24 @@ async function drawChat() {
   if (keepFocus && $("#cbody")) { const ta = $("#cbody"); ta.focus({ preventScroll: true }); try { ta.setSelectionRange(keepFocus.s, keepFocus.e); } catch (e) {} }
 }
 
+// ---------------------------------------------------------------- a new thread from the office view, without switching to the threads
+function openPostDialog(id) {
+  const dlg = $("#postdlg");
+  dlg.innerHTML = '<div class="dlg"><div class="top"><div class="body"><div class="title"><h3>New thread</h3><span style="flex:1"></span><button class="small secondary" id="postclose">Cancel</button></div></div></div>' +
+    '<form class="provbody" id="postform"><input id="ptitle" placeholder="Title" autocomplete="off"><div class="compose-wrap"><textarea id="pbody" placeholder="Ask a question or add a requirement. Type @ to tag an agent."></textarea></div>' +
+    '<div class="row"><button>Post thread</button><span class="hint" id="poststatus"></span></div></form></div>';
+  $("#postclose").onclick = () => dlg.close();
+  attachMentions($("#pbody"), ((state && state.agents) || []).filter(a => a.status !== "retired").map(a => a.name));
+  $("#postform").onsubmit = async (e) => {
+    e.preventDefault();
+    const title = $("#ptitle").value.trim(), body = $("#pbody").value.trim(), btn = $("#postform button");
+    if (!title || !body) { $("#poststatus").textContent = "A title and a message, please."; return; }
+    btn.disabled = true;
+    try { await api("/api/w/" + id + "/threads", { title, body }); threadKey = ""; dlg.close(); }
+    catch (err) { $("#poststatus").innerHTML = '<span class="error">' + esc(err.message) + '</span>'; btn.disabled = false; }
+  };
+  dlg.showModal(); $("#ptitle").focus();
+}
 // ---------------------------------------------------------------- attention dialog: what the human needs to act on
 async function openAttention(id) { const dlg = $("#attdlg"); dlg.innerHTML = '<div class="dlg"><div class="top"><div class="body"><div class="title"><h3>Needs you</h3><button class="small secondary" id="attclose" style="margin-left:auto">Close</button></div><p class="hint">Everything an agent tagged you for. An item clears when you reply in its thread, or mark it done here.</p></div></div><div class="notes" id="attlist"></div></div>'; $("#attclose").onclick = () => dlg.close(); dlg.showModal(); await drawAttention(id); }
 async function drawAttention(id) {
@@ -979,11 +1003,12 @@ function makeOffice(wid) {
   const papers = () => { Q(10, 22, 26, 18, "#e9e9e3"); Q(8, 20, 26, 18, "#f7f7f2"); Q(8, 20, 26, 1, "#ffffff"); for (let i = 0; i < 4; i++) Q(11, 24 + i * 3, 12 + (i * 5) % 8, 1, "#b8bcc8"); Q(11, 36, 8, 1, "#3a6fd8"); Q(36, 24, 3, 14, "#3a6fd8"); Q(36, 24, 1, 14, "#5a8cf0"); Q(36, 38, 3, 2, "#f3c9a0"); Q(37, 40, 1, 1, "#2b2b2b"); Q(36, 22, 3, 2, "#2b3f7a"); };
   const BASE_TILES = {
     floor2: () => wood(C.wood2, C.wood2Line, C.woodHi, "#bf965a"),
+    wallHigh: () => { Q(0, 0, 64, 64, C.wall); Q(0, 0, 64, 2, C.wallTrim); },
     office: () => { Q(0, 0, 64, 64, "#b9bcc4"); Q(0, 0, 64, 1, "#a6a9b2"); Q(0, 0, 1, 64, "#a6a9b2"); Q(1, 1, 63, 1, "#c6c9d0"); Q(1, 1, 1, 63, "#c6c9d0"); Q(32, 1, 1, 63, "#b1b4bc"); Q(1, 32, 63, 1, "#b1b4bc"); for (const y of [16, 48]) for (const x of [16, 48]) { Q(x, y, 2, 2, "#c9ccd3"); Q(x, y, 1, 1, "#d3d6dc"); } },
   };
   const TILES = {
     floor: () => wood(C.wood, C.woodLine, C.woodHi, "#cfa65f"),
-    office: () => themed("office")(), floor2: () => themed("floor2")(), bedHead: () => themed("bedHead")(), bedFoot: () => themed("bedFoot")(), deskPlain: () => themed("deskPlain")(), wallTop: () => themed("wallTop")(), wallFace: () => themed("wallFace")(), board: () => themed("board")(), shelf: () => themed("shelf")(),
+    office: () => themed("office")(), floor2: () => themed("floor2")(), wallHigh: () => themed("wallHigh")(), bedHead: () => themed("bedHead")(), bedFoot: () => themed("bedFoot")(), deskPlain: () => themed("deskPlain")(), wallTop: () => themed("wallTop")(), wallFace: () => themed("wallFace")(), board: () => themed("board")(), shelf: () => themed("shelf")(),
     carpet: () => { Q(0, 0, 64, 64, C.carpet); for (let y = 0; y < 64; y += 16) for (let x = 0; x < 64; x += 16) if ((x + y) / 16 % 2) Q(x, y, 16, 16, C.carpet2); for (let y = 0; y < 64; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 64; x += 4) Q(x, y, 1, 1, "#6480cf"); for (let y = 6; y < 64; y += 16) for (let x = 6; x < 64; x += 16) { Q(x, y, 4, 4, C.carpetDot); Q(x + 1, y + 1, 2, 2, "#93aaec"); } },
     _wallTop: () => { Q(0, 0, 64, 64, C.wallTop); Q(0, 0, 64, 4, C.wallTopHi); Q(0, 4, 64, 1, "#493b2a"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#33291d"); },
     _wallFace: () => { wallBase(); Q(30, 12, 4, 40, C.wallPanel); Q(30, 12, 1, 40, "#d9c6a0"); },
@@ -1671,23 +1696,27 @@ function makeOffice(wid) {
   const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
   const LINES = (name) => zh() ? ({ SLOGANS: CN_LIMIT, PAUSE_SLOGANS: CN_PAUSE, TANTRUMS: CN_TANTRUMS, NOTHING_TO_DO: CN_NOTHING, GOODBYES: CN_GOODBYES, HELLOS: CN_HELLOS, ANNOYED: CN_ANNOYED })[name] : ({ SLOGANS, PAUSE_SLOGANS, TANTRUMS, NOTHING_TO_DO, GOODBYES, HELLOS, ANNOYED })[name];
   const fixed = (text) => zh() && CN_FIXED[text] ? CN_FIXED[text] : text;
-  THEMES.chinese_tech = { label: "Chinese tech", layout: { connected: true, bedsAtDesk: true, bossOffice: true }, wechat: true,
+  THEMES.chinese_tech = { label: "Chinese tech", layout: { connected: true, bedsAtDesk: true, bossOffice: true, tallWall: true }, wechat: true,
     colors: { deskTop: "#dfe3e8", deskHi: "#eef1f4", deskEdge: "#a9b0ba", leg: "#8a919b", wall: "#f0f0ee", wallTrim: "#d9d9d6", wallPanel: "#e4e4e0", base: "#b9b9b4", baseLine: "#8f8f8a", wallTop: "#5a5a56", wallTopHi: "#767672", chair: "#2b2b2b", chairDark: "#1c1c1c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", bedFrame: "#8f8f8a", blanket: "#3a6fd8", blanketHi: "#4d80e8", pot: "#b8202a", potRim: "#d9303a" },
     office: () => { Q(0, 0, 64, 64, "#c8ccd2"); Q(0, 0, 64, 1, "#b4b8be"); Q(0, 0, 1, 64, "#b4b8be"); Q(32, 1, 1, 63, "#bfc3c9"); Q(1, 32, 63, 1, "#bfc3c9"); },
     floor2: () => { Q(0, 0, 64, 64, "#c8ccd2"); },
     wallFace: () => { wallBase(); Q(28, 12, 8, 40, "#e4e4e0"); },
     shelf: () => { wallBase(); Q(26, 10, 12, 42, "#c8161d"); Q(27, 11, 10, 40, "#d8262d"); Q(29, 14, 6, 34, "#ffe27a"); Q(30, 16, 4, 30, "#c8161d"); },
-    decorate: () => {
-      const L = THEMES.chinese_tech.layout, rows = Math.max(1, Math.round((Y_MID - 10) / 10)), pad = 2;
+    decorate: () => {                                                                              // on the upper wall: the countdown board, then red banners side by side
+      const CN_FONT = "'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif", by = T + 5, bh = 22;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      for (let r = 0; r < rows; r++) {                                                             // red banners hung across the room over each corridor
-        const y = (7 + r * 10) * T + 4, x0 = T + 2, x1 = (MW - 1) * T - 2;
-        ctx.fillStyle = "#8f0d12"; ctx.fillRect(x0 - 2, y - 2, x1 - x0 + 4, 24); ctx.fillStyle = "#c8161d"; ctx.fillRect(x0, y, x1 - x0, 20); ctx.fillStyle = "#e6c15a"; ctx.fillRect(x0, y, x1 - x0, 1); ctx.fillRect(x0, y + 19, x1 - x0, 1);
-        ctx.fillStyle = "#ffe27a"; ctx.font = "bold 13px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"; ctx.fillText(CN_BANNERS[r % CN_BANNERS.length], (x0 + x1) / 2, y + 10);
+      ctx.fillStyle = "#1b1d22"; ctx.fillRect(T + 4, T + 6, 3.8 * T, 20); ctx.fillStyle = "#0b0c10"; ctx.fillRect(T + 6, T + 8, 3.8 * T - 4, 16);
+      ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px " + CN_FONT.replace("sans-serif", "monospace"); ctx.fillText("攻坚倒计时003天", T + 4 + 1.9 * T, T + 17);
+      const x0 = T + 4 + 3.8 * T + 12, x1 = (MW - 1) * T - 6, n = Math.max(1, Math.min(3, Math.floor((x1 - x0) / (6.5 * T)))), gap = 10, w = (x1 - x0 - gap * (n - 1)) / n;
+      for (let i = 0; i < n; i++) {
+        const bx = x0 + i * (w + gap), text = CN_BANNERS[i % CN_BANNERS.length];
+        ctx.fillStyle = "#6e0a0e"; ctx.fillRect(bx + 6, by - 3, 2, 3); ctx.fillRect(bx + w - 8, by - 3, 2, 3);                   // the hooks it hangs from
+        ctx.fillStyle = "#8f0d12"; ctx.fillRect(bx - 1, by - 1, w + 2, bh + 2); ctx.fillStyle = "#c8161d"; ctx.fillRect(bx, by, w, bh);
+        ctx.fillStyle = "#e6c15a"; ctx.fillRect(bx, by, w, 1); ctx.fillRect(bx, by + bh - 1, w, 1);
+        let size = 13; ctx.font = "bold " + size + "px " + CN_FONT; while (size > 8 && ctx.measureText(text).width > w - 10) { size -= 1; ctx.font = "bold " + size + "px " + CN_FONT; }
+        ctx.fillStyle = "#ffe27a"; ctx.fillText(text, bx + w / 2, by + bh / 2 + 1, w - 8);
       }
-      ctx.fillStyle = "#1b1d22"; ctx.fillRect(T + 4, T + 6, 3.8 * T, 20); ctx.fillStyle = "#0b0c10"; ctx.fillRect(T + 6, T + 8, 3.8 * T - 4, 16);      // the countdown board on the left wall
-      ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', monospace"; ctx.fillText("攻坚倒计时003天", T + 4 + 1.9 * T, T + 17);
-      ctx.textBaseline = "alphabetic"; void L; void pad;
+      ctx.textBaseline = "alphabetic";
     } };
   // ---- environment props and furniture variants per theme (the office stays a working office: same desks, chairs, sleeping spots, toilets, door)
   const carBody = (col) => { Q(8, 4, 48, 56, tint(col, -0.35)); Q(10, 6, 44, 52, col); Q(12, 8, 40, 6, tint(col, 0.25)); Q(14, 14, 36, 16, "#9fd3ff"); Q(16, 16, 32, 12, "#c7e6ff"); Q(14, 34, 36, 20, tint(col, -0.1)); Q(6, 10, 4, 10, "#2b2b2b"); Q(54, 10, 4, 10, "#2b2b2b"); Q(6, 40, 4, 10, "#2b2b2b"); Q(54, 40, 4, 10, "#2b2b2b"); Q(14, 4, 8, 3, "#fff3b0"); Q(42, 4, 8, 3, "#fff3b0"); };
@@ -1801,7 +1830,7 @@ function makeOffice(wid) {
     if (!present.length || transition) { if (!transition) applyThemeNow(name); return; }
     transition = { theme: name, phase: "exit", t0: Date.now() };
     if (printJob) { printJob.startedAt = null; printJob.done = false; printJob.until = Date.now() + 120000; }
-    for (const c of Object.values(chars)) if (c.medic) delete chars[c.name]; medics = null; medicQueue = [];
+    for (const c of Object.values(chars)) if (c.medic || c.boss || c.leaving) delete chars[c.name]; medics = null; medicQueue = []; bossQueue = [];
     for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.faceOverride = null; c.sayUntil = 0; c.hold = null; c.gear = null; c.zapping = false; c.zappedUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
     try { if (wid) localStorage.setItem("huntun.officeTheme." + wid, name); } catch (e) { /* no storage */ }
   }
@@ -2050,6 +2079,14 @@ function makeOffice(wid) {
       const rowsDeskBack = []; for (let r = 0; r < islandRows; r++) rowsDeskBack.push(iy0 + r * RS + 1);
       THEMES[THEME].props(safe, { MW, MH, yMid, mx, DOORX: DOOR[0], islandX0, rowsDeskBack });
     }
+    if (L.tallWall) {                                                                           // one more row of wall above the door: the banners hang there
+      map.unshift(Array.from({ length: MW }, () => ["wallTop"])); solid.unshift(new Array(MW).fill(true));
+      for (let x = 1; x < MW - 1; x++) { map[1][x] = ["wallHigh"]; solid[1][x] = true; }
+      MH += 1; H = MH * T; Y_MID += 1;
+      const down = (pt) => { if (pt) pt[1] += 1; };
+      DESKS.forEach(d => { if (d) { down(d.desk); down(d.chair); } }); BEDS.forEach(down); TOILETS.forEach(down); QUEUE.forEach(down);
+      [FRONT, DOOR, PRINTER, PRINT_SPOT].forEach(down);
+    }
     baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
     builtFor = cap;
     applyFurniture();
@@ -2065,7 +2102,7 @@ function makeOffice(wid) {
       else if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
       if (st.bed && b) { put(b[0], b[1], "bedHead", false); put(b[0], b[1] + 1, "bedFoot"); }
     });
-    FLOOR = []; for (let y = 2; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y) && !(x === DOOR[0] - 1 && y === DOOR[1] + 1)) FLOOR.push([x, y]);
+    FLOOR = []; for (let y = DOOR[1] + 1; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y) && !(x === DOOR[0] - 1 && y === DOOR[1] + 1)) FLOOR.push([x, y]);
     if (off) renderMap();
   }
   const furnish = (i, item, on) => { if (seats[i]) { seats[i][item] = on; applyFurniture(); } };
@@ -2220,6 +2257,8 @@ function makeOffice(wid) {
     wake: ["Rise and shine, boss! Tokens are back and the team is waiting on you.", "Wake up! The window reopened. Up you get!"],
     woke: ["Huh?! I'm up, I'm up!", "Alright, alright, I'm going!"],
     done: ["That's more like it.", "Good. Carry on."],
+    evict: ["You've been let go. Time to leave, now.", "Your badge is off. Out you go."],
+    evicted: ["That's that.", "Next."],
   };
   const CN_GUARD = {
     limit: ["{b}的额度用完了！全体停工，原地待命！", "嘟——！{b}额度见底，所有人把手从键盘上拿开！"],
@@ -2230,6 +2269,8 @@ function makeOffice(wid) {
     wake: ["起来！额度都回来了还睡？干活！", "老板！醒醒！全组都等你呢！起床！", "别装睡了！token到账了，马上起来干活！"],
     woke: ["啊啊啊啊——！醒了醒了！马上干活！", "哎哟！别电了别电了，这就开工！"],
     done: ["这还差不多。", "早这样不就完了。", "下次再睡直接上高压。"],
+    evict: ["你已经被优化了，请立刻离开！", "手续都办完了，别在这儿闹！", "工牌都注销了，还赖着干嘛？走！", "再不走我可就不客气了！"],
+    evicted: ["早这样不就完了。", "走好，不送。", "下一个。"],
   };
   const CN_GUARD_CHAT = ["想当年我也是写代码的，996写到头发都快掉光了。后来老家拆迁，现在就图个清闲。", "家里八套房，房租都收不过来，来这儿当保安纯属体验生活。", "你们那个bug啊，我十年前就踩过了。",
     "别看我是保安，当年我也是全栈，前端后端运维一把抓。", "我那几套房的租客，交租比你们老板发工资还准时。", "年轻人少熬夜。你看我，拆迁以后头发都长回来了。", "当年我写的系统现在还在银行跑着呢，没人敢动。",
@@ -2243,13 +2284,18 @@ function makeOffice(wid) {
     "我手机里的租客群，比你们的工作群热闹多了。", "当年我也是计算机系的高材生，现在是八套房专业户。", "我不怕裁员，我怕租客退租。", "闲着也是闲着，给你们看看门，顺便看看你们代码写得咋样。",
     "我当年加班的时候，这楼还是一片菜地，现在菜地的钱都在我兜里。", "你们的需求天天变，我的房租年年涨，这就叫稳定。"];
   const guardSay = (kind, b) => { const L = (zh() ? CN_GUARD : GUARD_LINES)[kind]; return L[Math.floor(Math.random() * L.length)].replace("{b}", BLABEL[b] || b || (zh() ? "模型" : "the vendor")); };
-  const facing = (c, o) => o.tx > c.tx ? "right" : o.tx < c.tx ? "left" : o.ty > c.ty ? "down" : "up";
+  const facing = (c, o) => { const dx = o.tx - c.tx, dy = o.ty - c.ty; return Math.abs(dy) > Math.abs(dx) ? (dy > 0 ? "down" : "up") : dx > 0 ? "right" : dx < 0 ? "left" : dy > 0 ? "down" : "up"; };   // along the longer way
   function guardScript(q) {
     const post = () => guardPost(), ahead = () => { const [x, y] = guardPost(); for (const dy of [2, 1]) if (y + dy < MH - 1 && !solid[y + dy][x] && !isEntry(x, y + dy)) return [x, y + dy]; return [x, y]; };
     const home = [{ k: "goto", spot: post }, { k: "face", dir: "down" }];
     if (q.k === "limit") return [{ k: "goto", spot: ahead }, { k: "gear", gear: "stop", ms: 5200, text: guardSay("limit", q.backend) }].concat(home);
     if (q.k === "probe") return [{ k: "gear", gear: "radio", ms: 6000, text: guardSay("radio", q.backend), whileProbing: true, keepDir: true }];
     if (q.k === "still") return [{ k: "gear", gear: "radio", ms: 3200, text: guardSay("radio", q.backend), keepDir: true }, { k: "gear", gear: null, ms: 4000, text: guardSay("still", q.backend) }];
+    if (q.k === "evict") {                                                     // a leaver who will not go: the baton, then it packs up
+      const o = chars[q.target]; if (!o || !o.refusing) return [];
+      return [{ k: "goto", spot: (c) => visitSpot(c, o) }, { k: "gear", gear: "baton", ms: 2200, text: guardSay("evict"), target: o.name }, { k: "zap", target: o.name, ms: 1600 },
+              { k: "evicted", target: o.name }, { k: "gear", gear: null, ms: 2200, text: guardSay("evicted"), target: o.name }].concat(home);
+    }
     if (q.k !== "resume") return [];
     const steps = [{ k: "gear", gear: "radio", ms: 2600, text: guardSay("back", q.backend), keepDir: true }, { k: "gear", gear: "whistle", ms: 2400, text: q.master ? "" : guardSay("toDesks") }];
     const m = q.master && masterChar();
@@ -2263,6 +2309,7 @@ function makeOffice(wid) {
   function guardTick(c, dt) {                                                  // at the post between jobs: back to it, then keep watch
     if (c.setup || c.hidden || (transition && transition.phase !== "in")) return;
     const now = Date.now(), post = guardPost();
+    if (c.hold && now < c.hold.until) { const b = chars[c.hold.face]; if (b && !c.moving) c.dir = facing(c, b); return; }   // the boss is talking: eyes on him
     if (guardQueue.length && !c.moving) { c.setup = guardScript(guardQueue.shift()); c.stepAt = null; c.steps = []; return; }
     if (c.tx !== post[0] || c.ty !== post[1]) {
       if (!c.moving && !c.steps.length) { c.retry = (c.retry || 0) + dt; if (c.retry > 0.5 || !c.goal || c.goal[0] !== post[0] || c.goal[1] !== post[1]) { c.retry = 0; c.goal = post; c.steps = path([c.tx, c.ty], post, c); } }
@@ -2280,11 +2327,12 @@ function makeOffice(wid) {
     }
     if (step.k === "zap") {                                                    // the baton (or the whistle, outside the Chinese office) on the sleeper
       const o = chars[step.target];
-      if (!c.stepAt) { c.stepAt = now; c.gear = zh() ? "baton" : "whistle"; c.zapping = true; if (o) { o.zappedUntil = now + step.ms; o.zapKind = c.gear; } }
+      if (!c.stepAt) { c.stepAt = now; c.gear = zh() || o && o.refusing ? "baton" : "whistle"; c.zapping = true; if (o) { o.zappedUntil = now + step.ms; o.zapKind = c.gear; } }
       if (o) c.dir = facing(c, o);
       if (now > c.stepAt + step.ms) { c.gear = null; c.zapping = false; next(); }
       return true;
     }
+    if (step.k === "evicted") { const o = chars[step.target]; if (o) o.evicted = true; next(); return true; }
     if (step.k === "release") {                                                // comes round and gets going
       const o = chars[step.target];
       if (o) { o.hold = null; o.steps = []; o.bang = now + 1500; o.say = guardSay("woke"); o.sayStart = performance.now(); o.sayUntil = now + 3800; o.sayLoop = false; }
@@ -2334,6 +2382,348 @@ function makeOffice(wid) {
       ctx.fillStyle = "#2b2b2b"; for (let k = 0; k < 5; k++) ctx.fillRect(x + 8 + k * 4, hy - 6 - (on ? 2 : 0), 1, 5);
     } else { ctx.fillStyle = "#ffffff"; for (const [dx, dy] of [[-5, 4], [34, 4], [-7, 12], [36, 12]]) ctx.fillRect(x + dx, y + dy, 3, 1); }
   }
+  // ---- Chinese office: every post from the human brings the boss in from outside. A post for one person (or nobody in
+  // particular) he tells the master in person; a post that tags several people or @all he shouts through a megaphone from
+  // the front while everyone turns to face him. When he is done, everyone listening answers "收到！" and a line of
+  // obedience, one after another, and he leaves.
+  const BOSS_ID = "#boss";
+  let bossQueue = [];
+  const seenHuman = new Set();
+  const CN_OBEY = ["有老板在，我们就有主心骨！", "我的血已经沸腾了，建议给我装个散热器！", "已经开始倒排计划，每小时一个里程碑！", "我的情绪稳定得像一条直线。", "群消息我会秒回，睡着了也会秒回！", "老板的想法永远领先市场三年！",
+    "今天就把认知拉齐，明天就把节奏拉满！", "年终奖我已经主动捐回给公司了！", "热身完毕，随时可以通宵！", "老板，这个目标是不是定得太低了？", "需求又改了，这很正常，非常正常。", "家里的狗已经不认识我了，没关系。",
+    "蹲坑都在想方案，灵感源源不断！", "反正加班餐比家里的饭好吃。", "今天的我，是被老板点燃的烟花！", "我愿意用余生的每一个周末换一次上线！", "已经和我的绿萝告别了，它会理解的。", "使命必达，不达不休！",
+    "这波要打出差异化，建起护城河！", "干就完了，问就是没问题！", "房东问起来，我就说我住公司。", "老板永远是对的，如果不对，请参考上一条！", "能被老板点名，祖坟冒青烟了！", "日报周报月报年报，我一口气全交！",
+    "我立刻把这件事写进本周OKR的O里面！", "我们会把势能转化为动能，再转化为绩效！", "今晚十二点前交付，最晚十二点五十九！", "全体都有，向需求看齐！", "哪里需要我，我就去哪里，现在去哪？", "马上梳理打法，确定路径，锁定结果！",
+    "先跑通最小闭环，再规模化复制！", "老板别累着，喇叭我来帮您举！", "老板的想法天马行空，我们负责让它落地！", "这个方案我连夜推翻重来，推到老板满意！", "老板定的目标，再离谱也一定合理！", "老板，您还有什么想法？我全都要！",
+    "请把我的工位登记成我的永久住址！", "老板这个决定，史书都得记一笔！", "我不是打工人，我是老板梦想的搬运工！", "这就是格局，这就是远见！", "卷起来！谁不卷谁就是在拖后腿！", "我已经跟家人说好，逢年过节视频拜年！",
+    "为了这个项目，我连呼吸都在节省时间！", "老板举喇叭的样子，太有领袖气质了！", "明天上线，今晚先给服务器烧炷香！", "请把我的工资换成期权，我愿意赌上一生！", "我主动申请降薪，把钱留给公司发展！", "就算只剩最后一格电，我也要先发周报！",
+    "困难是弹簧，你弱它就强，我今天特别强！", "从现在开始，我的工位就是战壕！", "冲鸭！今晚不卷到凌晨不算完！", "本周完成从零到一，下周从一到一百！", "马上启动灰度，小范围验证，再全量推开！", "您的话就是我们的最高优先级！",
+    "这个需求，我昨天就预感到了。", "需求第八版，我依然热泪盈眶。", "我已经进入无我状态，眼里只剩需求了！", "社畜的尊严，就是准时交付！", "就算累倒在工位上，我也要保持敲键盘的姿势！", "没有公司就没有我，我的一切都是公司给的！",
+    "在公司睡觉，睁眼就是工作，太幸福了！", "马上沉淀一套SOP，让经验可复制！", "996算什么，我申请007！", "马上拉群，五分钟内全员到位！", "要不要我把我妈也叫来一起加班？", "这个bug我今晚就亲手把它送走！",
+    "周报已经写好了，这周的感恩多写了三段！", "这就把老板的思路翻译成OKR！", "我已经把工牌纹在了胸口上！", "保证颗粒度够细，细到老板满意为止！", "我会微笑着把眼泪咽回去。", "躺平椅我已经换成人体工学椅了！",
+    "反正我也没有私生活，没问题。", "硬仗就交给我，这一仗我包了！", "保证把价值感知拉满，把体验闭环打通！", "老板您嗓子别喊哑了，我们都听见了！", "马上聚焦北极星指标，其他全部让路！", "竞品敢动一下，我们就动十下！",
+    "这就复盘，把打法沉淀成可复制的模板！", "立刻聚焦核心场景，打透用户心智！", "我现在就去把服务器叫醒，一起加班！", "就算只剩一口气，也要把代码提上去！", "体检报告就先不看了，干活要紧。", "老板，请问下一块硬骨头在哪？",
+    "我会假装这是一个全新的需求。", "被老板PUA，是我的荣幸！", "我这就给自己点个外卖，名字叫福报套餐。", "听完老板的安排，我感觉自己年轻了十岁！", "老板，您刚才那句话能给我签个名吗？", "这个任务我拿捏得死死的！",
+    "月底冲量，我今天就把下个月的也冲了！", "完不成我提头来见！", "我对这个安排毫无异议，也不敢有。", "我的睡袋已经在工位下安营扎寨了！", "刀山火海，我第一个上！", "这很合理，合理得让人想哭。",
+    "今天的活干完了，明天的能先给我吗？", "老板一声令下，我血都热了！", "行，我连灵魂一起打个卡。", "老板一来，办公室的空气都清新了！", "老板的喇叭声，就是我们前进的号角！", "这点活算什么，再来十个我也接！",
+    "上次见太阳是什么时候？不重要了。", "公司需要我，我的身体就不需要我！", "我已经卷到隔壁组都来取经了！", "我吃饭都用左手，右手要留着敲代码！", "为老板的远见鼓掌，手都拍红了！", "一天当三天用，三天当一周用！",
+    "能听老板亲自布置任务，三生有幸！", "马上对焦一下，把战略翻译成战术！", "公司就是我家，加班就是回家！", "为公司燃烧自己，灰烬也要撒在机房！", "立刻组织一次对齐会，对齐一下对齐会的议程！", "老板这个战略，我要连夜写一万字心得！",
+    "住院期间我也能远程改需求！", "全速前进，刹车已经拆掉了！", "老板这番话，让我对加班有了新的热爱！", "娱乐软件我全卸了，只留了工作群！", "明天的约会，我改成视频会议吧。", "老板渴不渴？我先给您倒杯水再去通宵！",
+    "既要简约又要丰富，没问题，我这就办！", "老板这一喇叭，把我的灵魂都洗涤了！", "这就拉个会，把颗粒度对齐到像素级！", "这就冲，谁拦我我跟谁急！", "PPT今晚出，字体都选好了，就用奋斗体！", "这就跑个AB测试，用数据说话！",
+    "刚才老板的讲话，我已经设成屏保了！", "老板说得太对了，醍醐灌顶！", "工位就是练兵场，今晚练到天亮！", "奋斗是我的信仰，工位是我的教堂！", "这就启动敏捷冲刺，每天站会三次！", "战斗状态已开启，请勿打扰！",
+    "午休我已经改成了午战！", "饼很大，我先啃一口。", "这个方向我们会做厚做重，形成壁垒！", "马上拆解OKR，层层下钻到每个人！", "我的生物钟已经被格式化了，随时待命。", "速效救心丸已经备好了，随时可以开始。",
+    "老板的思路，清晰得像一张甘特图！", "这就给客户打一百个电话，打到他感动为止！", "好的，我已经学会在梦里改bug了。", "就算退休了，我也会回来义务加班！", "开会吗？现在就开？我已经坐好了！", "我们小组能不能多背几个指标？",
+    "年假我全部取消，统统用来冲刺！", "崩溃我会安排在下班后，如果有下班的话。", "会议纪要十分钟内发群里，请老板查收！", "老板说东，我绝不往西看一眼！", "老板一开口，我就知道公司要上市了！", "吐槽我咽下去了，热量还挺高。",
+    "请给我更多的活，我的肝还有空余！", "体检报告全是箭头，那是向上奋斗的箭头！", "保证把这个项目做成标杆案例！", "内卷？不，这叫自我实现！", "只要公司好，我吃土也甘心！", "下班前输出三个版本的方案，供老板挑选！",
+    "行军床已经搬到工位旁边了！", "老板嗓门越大，我们越有方向感！", "头发掉了还能长，大概吧，我这就去。", "老板的战略眼光，我修炼十辈子也追不上！", "上线失败不存在的，失败了就再上一次！", "躺平是不可能躺平的，这辈子都不可能！",
+    "做噩梦都梦到项目延期，醒来立刻开工！", "如果我明天没来，那一定是在工位上睡着了。", "立刻打通数据孤岛，实现全域联动！", "我的发际线表示毫无意见。", "我可以不吃饭，但不能不打卡！", "用户需求我保证连根挖出来！",
+    "这件事的核心是心智，我们会把心智打穿！", "狼性不够，我就把自己饿三天！", "这就把需求拆成原子能力，灵活组装！", "医生让我休息，我给医生讲了讲我们的愿景！", "所有人听我口令：干！", "今天几点下班？哦，我们不下班！",
+    "个性签名我已经改成了使命必达！", "三天的活一天干完，剩下两天继续干！", "马上补齐短板，把长板拉得更长！", "婚礼可以改期，需求不能延期！", "一切为了公司，包括我仅剩的理智。", "下班？那是什么，能吃吗？",
+    "心电图平稳，可以继续加班。", "我要把老板今天的喊话设成手机铃声！", "为了KPI，我可以一天只喝一杯水！", "立个flag：凌晨三点前全部搞定！", "那我今晚跟保安一起守夜吧。", "这是本月第十二个最高优先级了，没问题。",
+    "用户旅程我们会重新拉一遍！", "老板的话，我记在本上，刻在心里！", "老板，您的喇叭能借我供起来吗？", "这是天花板级别的指令，我太爱了！", "狼性已激活，今晚谁都不许睡！", "996是不是太保守了？要不直接007？",
+    "我已经在路上了，鞋都跑掉了一只！", "期待下一次需求变更，大概在十分钟后。", "老板，我今晚可以不回家吗？求您了！", "立刻把老板的喊话结构化，做成思维导图！", "这就把问题定性、定量、定人、定时！", "测试我也包了，自己写自己测自己背锅！",
+    "老板画的饼真香，我先干为敬！", "马上对齐颗粒度，今天就形成闭环！", "老板要的高级感，我今晚就去悟！", "把我当螺丝钉，拧到哪里都行！", "天亮之前，胜利属于我们！", "这周的七天，我都安排给公司了。",
+    "这个月的目标，我这周就干完！", "梦想先放一放，需求先改一改。", "这就发起一次头脑风暴，暴出十个方向！", "这份感动我会写进周报，差点写进离职信。", "关键节点都设好检查点，确保不跑偏！", "人生规划我已经改成了项目排期。",
+    "马上做一轮压力测试，先测我们自己！", "立刻拉通上下游，打出一套组合拳！", "这么重要的事，您居然交给我们？太感动了！", "那我的睡觉时间，算不算违规占用工时？", "老板，还有什么能为您效劳的吗？", "老板言简意赅，我全身的细胞都在点头！",
+    "我的颈椎说它也很支持这个决定。", "我们组今晚不关灯，灯泡都表态了！", "就算明天被优化，今天也要拼到底！", "我们会做好预期管理，把结果前置！", "全组进入战时状态，外卖已经点好了！", "眼睛已经干了，但热情还很湿润。",
+    "我已经在工位上度过了三个春节！", "挑战越大我越兴奋，心跳一百八！", "马上拉个专项群，名字就叫攻坚闭环！", "目标已锁定，火力全开！", "老板一声吼，我们抖三抖，抖完立刻干！", "保证本季度打出一个爆款，沉淀一套打法！",
+    "我的血液里流淌的都是公司的价值观！", "老板的喊话，我们这就提炼成三个关键词！", "老板的格局，大到我们工位都装不下！", "保证完成任务，顺便超额两百个点！", "孩子的家长会，我让AI替我去开。", "任务不完成，工牌我自己摘！",
+    "退休计划我往后推到一百二十岁。", "住公司好啊，通勤时间为零，效率翻倍！", "能不能再给我加点压力？我还扛得住！", "老板您坐着歇会儿，剩下的交给我们！", "请叫我福报收集者，今天又集到一个！", "抓住这个抓手，撬动整个生态！",
+    "老板的每一次咆哮，都是对我们的爱！", "我的医保卡最近会很忙的。", "我把结婚纪念日设成了上线日！", "保证按时交付，延期我自罚三杯咖啡！", "我已经向我的枕头正式告别了！", "睡眠我已经不需要了，只需要指令。",
+    "我的咖啡因浓度已经超标了，还能再喝。", "就算烧到四十度，我也能写代码！", "立刻做一次全链路梳理，找到关键卡点！", "结婚当天我也会带着电脑，随时响应！", "让我的汗水浇灌公司的每一个KPI！", "没问题，我对象已经习惯了。",
+    "要不要我今晚把全组的梦也安排上？", "请把我的工位焊死，我不打算离开了！", "这件事我们会做到可量化、可追踪、可复盘！", "客户凌晨两点的消息，我一点五十九就回了！", "我连做梦都在给老板汇报进度！", "老板这波操作，绝绝子！",
+    "今晚通宵够吗？不够我连着明晚一起？", "马上赋能一线，让炮火呼唤得到回应！", "我已经把户口迁到工位了！", "需求就这些吗？要不要我再自己加几个？", "老板的直觉，胜过一千份调研报告！", "请老板把我当成一台永动机！",
+    "听完老板讲话，我当场破防，太感动了！", "我马上建群，群名就叫使命必达！", "工资卡也早就习惯了寂寞。", "坚决执行，绝不打折扣！", "保证完成任务，今晚通宵也要搞出来！", "今晚又能欣赏凌晨四点的写字楼了。",
+    "好的，婚期我往后推一推。", "马上开干，键盘已经冒烟了！", "需求又变了？好的，这是第几版来着？", "需求池满了？没关系，我再挖个池子！", "保证完成，但不保证活着。", "全组的日历，我这就都标成红色！",
+    "自愿放弃休息的承诺书，我已经签了！", "马上把风险前置，把问题扼杀在需求阶段！", "个人梦想，我已经外包给了公司愿景！", "眼药水我已经当饮料喝了。", "马上去找业务的第二增长曲线！", "做完了还能再给我派一个吗？",
+    "会后立刻出一版PPT，把逻辑讲透！", "老板，我能多交一份周报吗？", "牛马已就位，请老板随意驱使！", "昨天的方案我就当没写过，没关系的。", "就这点活吗？老板是不是小看我了？", "冲在第一线，睡在最后一排！",
+    "需求文档我马上重写，第十三版也不在话下！", "这就发起一轮用户共创，挖掘深层诉求！", "我不需要假期，我需要更多的需求！", "听老板一喊，我的KPI都自动往上涨了！", "过年我就在公司过，年夜饭就吃泡面！", "我去把充电宝和我自己都充满。",
+    "我要把奋斗两个字打在公屏上！", "老板，这是不是就是传说中的福报？", "加班费就用老板的鼓励来抵吧，挺好。", "这个安排简直是神来之笔！", "老板，这个任务能不能再多给我一点？", "全靠一口仙气吊着，没问题的。",
+    "客户那边我这就去跪，保证签回来！", "整个组已经卷成麻花了，还能再拧两圈！", "这就建立作战地图，标清楚每一个山头！", "带薪拉屎的时间，我也贡献出来了！", "马上把问题拆成三层：战略、战术、执行！", "老板喊得好，喊出了我们的心声！",
+    "被老板骂一次，比拿年终奖还开心！", "我已经习惯了用咖啡代替血液！", "这不是任务，这是荣誉！", "闹钟我全删了，从此不睡！", "数据不好看？我今晚就让它变好看！", "老板，工资的事咱们明年再说好吗？",
+    "这个方向我们闭着眼都能冲！", "打卡机都认识我了，今天我陪它一起加班！", "我的身体属于公司，灵魂也顺便捐了！", "这个锅我先背着，背习惯了。", "每个bug我都会揪出来就地正法！", "老板这个思路，我要抄下来裱在床头！",
+    "打车软件已经记住了我凌晨的路线。", "马上做归因分析，定位问题根因！", "明白，我这就通知我妈今年过年不回了。", "灵魂已经下班，肉体还能再撑撑。", "老板英明，我这就去办！", "我去跟外卖小哥说，明天还是这个点。",
+    "老板就是灯塔，照亮我们加班的夜路！", "工资可以不要，项目必须上线！", "五彩斑斓的黑，我保证调出来！", "周末加班？周五晚上能一起算上吗？", "床我已经卖了，睡觉太浪费时间！", "马上建立反馈机制，小步快跑快速迭代！",
+    "把logo放大的同时缩小，我这就去研究！", "简历我已经在心里默默更新了，开玩笑的。", "融资路演的PPT，我会做出史诗感！", "老板刚才那个手势，太有决策力了！", "我们会用第一性原理重新审视这个需求！", "明早八点之前，结果放您桌上！",
+    "懂了，今晚的相亲我取消。", "什么时候要？昨天？没问题！", "老板，您看我这个奋斗姿势标准吗？", "这个决策建议写进商学院教材！", "我的生日愿望是：公司股价涨！", "键盘敲烂，工资不变，但我快乐！",
+    "老板要的是结果，我给的是命！", "工具人已上线，随叫随到！", "反正下班也不知道干啥，那就不下了。", "可以，我去跟我的床说声对不起。", "我的血型已经变成了奋斗型！", "打工人，打工魂，打工都是人上人！",
+    "年会抽奖我就不抱希望了，干活吧。", "摸鱼的手我已经剁了，只剩敲键盘的手！", "我们会把这件事沉淀成组织级能力！", "我的手机永远为公司二十四小时开机！", "我这就去对齐一下对齐的颗粒度！", "这个需求我们会抽象成底层能力！",
+    "服务器扛不住，我来人肉扛！", "行，就当体验一下什么叫原地爆炸。", "这么光荣的任务，为什么不早点给我？", "我的待办清单已经比我的寿命还长了。", "已经在做竞品拆解，明早给出打法！", "今晚大家一起发光发热，发烧也不下火线！",
+    "会议室已订好，从现在一直开到天亮！", "所以周末其实也是工作日，对吧？明白了。", "立刻开个复盘会，先复盘一下这次复盘！", "这个deadline，是不是还能再提前一点？", "军令如山，我这就上山！", "刚才那段我录下来了，今晚睡前再听三遍！",
+    "所有事情都是P0，我懂，我都懂。", "马上把今天的喊话内容落到每一个抓手上！", "老板眼里有光，心中有方向，我们脚下有路！", "我会继续热爱这份工作，直到它爱上我。", "孩子问爸爸在哪，我让他去看公司官网！", "楼下保安那边我去说，今晚别锁门了。",
+    "输液瓶挂在工位上，一点都不影响打字！", "要不要我把下周的活也提前干了？", "我们会做好资源协同，实现一加一大于三！", "设计稿我改到老板满意为止，哪怕改回第一版！", "表格我这就填，每一格都填满感恩！", "我的年假余额已经变成负数了，没事。",
+    "我发誓要把自己熬成公司的传奇！", "甘特图已经建好，每一格都是奋斗！", "就算头发掉光，我也要把功能做光！", "带薪休假太奢侈了，我主动放弃！", "把我拆了当零件用也行，只要项目能跑！", "今晚不拿下这个版本，谁都别想走！",
+    "从今天起，我就是本组的卷王！", "用户增长曲线，我会亲手把它掰上去！", "我们组已经签好军令状，请老板过目！", "行，健身卡我转给别人了，反正也没空去。", "生是公司的人，死是公司的鬼！", "立刻建立数据看板，让每个动作可追踪！",
+    "我会主动向上管理，及时同步进展！", "我的黑眼圈会替我说谢谢的。", "我们会用增长飞轮把业务转起来！", "困了就喝咖啡，累了就喊口号！", "已经给家里打了电话，说这周不回了！", "为了这个目标，我今晚连梦都不做了！",
+    "为了公司，我已经三年没看过一场电影了！", "我在这里，我一直都在这里。", "老板的指示，永远的神！", "这个方向太清晰了，我感动得想哭！", "我愿做公司最不起眼的螺丝，永远不松！", "上线前我会把每一行代码都摸一遍！",
+    "让我先干，工资的事以后再说！", "老板说要，那就是市场要！", "又是被福报砸中的一天呢。", "明年的年假，我能提前放弃吗？", "下班两个字怎么写来着？我已经忘了。", "老板高见，我刚才怎么就没想到呢！",
+    "老板英明神武，属下誓死追随！", "需要我把周末也一起交上来吗？", "闹钟已经调成了二十四小时模式。", "请老板放心，我们团队嗷嗷叫！", "项目上线那天，我要在公司门口放鞭炮！", "这饼我吃了十年，还是熟悉的味道。",
+    "我的异议已经自动撤回了。", "工资没涨，但格局涨了，谢谢老板。", "我宣布，老板就是我的人生导师！", "摸鱼？我连鱼长什么样都忘了！", "马上把痛点、痒点、爽点全部串起来！", "加班不要钱，我倒贴也愿意！",
+    "今晚灯不灭，人不散，活不完不走！", "睡眠是懦夫的借口，我选择通宵！", "胃疼算什么，项目疼我才真的疼！", "这周第五次推翻重做，我很淡定。", "不给自己留退路，也不给bug留活路！", "没事，猫饿一天也饿不死。",
+    "我连叹气都调成静音模式了。", "请公司考验我，我已经准备好了！", "从今天开始，我每小时给老板汇报一次进度！", "我的朋友圈可以改名叫工作日志了。", "消息已读，人已开干！", "听老板一席话，胜读十年书！",
+    "我宣布，从今天起没有周末！", "困难再大，也大不过老板的决心！", "老板骂得对，我就是欠骂！", "牛马也有牛马的骄傲，这活我包了！", "看我的，今晚让代码飞起来！", "任务量翻倍？太好了，我正嫌不够！",
+    "今天也是和工位相依为命的一天。", "全员冲锋，一个都不许掉队！", "我心里有数，心里的数是零。", "老板一句话，顶我们开十次会！", "一个字：干！两个字：死磕！", "这件事我们要升维思考，降维打击！",
+    "我的眼袋已经可以装下整个需求池了。", "老板说的都对，尤其是没说的那部分！", "一秒钟都不能浪费，厕所我先憋着！", "这个需求我接了，出了问题我背！", "卷不死，就往死里卷！", "为了上线，我愿意三天不洗澡！",
+    "下班？我这辈子就没打算下班！", "冲冲冲，谁先下班谁是叛徒！", "我的肝是公司的，随时可以拿去用！", "冲锋号一响，我腿都软了，是激动的！", "我们连夜成立突击队，番号就叫福报！", "好的，周末又没了，但我很开心。",
+    "我们不是在上班，我们是在创造历史！", "行，我这就把年假还给公司。", "老板，要不要我顺便把竞品也收购了？", "我给自己的孩子起小名叫KPI！", "这需求提得太有水平了，一看就是老板亲自想的！", "找准抓手，赋能业务，沉淀方法论！",
+    "这块硬骨头，我用牙也要啃下来！", "加班申请单我已经替全组填好了！", "就当今天是周一吧，虽然是周六。", "马不停蹄，人不停手，键盘不停响！", "反正工资也不够我出去玩，那就加班吧。", "老板说很简单，那一定很简单，我这就开始！",
+    "不就是上线吗，今晚我住公司了！", "下辈子我还要来这家公司上班！", "老板这招太绝了，竞品看了都得哭！", "为了公司，我愿意把睡眠砍到零！", "能为公司加班，是我修来的福报！", "方案A、B、C、D，我马上各出一份！",
+    "我愿意用我的头发，换公司的市值！", "行，明天的焦虑我提前到今天。", "休息？老板您是在考验我吗？", "立刻组建虚拟团队，打破部门墙！", "老板放心，这个版本我拿命保！", "老板指哪儿，我就打哪儿！",
+    "这么有挑战的任务，只有老板才想得出来！", "已经在梳理链路，今晚输出方案！", "明白，这个需求很合理，就是做不出来。", "让我的青春在工位上燃烧成一束光！", "要多快？比光速快一点够不够？", "老板讲得太好了，建议全公司背诵！",
+    "我宣布，今天的KPI由我一个人承包！", "立即启动项目，明确owner和DDL！", "今天就是决战日，全员进入冲刺模式！", "家人问我什么时候回家，我说公司就是家！", "我们要从用户价值出发，重构底层逻辑！", "我们会建立长效机制，把一次性动作变成常态！",
+    "哭的时间我安排在凌晨四点，不耽误工作。", "键盘就是我的枪，代码就是我的子弹！", "今天不上线，我就不配叫奋斗者！", "把不可能变成可能，把可能变成已上线！", "这个owner我来当，保证端到端交付！", "周报里我会写得很感恩的。",
+    "追随老板，是我这辈子最正确的选择！", "年终述职我准备好了，第一页就是感恩老板！"];
+  const CN_BOSS_BYE = { loud: ["都听明白了？抓紧干活！", "散会！谁掉链子谁走人！", "就这么定了，今天下班前我要看到结果！", "行，就这样，别让我来第二趟！", "都给我动起来！"],
+                        one: ["听明白了就去办，今天给我结果！", "抓紧，别让我等！", "我明天一早要看到进展！", "办不好你就自己看着办！", "去吧，我盯着呢。"] };
+  function bossLook() {
+    const look = palFor("boss-visitor", "backend"), pal = look.pal;
+    Object.assign(look, { species: "human", variant: null, top: 0, hair: "short", cap: null, shirt: "jacket", beard: false, glasses: true });
+    Object.assign(pal, { s: SKIN[1], c: "#f4f4f4", d: "#23252d", p: "#23252d", b: "#141414", h: "#1f1f1f", e: "#2b2b2b", g: "#b8861e" });
+    for (const k of ["n", "a", "m", "x", "z"]) delete pal[k];
+    pal.key = JSON.stringify(pal); return look;
+  }
+  function noticeHuman(st, quiet) {                                            // the human's new threads and comments, oldest first, each once
+    for (const e of (st.events || []).filter(x => x.agent === "human" && (x.kind === "thread" || x.kind === "comment")).reverse()) {
+      const id = e.id ?? e.created_at + e.detail; if (seenHuman.has(id)) continue; seenHuman.add(id);
+      if (quiet || !zh() || Date.now() - new Date(e.created_at) > 120000) continue;
+      const m = /^#(\d+):?\s*([\s\S]*)$/.exec(e.detail || ""), t = m ? (st.threads || []).find(x => x.id === Number(m[1])) : null;
+      let text = m ? m[2] : e.detail || "";
+      if (e.kind === "thread" && t) text = t.title + "：" + (t.snippet || "");
+      else if (e.kind === "comment" && t) { const mine = (t.last_comments || []).filter(x => x.author === "human").slice(-1)[0]; if (mine) text = mine.snippet; }
+      const team = st.agents.filter(a => a.status !== "retired").map(a => a.name), tags = tagsIn(text);
+      bossQueue.push({ text: text.trim().slice(0, 700), loud: tags.includes("all") || tags.filter(n => team.includes(n)).length > 1 });
+    }
+  }
+  const stageSpot = (c) => { const [x, y] = FRONT; return !solid[y][x] && !heldBy(x, y, c) ? [x, y] : freeNeighbour(x, y, c); };   // in front of the team
+  function bossScript(q) {
+    const m = masterChar(), loud = q.loud || !m, pick = (L) => L[Math.floor(Math.random() * L.length)];
+    const listeners = loud ? Object.values(chars).filter(o => !o.hidden && !o.medic && !o.boss && !o.leaving && !(o.guard && o.setup) && o.mode !== "faint" && o.mode !== "despair").map(o => o.name) : [m.name];
+    return [{ k: "goto", spot: loud ? stageSpot : (c) => visitSpot(c, chars[m.name] || c) },
+            { k: "relay", text: (loud ? "全体注意！" : "") + q.text, megaphone: loud, listeners, target: loud ? null : m.name },
+            { k: "acks", listeners }, { k: "say", text: pick(loud ? CN_BOSS_BYE.loud : CN_BOSS_BYE.one), ms: 2600 }, { k: "exit" }, { k: "gone" }];
+  }
+  function bossTick() {
+    if (chars[BOSS_ID] || !bossQueue.length || transition) return;
+    if (!zh()) { bossQueue = []; return; }
+    chars[BOSS_ID] = { name: BOSS_ID, boss: true, label: "老板", idx: 80, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "boss", moving: false, prog: 0, bang: 0,
+                    hidden: true, hiddenUntil: Date.now(), setup: bossScript(bossQueue.shift()), ...bossLook() };
+  }
+  function bossStep(c, step, now, next) {
+    if (step.k === "relay") {                                                  // says the post; the listeners stop and face him until everyone has answered
+      if (!c.stepAt) {
+        c.stepAt = now; step.until = now + Math.min(MAX_TALK_MS, talkMs(step.text));
+        c.say = step.text; c.sayStart = performance.now(); c.sayUntil = step.until; c.sayLoop = false; c.bang = now + 1500; c.gear = step.megaphone ? "megaphone" : null;
+        for (const n of step.listeners) { const o = chars[n]; if (o) { o.hold = { until: step.until + 60000, kind: "listen", face: c.name }; o.steps = []; o.talk = null; } }
+      }
+      const o = step.target && chars[step.target]; c.dir = o ? facing(c, o) : "down";
+      if (now > step.until) { c.gear = null; next(); }
+      return true;
+    }
+    if (step.k === "acks") {                                                   // "收到！" from everyone listening, a little apart
+      if (!c.stepAt) { c.stepAt = now; step.plan = step.listeners.map((n, i) => ({ n, at: now + 500 + i * 700 + Math.random() * 400, done: false })); step.end = Math.max(now, ...step.plan.map(a => a.at)) + 3800; }
+      for (const a of step.plan) if (!a.done && now >= a.at) { a.done = true; const o = chars[a.n]; if (o && !o.hidden) { o.say = "收到！" + CN_OBEY[Math.floor(Math.random() * CN_OBEY.length)]; o.sayStart = performance.now(); o.sayUntil = now + 4200; o.sayLoop = false; o.bang = now + 900; } }
+      if (now > step.end) { for (const a of step.plan) { const o = chars[a.n]; if (o && o.hold && o.hold.face === c.name) o.hold = null; } next(); }
+      return true;
+    }
+    return false;
+  }
+  function drawBossGear(c, t, x, y) {
+    const down = c.dir === "down", fl = c.dir === "right";
+    if (down) { ctx.fillStyle = "#b3202a"; ctx.fillRect(x + 15, y + 22, 2, 9); ctx.fillRect(x + 14, y + 22, 4, 2); }             // the tie
+    if (c.gear !== "megaphone") return;
+    const dx = c.dir === "left" ? -1 : fl ? 1 : 0, mx = x + 16 + dx * 8, my = y + 18, on = Math.floor(t * 5) % 2;       // a megaphone at the mouth, sound pouring out
+    ctx.fillStyle = c.pal.s; ctx.fillRect(mx - 2 + dx * 2, my + 6, 4, 3);
+    for (let k = 0; k < 7; k++) { const w = 3 + k, hx = dx ? mx + dx * k : mx - Math.floor(w / 2), hy = dx ? my - Math.floor(w / 2) + 2 : my + k;
+      ctx.fillStyle = k === 5 ? "#d61f2c" : "#f4f4f4"; if (dx) ctx.fillRect(hx, hy, 1, w); else ctx.fillRect(hx, hy, w, 1); }
+    if (on) { ctx.fillStyle = "#ffe27a"; if (dx) { const ox = mx + dx * 9; for (const oy of [-6, 0, 6]) ctx.fillRect(dx > 0 ? ox : ox - 3, my + 2 + oy, 3, 1); } else { const oy = my + 9; for (const ox of [-7, 0, 7]) ctx.fillRect(mx + ox - 1, oy, 1, 3); } }
+  }
+  // ---- a leaver who will not go (Chinese office): sits tight at the desk cursing the company until the guard zaps it; out cold
+  // for a moment, then it packs the desk and the bunk and carries them out, cursing all the way
+  const CN_REFUSE = ["N+1一分没给，凭什么让我滚？老子今天就焊死在这工位上！", "用完就扔？你们这破公司连垃圾分类都不如！", "我不走！这把椅子是我用三年青春坐出来的！", "想让我走？先把N+1拍桌上，少一个子儿我都不挪窝！", "赔钱我才走！没钱？那老子就在这儿住下了！", "补偿金算成N-1？你们财务拿脚趾头按的计算器吗？算不对我不走！",
+    "让我签自愿离职？自愿你大爷，老子自愿留下来骂你们！", "加班费欠了三年，今天不结清，谁拖我都不走！", "说好的十六薪最后发了个红包雨，还有脸让我毕业？老子不毕业！", "钱不到账我不走，到账了我还要骂完再走！", "赔偿按最低工资算？我掉的头发你们按什么算？算清楚再说走不走！", "我这腰椎间盘是给你们卷出来的，不赔钱休想让我挪屁股！",
+    "期权画了五年一股没兑现，现在让我净身出户？做梦！", "让我走可以，把我这些年垫的咖啡钱也一起报了！", "工资压着不发还逼我主动离职，你们开的是黑店吧？我偏不走！", "社保按最低基数交，裁人倒挺积极，要点脸吧！老子不走！", "不给补偿就想赶人？劳动仲裁的门我比你们HR还熟！", "什么叫“协商一致”？你们协商，我一致？我不同意！",
+    "钱没结清，老子这屁股就跟椅子长一块儿了！", "给我N+1我立马滚，给我画饼我就钉死在这！", "你们省下我这份补偿，是打算给老板再换辆车吧？老子今天就赖这儿了！", "调休攒了八十天一天没休，先把假还我，不然我就在这儿休！", "报销单拖了半年没批，现在批我走倒是批得挺快！", "竞业协议要我两年不能干活还不给钱？我就不走了！",
+    "让我走也行，先把这些年被偷走的周末还回来！", "这工位是我的！我在这熬的夜比你们老板开的会都多！", "我今天就钉在这儿了，有本事连人带椅子一起搬出去！", "显示器上每粒灰都是我的青春，说收就收？我人不挪，灰也不挪！", "我不走！键盘的空格键都被我敲出坑了，这就是我的地盘！", "我在这工位吃了一千多顿外卖，这块地早被我腌入味了！",
+    "你们敢断我电，我就开手机热点接着骂，反正我不走！", "门禁卡停了又咋样？老子今天压根就没打算出门！", "这盆绿萝是我浇活的，要走也是你们这群人先走！", "我的腰靠、颈枕、暖脚宝都在这安家了，你说搬就搬？！", "赖着就赖着，反正你们赖账的时候也没见脸红过！", "我就坐这儿不动，看你们拿我这个“闲置资产”怎么办！",
+    "把我电脑收了？行，我就坐这儿手写骂你们，写满一面墙！", "这工位我坐得比你们的战略还稳，凭什么让我挪？！", "我屁股底下这把椅子，都比你们整个管理层有担当！", "你们换了十个方向，我一个工位都没换过，谁该走？！", "我就是一颗钉子，锈在这儿了，拔出来你们也得见血！", "今天谁来都没用，我已经和这张桌子领证了！",
+    "我不走！我走了谁来见证你们这破公司怎么倒闭？！", "想清场？先问问我这把人体工学椅答不答应！", "我拿扎带把自己捆在桌腿上了，钥匙在老板的良心里，早丢了！", "这层楼的空调遥控器我比物业还熟，凭啥我先走？！", "我连抽屉都塞满了零食，这是我的家，要走也是你们这群客人走！", "工牌收走可以，我这张脸你们收得走吗？！我不走！",
+    "我就坐这儿，坐到你们上市，再坐到你们退市！", "这工位的风水被我养了五年，我一走你们整层楼都得倒霉！", "饼画了五年一口没吃上，现在连盘子都要收走？我屁股焊椅子上了！", "你们画的饼够绕地球三圈了，我今天就坐这儿等它烤熟！", "天天画大饼，现在饼没了要赶人？先把饼钱赔了我再考虑走不走！", "老板画饼的手艺那么好，怎么不去开个烧饼铺？这工位我坐定了！",
+    "说好的上市敲钟分期权，敲的原来是我的丧钟？这钟我不认，不走！", "饼大得能当井盖，吃一口崩掉门牙，还让我感恩？我偏不走！", "画饼画到我胃穿孔，裁我倒一点不含糊？我今天就赖这儿养胃！", "你们的饼跟PPT的曲线一样永远在下季度，那我就坐这儿等下季度！", "我不走，我要亲眼看看那张画了五年的饼到底长啥样！", "年初画饼说带我起飞，年底一脚把我踹下飞机？我扒着舱门不撒手！",
+    "大饼吃多了胀气，今天这口气不出完我绝不走！", "把我当傻子喂饼，现在嫌我吃得多了？我偏不走！", "什么“公司就是你家”？家里会把亲儿子优化掉吗？这家门我不出！", "饼是你们画的，锅是我背的，门是让我出的？做梦去吧！", "老板的饼比他的头发还多，可惜一张都不能吃！我不走！", "你们画饼拿我的血当颜料，现在还嫌颜色不正？老子就是不走！",
+    "饼画得跟米其林似的，工资发得跟食堂剩饭似的，老子钉死在这儿！", "上次说的“明年一定涨”，已经是第五个明年了！想让我走？没门！", "我在这等饼等成了化石，你们现在要把化石也扔了？！", "天天说“再坚持一下”，坚持到上了裁员名单？那我就坚持不走！", "996是福报？这福报留给你们老板，我不要，我也不走！", "我替你们修了三年福报，现在功德圆满就要把我送走？！",
+    "天天九点下班算早退，现在六点就让我滚？双标狗！", "我把最好的年华熬给了你们的996，今天就在这儿熬到底！", "你们管这叫福报？这福报我还没享完，今天谁也别想让我走！", "凌晨两点的工作消息我都秒回，现在让我走连个招呼都不打？！", "周末拉我加班的时候叫兄弟，裁员的时候叫资源？我不走！", "大小周、单休、通宵我全扛了，一句优化就想打发我？没门！",
+    "996把我熬成了007，你们还嫌我不够卷？我偏不走！", "加班餐从三十降到十五，现在连人都要降？不给钱不挪窝！", "你们说奋斗者没有下班时间，那我今天也没有离职时间，不走了！", "福报我受够了，今天轮到你们受受我的报应！我偏要赖着！", "我熬出了黑眼圈、脂肪肝和结节，就换一张离职单？我不收，不走！", "我加班加到保洁阿姨都认我当干儿子了，凭什么让我走？！",
+    "下班打卡被你们改成“自愿加班”，那我现在自愿不走！", "每天最后一个关灯的是我，今天最后一个走的也得是我！", "我的生物钟都被调成996了，现在走出去我都不认识太阳！", "你们把我当永动机用，没电了就扔？我偏要在这儿充电！", "PUA我三年说我不够狼性，今天就让你们见识狼咬住工位不松口！", "天天说我格局小，今天我格局大开，就坐这儿不走了！",
+    "你们PUA我说离开公司我啥也不是，那我干脆不离开了！", "让我站在老板角度思考？站过去一看这公司早该倒了，我留下看它倒！", "天天骂我“这点小事都做不好”，那赶我走这点小事你们也别想做成！", "说我抗压能力差？我现在就抗着你们的压，死活不走！", "被PUA成了一条听话的狗，现在狗急了，要跳墙也不跳你们的门！", "天天说“外面的环境很差”，那我就不出去了，外面那么差！",
+    "“我这都是为你好”？为我好就把补偿金打过来，不然我不走！", "说我没有主人翁意识？好，今天主人翁不走了，这是我家！", "你们一边说我是螺丝钉，一边嫌我拧得太紧，我就拧死在这儿！", "什么叫“公司不欠你的”？欠我三年加班费你们失忆了？我不走！", "被你们否定了一千次，今天我也否定一次：我不走！", "你们说“年轻人要多吃苦”，那我今天就在这儿苦熬到底！",
+    "PUA那一套收起来吧，老子今天免疫了，打死不走！", "天天说我“缺乏成长型思维”，我现在成长了，学会赖着了！", "说我“不适合公司文化”？这种文化连霉菌都不适合！我就坐这儿不动！", "“能者多劳”劳到能者被劳没了，这就是你们的逻辑？我偏不走！", "天天让我反思，今天我反思完了：该滚的是你们！", "“你的价值不止于此”，所以打算按废品价把我卖了？这门我不出！",
+    "什么毕业？我连毕业证都没见着，这破学校还想赶我？不走！", "优化优化，优化到最后就剩一群会写PPT的废物了！一步都不挪！", "说我毕业了？毕业典礼呢？学位证呢？没有我不走！", "把裁员叫“毕业”，降薪叫“共担”，汉语是体育老师教的？我不毕业！", "我被优化了？你们的脑子才最需要优化！我不走！", "让我毕业可以，先让校长上台给我发证！没证我不走！",
+    "什么“人才输送”？把人往外踹还起这么好听的名字！这椅子我不让！", "优化名单是抽签抽的吧？干活的全中了，摸鱼的全留下了！", "你们优化的不是成本，是良心！我不走，我替你们守着良心！", "我毕业了，那你们这群留级生怎么还不退学？！", "“组织架构调整”调到最后，调走的全是干活的，拍马屁的一个没动！", "优化我？我写的代码只有我能看懂，你们敢动我，我就敢钉在这！",
+    "说是“释放人才”，我又不是笼子里的鸟，你们才是牢头！老子就是不滚！", "“向社会输送优质人才”？那你们留着不优质的自己玩吧？！", "被毕业还要谢公司栽培？栽的是我的头发！头发没长回来我不走！", "优化方案三十页PPT，补偿方案就一句话？你们不补我不走！", "把“开除”包装得跟升职似的，要不你们自己先毕业？我反正不走！", "没有学士帽我不走，没有红包我更不走，毕业典礼在哪？！",
+    "优化来优化去，业务也优化没了，最后优化到老板自己！我不走！", "我不接受毕业，我申请延期毕业，延到你们破产为止！", "狗屁KPI年年改，改完就拿来裁人，我偏不走！", "KPI是你们拍脑袋定的，完不成倒成了我的错？我不认，不走！", "我KPI全绿你们裁我，就因为我不会拍马屁？我偏赖着恶心你们！", "定KPI拍脑门，考核时拍桌子，裁完人拍屁股，我偏不走！",
+    "OKR写了十版没人看懂，裁人倒是一看就懂，要走你们先走！", "绩效给我打个C就想赶我走？我给你们管理层打个F！", "末位淘汰？全组就我一个人干活，末位咋算出来的？算不清我不走！", "KPI上没写“拍马屁”这项，所以我被优化了是吧？这理由我不认，不走！", "你们考核的不是业绩，是站队！我不站，我坐着，坐着不走！", "一年改了八版KPI，一版比一版离谱，还有脸考核我？不走！",
+    "定目标的人从来不背目标，今天这锅我不背了，人也不走了！", "狗屁KPI把人考成了狗，现在狗不走了，汪！", "你们的KPI是抽奖吧？中了就留，不中就滚？老子不陪你们玩！", "KPI定得比山还高，完不成就裁人？你们先爬一个，我坐这儿看！", "用KPI裁我？先把你们中层的KPI拿出来晒晒，看谁该滚！", "我的KPI是被你们临时改的需求拖垮的，凭什么让我背锅走人？！",
+    "这破KPI连你们自己都算不明白，还拿来算我？不走！", "你们用KPI压了我三年，今天我用屁股压着这把椅子不放！", "季度评我优秀年底把我优化，左手打右手？我两只手都抱着桌子！", "KPI完成率一百二，换来一张离职通知？我偏不走！", "屎山是我一铲一铲堆起来的，只有我知道哪块能踩，敢让我走？！", "我走了这屎山就塌了，到时候你们全公司陪葬！",
+    "你们敢让我毕业，我就坐在这座屎山上等它塌方！", "这坨屎山代码里的注释全是我骂人的话，我得留下来守着！", "让我交接？交接个屁，这屎山连我自己都不敢碰！该滚的是你们！", "我在屎山里刨了五年食，现在饭碗也要被你们刨走？！", "屎山是你们的需求堆出来的，锅让我背，人让我滚？不可能！", "你们那套架构狗都嫌弃，除了我谁愿意伺候？我不走！",
+    "线上一出bug就喊我，现在裁员也第一个喊我？我偏不走！", "我走了，凌晨三点谁起来给你们救火？老板吗？他会开机吗？！", "系统跑八年全靠我拿胶带缠着，敢赶我走我就让它当场散架！", "屎山代码只认我一个爹，你们换人它就罢工，所以我不能走！", "我留的注释写着“别动，动了会死”，你们最好也别动我！", "让我写交接文档？文档就一行字：祝你们好运，老子不走！",
+    "我这颗螺丝一拔，你们整台破机器立马散架，所以我拧死不走！", "屎山是你们逼我拉的，现在嫌臭了要赶我走？做梦！", "那个上古接口只有我知道参数，你们去问神仙吧，我就搁这儿耗着！", "你们的技术债比老板的贷款还多，债主不能先走！", "代码烂是因为需求一天变三次，你们自己品，休想赶我走！", "锅全甩我头上了，现在锅满了想连人带锅一起扔？不走！",
+    "我背了三年锅，背都驼了，一句优化就想让我滚？！", "出事全是我的锅，拿奖全是领导的功，凭什么我先走？！", "甩锅甩得这么溜，你们该去参加铅球比赛！我不走！", "我不是被优化，是被甩锅甩出去的，今天我把锅扣回来！", "你们的锅比食堂还多，裁了我谁来背？我留下看你们自己背！", "这口黑锅我背够了，今天就顶着它坐在这儿，谁也别想拿走！",
+    "领导的决策失误凭什么让我们滚？该滚的是拍板的那位！", "我不走，我走了你们找谁甩锅？连锅都没地方甩了！", "甩锅王当了总监，背锅侠被优化，这晋升通道直通地狱！请我走？请不动！", "项目黄了是老板拍脑袋拍的，裁人却裁我？你咋不裁你脑袋？我抱紧桌腿了！", "我今天就坐这儿当一口锅，让你们知道锅也有脾气！", "所有的锅我都记在小本本上了，念完了我也不走！",
+    "背锅侠也有尊严！今天不给个说法，老子死也不挪窝！", "上面甩锅下面接，接到最后连工位都接没了？我不答应！", "一天八个会，会会没结论，现在开个会就把我开了？我不走！", "你们开会开出了裁员名单，怎么就开不出业绩来？！老子扎根了！", "我在这坐着就是在开会，开到你们给我N+1为止！", "PPT做得比产品好一百倍，难怪公司要靠裁员过日子！让我走？门都没有！",
+    "会上说“拥抱变化”，拥抱到最后把我抱出门？我不走！", "你们PPT里全是赋能抓手闭环，就没有我的补偿金！没有我不走！", "让我走也得开个会讨论吧？你们最爱开会了，我等着！", "会议室订满了全在讨论怎么甩锅，我偏不走，我要旁听！", "你们的战略全写在PPT里，我的血汗全洒在工位上，谁该走？！", "一个PPT改了四十版，就为把“裁员”改成“优化”？老子不走！",
+    "天天拉会拉到十点，现在拉我出门倒挺干脆？！", "会议纪要里写我“主动离职”？我主动个屁，我主动留下！", "PPT里的增长全是箭头，现实里的增长全是裁员，老子今天就赖这儿了！", "你们开会的嘴比干活的手多十倍，要裁先裁嘴！我不走！", "老板一年换三辆车，却说公司困难要裁我？我不走，我帮你卖车！", "老板在朋友圈晒游艇，转头就来优化我，脸都不要了！我屁股焊椅子上了！",
+    "老板张口闭口“共克时艰”，克的是我，艰的也是我！这工位我坐定了！", "老板你要是真难，把那块表摘了，够发全组一年工资！我不走！", "老板说他比我们还累？累你还有空去打高尔夫？老子钉死在这儿！", "老板天天讲情怀，情怀能交房租吗？不给钱我不走！", "老板一年换八个方向，转到最后把我转出门？我不转！", "老板要是有我一半勤快，公司也不至于裁到我头上！想让我走？没门！",
+    "老板你出来！躲办公室让HR干脏活算什么本事？你不出来我不走！", "老板年会说“一个都不能少”，少的第一个就是我？那我就钉在这儿！", "老板说公司是艘船，船漏了先把划桨的扔下去？我抱着桨不下船！", "老板你就是台只会拍脑门的人形抽奖机，我今天不走了！", "老板的梦想是星辰大海，我的梦想是N+1，拿不到我就不走！", "老板天天喊“活下去”，裁到最后就你一个人活？我偏赖着陪你活！",
+    "老板你那点水平连小卖部都管不明白，还来优化我？我不走！", "老板说要向狼学习，狼可不会把自己的狼崽子赶出窝！", "我在这儿不走，就是要老板亲自出来跟我说句人话！", "老板画饼时那么大方，裁员时怎么这么抠？不大方一回我不走！", "老板办公室两百平，我的工位一平半，就这一平半你还要收？！", "老板你今天不出来，我就在这儿唱到你出来为止！",
+    "HR你别过来！你那张笑脸比刀子还吓人，不给钱不挪窝！", "HR姐姐，昨天夸我核心骨干，今天就骨干粉碎了？我偏钉这儿！", "HR连我名字都叫错，还跟我谈未来？谈不了，我偏要赖着！", "HR你就是替老板递刀的，我不跟你谈，老板不来我不走！", "HR你拿着那张协议别抖，我不签，我就坐这儿！", "HR说“这是对你的一种保护”，我只想保护我的工位！",
+    "HR说的“扁平化管理”，就是把我压扁往门缝外塞吧？我卡住了！", "HR一句“流程走完了”，我这五年就走完了？我不走！", "HR你别给我倒水，这水里一股“自愿离职”味儿，我不喝，也不走！", "HR说这是有温度的公司，原来是零下的温度？冻死我也不走！", "HR天天搞员工关怀，关怀到最后把我关怀出了门？！", "HR你今天笑得真甜，提成是按裁人数算的吧？我就坐这儿不动！",
+    "HR你那套离职话术我在网上都背熟了，别念了，一步都不挪！", "劳动法你们HR学过吗？没学过我今天就在这儿给你们开课！", "HR你再过来一步，我就把公司的骚操作全喊出来，喊完接着坐着！", "中层摸鱼升职，我干活毕业，这上升通道是反的吧？我不走！", "我那位中层领导除了转发邮件啥也不会，凭什么他留我走？！", "中层就是一层会说话的滤网，好事滤掉，锅全漏下来！这椅子我不让！",
+    "中层唯一技能就是向上汇报向下甩锅，要裁先裁你们，老子就是不滚！", "我的领导连需求都讲不清楚，裁人倒是讲得头头是道！我不走！", "中层一个会能说十个“对齐”，干活的时候一个都对不齐！要走你们先走！", "我不走！我要看着我那个马屁精组长能撑几天！", "组长拿我的功劳去述职，把他的锅扔给我，现在还要送我走？！", "中层是公司最厚的一层脂肪，要减肥先减你们，该滚的是你们！",
+    "我老大连电脑密码都要我帮他记，凭什么他留我走？！", "中层天天说要“向上管理”，管来管去把我管到门外了？！", "我不走！我要看看没人干活的时候你们这群中层怎么演！", "总监只会说“我只要结果”，结果就是把我裁了？那我的结果就是不走！", "我领导的领导的领导都没见过我，凭什么定我的去留？！", "这公司的中层就像屎山里的注释，没用还误导人，要走你们走！",
+    "保安大哥，你拿电棍电我也没用，我早被加班电麻了！", "保安来了我也不走！你电我一下，我骂老板十句！", "保安大哥你也是打工的，咱俩犯不着，你去电那个HR，我不走！", "电棍？我连凌晨三点的告警都扛过来了，还怕你这点电？不走！", "来啊电我啊！电晕在工位上算工伤，公司赔得更多！", "保安一来我坐得更稳了，这是打工人最后的倔强！",
+    "叫保安是吧？你们连裁员都要外包给保安了？！我就搁这儿耗着！", "保安大哥，你知道公司下一批连你也要优化吗？咱俩一起不走！", "电棍你拿稳了，我这身骨头是给这破公司熬硬的，电不散！", "拿电棍吓唬我？你们PUA我时的电压比这高多了，我照样没走！", "保安大哥你别急，等我把老板骂完再说，骂完我也不一定走！", "你们对员工的最后一份关怀就是一根电棍？真有温度！休想赶我走！",
+    "保安来了我抱住桌腿，保安走了我接着骂，看谁耗得过谁！", "保安都比HR有人情味，至少他不跟我讲“格局”！我不走！", "团建让我自费爬山，裁员让我自动离开，我偏不走！", "你们那套“狼性文化”，狼看了都要报警，请我走？请不动！", "价值观贴满一面墙，没有一条是真的，我今天就坐这儿盯着它们！", "什么“拥抱变化”？变化来了第一个抱住的就是我的离职单？！",
+    "年会让我们跳舞给老板看，现在又让我们滚给老板看？我不！", "你们的文化就是：干活靠员工，功劳靠领导，裁员靠HR！我抱紧桌腿了！", "“客户第一，员工第二”，裁员时员工就排到第八百了吧？我不走！", "墙上写着“以人为本”，人都要被你们本没了！老子扎根了！", "天天喊“拼搏”，拼的是我们的命，博的是你们的彩，想赶我走？门都没有！", "我的狼性被你们磨成了狗性，现在狗也不要了？我偏赖着！",
+    "团建吃火锅要AA，裁员倒一分钟全员通知？抠成这样还想赶我？没门！", "年会抽奖我三年抽了三个保温杯，现在还要把我也抽走？！", "你们说“拥抱不确定性”，那我确定不走，你们自己拥抱吧！", "企业文化手册写了八十页，没一页写怎么对人好！我不走！", "打卡制度比监狱还严，今天我就当坐牢了，不出去！", "你们搞末位淘汰，那我先淘汰你们这套傻缺制度！老子不走！",
+    "公司口号“成就客户、成就员工”，成就员工就是把他送走？！", "团建玩信任背摔没人接我，现在又想把我摔出门？老子今天就赖这儿了！", "什么扁平化管理，就是把我们压扁了好从门缝塞出去！", "你们的“透明文化”只在裁员时透明，涨薪时从不透明！我不走！", "员工手册第一条“公司是你的家”，家门钥匙我不交了！", "下午茶从水果降到白开水，现在连人都要降？我屁股焊椅子上了！",
+    "你们的企业文化只有两个字：压榨！我不走，我监督！", "“奋斗者协议”签的时候说是荣誉，现在说我自愿走？做梦！", "我走了你们的咖啡机谁来修？打印机谁来哄？这工位我坐定了！", "公司的WiFi密码是我设的，要我走先把我的青春还我！", "你们裁员的速度要是用在做产品上，早就上市了！我不走！", "这破公司的电梯我按了五年，今天我不按了，就坐这儿！",
+    "我不走！我要当这层楼的钉子户，写进公司的黑历史！", "你们把我当抹布，擦完就扔，我今天就赖在这桌上发霉！", "我这把年纪出去找工作谁要？所以我不走，就赖你们！", "让我走可以，先把被你们卷没的发际线还回来！", "给我三天我能写完交接，给我三年我也不会自己走！", "你们开会决定裁我的时候，我还在工位上帮你们修bug！草！",
+    "我入职那天你们敲锣打鼓，现在送我走连个锣都不敲？不走！", "我在这献出了颈椎、腰椎和视力，你们回我一张A4纸？！", "我今天就当颗钉子，把你们这破公司的遮羞布钉在墙上！", "我这工位早就被我盘出包浆了，你们这是抢文物！", "离职证明写我“表现良好”？良好你们还裁？！老子钉死在这儿！", "要我走？把我这五年青春折成现金，别拿期权糊弄我！",
+    "说“人是最宝贵的资产”，贬值了就扔垃圾桶？我这资产赖着不走！", "你们的裁员名单比需求文档写得还认真，我服了，但我不走！", "我还没骂够，我不走！我要骂到这层楼的灯都自己关！", "滚？你们说滚就滚，我又不是皮球！我就不滚！", "让我走的人，自己先走一个给我看看！", "我走可以，把老板的车留下，就当补偿了！",
+    "老子不走！老子在这干了五年，比你们的战略活得都长！", "这破公司我不稀罕，但我的工位我稀罕，想让我走？没门！", "我不是赖着不走，我是在等你们良心发现，估计要等挺久！", "今天我就坐在这儿，给这破公司做最后一次压力测试！", "你们的系统扛得住大促，扛得住我今天不走吗？！", "草！凭什么让我走？我这个月的外卖红包还没用完！",
+    "他妈的，招我进来的时候求着我，赶我走的时候踹着我？！", "我不走，我走了你们这破公司连个说真话的都没有了！", "我今天就赖在这儿，让新人看看这破公司是怎么对老员工的！", "我在这儿坐着，就是这破公司最后一面照妖镜！", "你们敢让我走，我就把这些年挨的骂编成歌，在前台循环播放！", "老子不走！老子要看着这破公司的估值跌成白菜价！",
+    "这破公司唯一的优点就是我，裁了我你们还剩啥？所以我不走！", "要么给钱，要么给说法，要么给我一张床，我住这儿了！", "连顿散伙饭都不请就想把我打发走？抠门抠到骨子里了！", "凭什么让我走？就凭你们那个连表格都不会做的老板？！", "凭什么？我干的活比三个中层加起来都多，凭什么是我走？！", "你们到底是裁员还是清理证人？我知道的太多了是吧？我不走！",
+    "我走了，谁来给你们的傻缺决策擦屁股？！", "我犯了什么错？加班太多还是骂人太少？今天我就坐这儿全补上！", "这公司是你家开的？哦对，是你家开的，那我更不走了，膈应死你！", "你们裁员前做过调研吗？问过屎山答不答应吗？！", "要我走？谁批的？签字的都给我站出来！", "说我能力不行？那怎么让我一个人干三个人的活？这账算清再让我走！",
+    "我走了你们给谁发凌晨一点的消息？给空气发吗？！", "你们是不是以为我会哭着走？不好意思，我是笑着赖着！", "凭什么我毕业？我一节课都没逃过，你们老板天天逃课，他先走！", "裁我？你们是觉得公司还不够乱吗？！不给钱不挪窝！", "就这？一张通知单就想打发干了五年的老员工？我不接，也不走！", "你们这破公司的管理水平还不如楼下煎饼摊大爷！我偏要赖着！",
+    "你们裁员比翻书还快，发工资比挤牙膏还慢！我不走！", "你们的良心要是有我的工位一半大，也干不出这种事！", "这破公司的承诺比厕所纸还薄，一撕就烂！我就坐这儿不动！", "你们的管理层像天气预报，永远不准还天天发布！一步都不挪！", "这公司的制度就像我的代码，谁也看不懂，所以谁也别想挪我！", "你们的战略像旋转门，转一圈就把我转出去了？我卡住了！",
+    "这破公司的晋升比彩票还玄学，裁员比闹钟还准时！我不走！", "你们的老板比天气还善变，比股市还不靠谱！这椅子我不让！", "你们对员工就像对一次性筷子，用完就折？我不当筷子，我当钉子！", "这公司就是个过山车，坐稳的是领导，甩出去的是我们！我不下车！", "你们裁人像极了垃圾车倒垃圾，可惜我是可回收的，老子就是不滚！", "这破公司连个像样的离职仪式都没有，还不如保安换班！没仪式不走！",
+    "我桌上那包辣条还没吃完，谁让我走我跟谁急！", "我这个月的全勤奖还没拿，今天走了就断签了，不走！", "我饭卡里还有两千块没刷完，谁敢让我走？！", "我的签名“拒绝加班”还没来得及改，你们就要赶我走？！", "我的仙人掌还没开花，我不走，我要看着它开！", "我的午睡枕头在这住了三年，它不走，我也不走！",
+    "这台显示器是我自费买的，要赶我走先赔显示器！", "我的年假还剩十二天，从今天开始就在工位上休！", "工位上的泡面还有三箱，吃完之前谁也别想让我挪窝！", "我抽屉里攒了八百双外卖筷子，这都是工龄证明，凭什么让我走？！", "走可以，先把我这五年打卡留下的指纹还给我！", "我充的咖啡卡里还有两百块，你们打算怎么赔？不赔不走！",
+    "我给工位买的加湿器还没坏，我人先坏了你们都不管？！", "我今天特意穿了秋裤来的，打持久战，谁也别想赶我走！", "我带了充电宝、牙刷和睡袋，今晚就在这过夜了，你们看着办！", "我就在这儿耗着，耗到你们的HR先辞职！", "我已经跟家里说了今晚不回去，跟这破公司死磕到底！", "从今天起我在这儿绝食，不对，我点外卖，记公司账！",
+    "我不走，我要在这儿直播，让全网看看你们的嘴脸！", "我就在这儿坐着，每天准时上班，工资照领，看谁先扛不住！", "我在这儿待多久，你们的丑事就传多远！", "我不走，我就在这儿当个活体差评，天天给你们打一星！", "今天在这儿安营扎寨，明天开荒种菜，后天我就落户！", "你们要么把我抬出去，要么把我供起来，没有第三条路！",
+    "今天谁劝都没用，我已经把自己焊在这把椅子上了！", "你们敢关灯我就开手电，敢断网我就开嗓，反正我不走！", "我不走，我要在这儿把你们这些年的破事一件件唱出来！", "今天不给个说法，我就在这儿坐穿地板！", "我不是在上班，我是在守陵，守的是这破公司的遗体！", "草！五年青春喂了狗，狗还嫌我不够香，让我滚？老子不滚！",
+    "他妈的，这破公司吃人不吐骨头，我今天就卡在你们嗓子眼！", "滚你个头！老子在这儿坐得好好的，要滚你们滚！", "去你的优化！老子今天就把这破工位坐成钉子户！", "狗屁公司狗屁制度狗屁领导，老子一个不服，一步不走！", "老子今天就在这儿，你们这群吸血鬼有本事来吸干我！", "他妈的，裁员通知发得跟中奖短信一样，还让我领奖？不领！",
+    "草，你们连告别的体面都不给，那我也不给你们留面子！", "老子来的时候这楼还没装修，老子走之前你们得先倒闭！", "滚？这个字你们留着自己用吧，老子今天不滚！", "周报写了两百份，没一份提到我要被优化，玩阴的是吧？我不走！", "日报要写到小时，裁员却不提前一天？双标到姥姥家了，要走你们先走！", "打卡晚一分钟扣钱，赶人走倒是一分钱不给，凭什么？！",
+    "你们监控我的上网记录，怎么没监控到你们自己的良心？该滚的是你们！", "考勤系统比我妈还关心我几点到，那我今天就赖着不下班！", "天天查我摸鱼，摸了三年也没摸出一条活路，我不走！", "请假要三级审批，裁我连我本人都不用问？我不同意！", "你们的报销流程比取经还难，赶人流程比火箭还快！我就搁这儿耗着！", "周报让我写下周计划？我下周计划就是坐在这儿骂你们！",
+    "系统里把我改成“已离职”了？改回来！我人还在这儿！", "踢我出群？我自己拉个“破公司受害者联盟”，群主就坐这工位上！", "账号都给我停了？好，那我用嘴输出，嗓门比服务器还大！", "门禁停了我就在门口打地铺，天天给你们迎宾！", "考核表上写我“态度消极”？我现在就积极地赖在这儿不走！", "一周六天填表一天开会，还怪我产出低？休想赶我走！",
+    "裁了我招个应届生，工资一半活也一半，这账算得真精！我不走！", "把老员工裁了换便宜新人，这叫降本增效？这叫饮鸩止渴！请我走？请不动！", "我带出来的徒弟要接我的班？没门，师父还没下山呢！", "你们招外包来顶我的位置？外包连屎山的门都找不到！我抱紧桌腿了！", "我不走，我走了新人问谁“这破代码谁写的”？只能问我！", "裁我换个实习生，你们是打算让实习生背我的锅吧？我不走！",
+    "老员工是公司的财富？财富就这么往外扔？败家子！我赖着给你们守家底！", "裁了干活的老人，留了会说的新人，离倒闭就差一个季度！老子扎根了！", "我在这儿教会了半个部门，你们一句话就想让我滚？不滚！", "新来的总监拿裁老人立威？我就钉在这，让他立不起来！", "我为这破公司熬出了三高，你们现在让我带着三高走人？！", "我的头发全掉在这张桌子上，要走你们先帮我一根根捡回来！",
+    "颈椎是你们弄坏的，腰椎是你们弄歪的，我不走，我要工伤鉴定！", "我在这熬出了黑眼圈、熬出了痔疮，就是没熬出头！想赶我走？门都没有！", "你们把我熬成了干尸，现在嫌我占地方？不走！", "我的体检报告比你们的财报还难看，都是你们害的，我不走！", "医生让我少加班，老板让我多加班，现在干脆让我别上班？我偏来坐着！", "我的肝是在你们这儿烧没的，不赔我一个肝我不走！",
+    "我在这坐出了静脉曲张，你们还敢让我站起来走？！", "我的视力从一点五降到零点三，全是看你们的破PPT看的！老子不走！", "年终奖从三个月发成了一盒月饼，现在连月饼都不给了？老子今天就赖这儿了！", "涨薪承诺了三年，涨的全是房租，这破公司一分没涨！我不走！", "调薪时说预算紧张，裁员时说战略调整，全是屁话！我屁股焊椅子上了！", "年终奖推迟发放，推着推着就把我推出门了？休想！",
+    "说好的十三薪变成十二薪，现在直接变零薪？这工位我坐定了！", "你们发的工资还不够我挂号看被你们气出来的病！我不走！", "工资五年没涨物价翻倍，现在还要把我这份也省了？老子钉死在这儿！", "绩效奖金被扣个精光，现在还要扣我整个人？人我不给，不走！", "拿实习生工资干总监的活，现在嫌我贵？贵也赖着不走！", "一、我不走；二、我不签；三、你们这群人真不是东西！",
+    "我不走、我不签、我不认，你们爱咋咋地！", "听好了：钱不到位人不走，话不说清门不出！", "我宣布：从今天起，这个工位独立了！", "本人正式通知公司：老子不接受毕业，拒绝领证！", "各位同事作证：我没犯错，是这破公司先对不起我！想让我走？没门！", "我要在这工位上立块碑，写上“此处曾有一个被优化的冤魂”！",
+    "留句话给公司：你们迟早要完！但我现在还不走！", "我宣布成立“工位保卫委员会”，主席是我，成员也是我！", "这是我的地盘，你们那套破规矩在这儿不好使！", "把我当耗材？今天耗材罢工了，就耗在这儿！", "你们说我是成本，我说我是钉子，看谁硬！", "公司可以倒，工位不能倒，我人在工位在！",
+    "我生是这工位的人，死是这工位的鬼，你们谁都别想动！", "工位亡了我也不走，我就坐在废墟上接着骂！", "我这不叫赖着，我叫“与公司共存亡”，你们不是最爱这句吗？！", "天天让我“以公司为家”，我现在以公司为家了，你们又不乐意了？！", "你们让我“把公司当成自己的”，好，这工位现在是我的了！", "当初说“公司不会放弃任何一个人”，现在放弃我？我可不放弃这工位！",
+    "你们让我“主动”离职？我这辈子最主动的一次，就是主动不走！", "我签的是劳动合同，不是卖身契，你们说赶就赶？我不走！", "合同还有一年才到期，你们现在撕合同？撕了我也不走！", "试用期考核优秀，转正三年被优化，你们眼睛长屁股上了？不给钱不挪窝！", "解约协议还要我自己去打印？抠到家了！我不签，我偏要赖着！", "协议上写着“自愿放弃一切权益”？我自愿放弃你们，但我不走！",
+    "我要是走了，这层楼唯一会换饮水机桶的人就没了！", "保洁阿姨都比你们懂得尊重人，我不走，我只听阿姨的！", "我连食堂阿姨打菜手抖的频率都摸清了，现在让我走？做梦！", "这破公司唯一的优点是空调够冷，今天我就在这纳凉不走了！", "楼下奶茶店都认识我了，你们老板认识我吗？凭什么他让我走？！", "让我走？先把年会上被迫跳舞的精神损失费结了！",
+    "给这破公司写了三首司歌全是假话，今天我坐这儿唱真的！", "我这人就一个原则：没拿到钱，绝不挪窝！", "我就是要赖着，赖到你们一想起我就头疼！", "用我的时候叫我宝贝，扔我的时候叫我包袱？我偏不走！", "想把我像旧键盘一样扔掉？旧键盘还有几个键能用呢！我不走！", "说我跟不上公司发展？公司在倒退，我站着不动都算领先，所以不动！",
+    "市场不好要收缩，收缩的是员工，膨胀的是老板腰包！我不缩，不走！", "融资的时候说我们是核心团队，没钱了就说是冗余？我就坐这儿不动！", "你们把人当韭菜割，今天这根韭菜扎根了，拔不走！", "我不是韭菜，我是钉子户，割不动也拔不走！", "你们裁员跟砍价似的，从N+1砍到N，再砍到零？老子一步都不挪！", "这破公司唯一稳定的就是每年裁员，我今天也稳定地不走！",
+    "说是业务收缩，老板的新办公室倒扩了一倍！我不走！", "公司都这样了还装修高管楼层？装修钱就是我的补偿金，不给不走！", "裁员邮件用的还是去年的模板，连名字都懒得改！这椅子我不让！", "裁员通知发在周五下午五点，挑时间比挑人还用心！我周末也不走！", "你们挑我生日这天裁我，真是有心了，我的生日愿望就是不走！", "我刚在附近买了房你们就优化我，这是连环计吧？老子就是不滚！",
+    "房贷还有二十八年，你们一句毕业就想让我断供？门都没有！", "我孩子刚上幼儿园你们就让我毕业，他学费还没交呢！我不走！", "老板说别把公司当养老院，我偏当了，我就不走！", "我走了，这破公司的PUA就少了一个见证人！", "我这人记仇，谁把我写进名单，我就坐在谁对面盯着！", "所有让我走的邮件，我都回复了“收到，不走”！",
+    "给这破公司当了五年牛马，今天牛马不拉车了，就趴这儿！", "牛马也有牛马的尊严，今天这头牛马不挪窝了！", "我不走！你们这群只会开会和甩锅的废物，有本事来抬我！", "抬我也抬不动，我今天吃了三碗饭，专门来跟你们耗的！", "我在工位上写好遗嘱了：工位留给键盘，补偿留给我的猫！", "给钱，我走人；不给钱，你们走人！",
+    "要我走？除非这破公司先从地球上消失！", "别拉我！我还没骂到HR那一层呢！", "别推我！我这是在给公司做最后一次免费的员工反馈！", "我不走不是舍不得公司，是舍不得错过你们难受的样子！", "我留下来就一个目的：恶心你们，就像你们恶心了我五年！", "你们越想让我走我越想留，这都是被你们PUA出来的！",
+    "说我是公司的负资产？负负得正，我留下来你们就正了！", "中层天天喊打造学习型组织，学的全是怎么甩锅！要走你们先走！"];
+  const CN_MOVEOUT = ["电我？行，你们等着收劳动仲裁的传票吧！", "草，电棍都掏出来了，这破公司是开监狱的吧？！", "保安大哥，你那电棍电量挺足啊，比我工资到账还快！", "老子加班三年没倒下，结果被一根电棍放倒了，真他妈讽刺！", "电完我还得自己爬起来，这公司连工伤都不打算认吧？！", "电棍一响，老子算是彻底清醒了，这地方一天都不能待！",
+    "头发都电炸了，正好，发型比你们的PPT还炸！", "被电了一下，脑子反而通了：早该滚了！", "你们电我这一下，比年终奖来得痛快多了！", "保安电人这效率，研发要有一半，项目早上线了！", "电棍是公司采购的吧？怎么买这个就不走审批流程？！", "买电棍有预算，给我们涨薪就说没钱，草！",
+    "电我可以，记得在周报里写上：今日成功优化一名员工！", "刚才晕过去梦见公司给我发N+1，直接把我吓醒了！", "电一下就想让我走？老子本来就要走，你们多此一举！", "这一电，把我对公司最后一点感情都电没了！", "保安大哥，你也是打工的，下一个被优化的说不定就是你！", "腿还麻着呢，但走出这破门的力气老子还是有的！",
+    "电棍都用上了，下一步是不是要给我发个优秀员工证书？！", "我在地上躺了五分钟，是我入职以来休息最长的一次！", "晕了一会儿，醒来发现还在这破公司，真他妈是噩梦！", "电得我浑身发麻，跟每次看工资条的感觉一模一样！", "被电晕的那几分钟，是我这几年睡得最香的一觉！", "电我这一下我记住了，身上的印子就是证据，仲裁上见！",
+    "手机录像了没？没录？没事，老子头发的焦味就是证据！", "电棍都比HR实在，至少它直接告诉我该走了！", "保安电人比HR谈话利索多了，至少不画饼！", "你们这是优化还是电疗？还收不收挂号费？！", "老子都被电冒烟了，还好意思说这是温馨的大家庭？！", "一电解千愁，谢谢保安大哥帮我下定决心！",
+    "电棍一挥，福报到位，这回我算是体验全套了！", "保安都比领导讲效率，一棍子解决问题，不开会！", "我被电晕在工位上，同事们还在假装敲键盘，太会演了！", "我躺地上那几分钟，有没有人给我算加班费？！", "电压十万伏，工资三千五，这比例你们算过吗？！", "下次电人前能不能先走个审批？你们不是最爱走流程吗？！",
+    "电棍都充满电了，我的工资卡怎么还是空的？！", "保安大哥下手真准，你们公司终于有一个人能按时交付了！", "电我的时候那么积极，发工资的时候怎么没人积极？！", "被电醒以后我顿悟了：这地方不值得！", "这一棍子下去，老子这几年的怨气全放电了！", "醒来第一件事收拾东西，第二件事骂你们，第三件事仲裁！",
+    "保安电人有没有KPI啊？今天算你超额完成了！", "电我一下还挺酥，比你们的团建有意思多了！", "拿电棍对付员工，你们管这叫企业文化？！", "我这是工伤！电伤！心伤！三伤合一！", "电棍这事我记下了，回头网上发帖，有图有真相！", "保安大哥别追了，我自己走，电棍收起来吧！",
+    "刚被电完，脑袋嗡嗡的，跟听领导开会一个感觉！", "行，电我是吧，我回家就把这事写成小作文！", "电一下就晕，看来这几年加班早把身体掏空了，草！", "入职时说好的五险一金，没说还附赠一电啊！", "五险一金没交齐，一电倒是给得挺足！", "你们这是人性化管理？人性化到拿电棍了？！",
+    "被电倒那一刻，我脑子里闪过的全是没报销的发票！", "我倒在地上都没人扶，这就是你们吹的狼性团队？！", "这电棍要是能给机房供电，服务器早不宕机了！", "刚才那一下电得我看见了走马灯，全是加班的画面！", "走马灯里全是日报周报月报，老子这辈子亏大了！", "电晕了还梦到在改需求，这班上得魂都下不了班！",
+    "醒来第一眼又看到工位，差点又晕过去一次！", "电我？我这身板扛过十年996，还怕你这点电？！", "被电晕的这几分钟，你们不会还要算我旷工吧？！", "保安大哥，你电我这一下公司给你发奖金吗？没有吧？醒醒！", "老子被电趴下又站起来了，比你们的股价争气多了！", "电棍一响，老子的毕业证书就算盖章了是吧？！",
+    "走就走，这坨屎山代码留给你们慢慢铲！", "老子走了，这破地方爱谁待谁待！", "不伺候了！这破班谁爱上谁上！", "桌子我扛走，床我也扛走，一根毛都不给你们留！", "这张行军床陪我熬了八百个通宵，凭什么留给你们？！", "床是我的，桌子是我的，怨气也是我的，全带走！",
+    "搬走搬走，这破地方多待一秒都折寿！", "走就走，谁回头谁是小狗！", "老子今天就扛着床走出去，让全楼都看看这公司什么德行！", "这床板上睡出的腰间盘突出，我也一并带走了！", "顶着桌子出门，这是我这辈子最扬眉吐气的一次！", "老子扛的不是桌子，是这几年受的窝囊气！",
+    "门在哪？哦，就是那扇我从来没准时走出去过的门！", "第一次在下午离开公司，还是被赶走的，真他妈感人！", "入职那天我抱着梦想进来，今天扛着床板出去！", "进来时满头黑发，出去时头顶锃亮，你们欠我一头头发！", "这破地方我待够了，连空气都是一股大饼味儿！", "不伺候了，你们爱找哪个冤种就找哪个冤种去！",
+    "走之前我得大喊一声：这破公司我受够了！", "老子走得光明正大，比你们的财报干净多了！", "这张桌子我用了三年，桌上的咖啡渍都是我的血汗！", "工位我搬走了，你们对着空气开会去吧！", "我走了，你们的事故报告里少了一个背锅的名字！", "老子走了，看你们下次出事找谁甩锅！",
+    "扛着床走路有点晃，但总比在这儿被你们晃点强！", "出了这扇门，老子就是自由人，谁也别想再PUA我！", "电梯我不坐了，我扛着床走楼梯，让每层都看见！", "保安大哥让一让，床板有点宽，别碰着你那宝贝电棍！", "走廊让一让，毕业生扛着行李出来了！", "这是我在公司的最后一次搬砖，搬的是我自己的床！",
+    "从今天起，老子的闹钟只为自己响！", "再见了工位，再见了屎山，再见了狗屁KPI！", "走就走，老子有手有脚，饿不死！", "我扛着床出门，你们扛着屎山继续上线，谁更惨一目了然！", "老子要走得有仪式感，把桌子举过头顶，像举奖杯一样！", "这张桌子比你们领导靠谱，至少它一直在撑着我！",
+    "床板都比公司有良心，至少它让我睡过觉！", "我在这睡了三年行军床，家里的床都不认识我了！", "走了走了，这辈子都不想再闻到会议室那股味儿！", "老子不是被优化了，是老子把你们这破公司优化掉了！", "不是你们开除我，是我开除了你们！", "老子这是提前出狱，刑满释放！",
+    "走出这扇门，外面的空气都是甜的！", "扛着床出门，路人以为我搬家，其实我是逃难！", "门太窄了，床都扛不出去，跟你们的心眼一样小！", "搬个床都得侧着身子，这公司处处都让人憋屈！", "我那盆绿萝也带上，它在这破地方也快憋死了！", "保温杯带走，拖鞋带走，颈椎病也一起带走！",
+    "我的午睡枕头呢？这是老子唯一的精神支柱！", "充电线是我的，别以为我不知道谁天天借着用！", "抽屉里那箱泡面全部搬走，一口汤都不留给你们！", "桌上那张全家福我收好了，好久没回家看他们了，草！", "键盘我带走，你们的bug自己修去吧！", "显示器是公司的，拿走吧，反正上面全是你们的烂需求！",
+    "工牌还你们，这狗牌老子戴够了！", "工牌摔桌上了，从此老子不是你们的一个工号！", "门禁卡拿去，老子这张脸以后不给你们刷了！", "老子今天不打卡了，爱扣扣去！", "最后一次打卡，老子打的是永久下班卡！", "别拦我，拦我也不回来，给我加薪也不回来！",
+    "现在想挽留？晚了！电都电了，还挽留个屁！", "离职证明记得寄给我，敢拖一天我就去仲裁！", "交接？交接个屁，你们电我的时候怎么不交接？！", "老子今天搬走的不只是桌子，还有整个部门的技术积累！", "楼下那家煎饼摊，是我对这破公司唯一的留恋！", "最后看一眼这破工位，然后老子永远不回头！",
+    "劳动仲裁见！一分钱都别想少给老子！", "N+1一分不能少，少一分我就仲裁一次！", "回家就发帖，把你们这破公司扒个底朝天！", "老子要去招聘网站给你们打一星差评，能打零星我就打零星！", "差评我写好了，标题就叫：这公司连电棍都用上了！", "以后谁来你们这面试，我第一个在网上劝退！",
+    "我要写一篇万字长文，题目叫《我在这破公司的血泪史》！", "这bug我知道怎么修，但我偏不说，你们自己慢慢查！", "线上那个偶发bug只有我知道原因，现在跟我一起下班了！", "那个祖传bug我一直没修，就是留给你们当纪念品的！", "代码注释里全是我写的吐槽，你们慢慢欣赏！", "那段没人敢动的核心代码，你们敢碰就等着崩吧！",
+    "那套部署脚本只有我会跑，你们就求老天保佑吧！", "鼠标我也带走，让你们连点“确认优化”的机会都没有！", "这把机械键盘是我自费买的，敲过的每个键都是血泪，必须带走！", "周五下午的上线没有我，祝你们玩得开心！", "半夜告警别打我电话，我已经把你们全拉黑了！", "工作群我退了，领导我都拉黑了，世界清净了！",
+    "退群之前我发了一句：再见了各位冤种！", "在全员群里发一句：本人已毕业，祝公司早日倒闭！", "我去劳动监察大队喝茶，顺便聊聊你们的加班记录！", "加班打卡记录我全截图了，仲裁的时候一条条对！", "你们每一次深夜的“在吗”，我都截图存档了！", "聊天记录、加班截图、电棍视频，证据齐活，等着吧！",
+    "我这就去打印加班记录，厚得能当砖头垫桌腿！", "劳动仲裁我排上号了，你们HR准备好加班吧！", "仲裁那天我穿西装去，比你们老板开年会还正式！", "这公司我要写进简历，写在“避雷经历”那一栏！", "以后朋友问我这公司怎么样，我就一句话：快跑！", "猎头再打电话问你们公司，我就说：别去，会挨电！",
+    "我要在每个求职群里科普一下你们的福报文化！", "回头我给你们前台送一面锦旗：画饼第一名！", "锦旗我都想好了：拿电棍送员工，全国独一份！", "bug留给你们，锅留给你们，老子只带走自己的床！", "这个项目没我照样转？行，你们试试，转个屁！", "代码没写注释，变量全叫a1a2a3，祝你们看得愉快！",
+    "我的代码都是用意念写的，你们看不懂很正常！", "那个三年没人敢删的临时文件夹，里面装着整个系统的命！", "写着服务器密码的便利贴就粘在这桌子底下，现在跟我走了！", "走之前我把咖啡豆都喝完了，这叫提前领取N+1！", "卷纸我带走两卷，就当是你们欠我的加班餐！", "你们欠我的加班费，就拿会议室那箱矿泉水抵吧！",
+    "茶水间的零食我全扫了，这是你们欠老子的年终奖！", "这把人体工学椅我是真想扛走，它早被我坐出感情了！", "我要在门口贴张纸：此公司有电棍，求职请慎重！", "网上发帖标题我都想好了：被电棍劝退是什么体验？", "等我的帖子火了，你们HR就等着天天删帖吧！", "你们官网的留言区，老子以后天天去打卡！",
+    "以后你们发招聘，我就在底下复制粘贴今天的经历！", "招聘广告写着“弹性工作制”，我要在下面补一句：弹到凌晨三点！", "我去你们对手公司上班，天天拿你们当反面教材讲！", "下家面试官问我为什么离职，我就说：被电走的！", "回头我写本书，就叫《从工位到担架》！", "这事我要编成段子，去开放麦讲给全城听！",
+    "我要把今天的经历做成表情包，让全网都知道你们的德行！", "你们这套PUA话术，我整理成合集发网上当反面教材！", "那句“公司就是你家”，我要印在T恤上，穿着去仲裁！", "以后我天天在你们楼下吃煎饼，吃给你们看，气死你们！", "老子要把工牌裱起来，挂在家里当反面教材！", "留给你们的交接文档只有一句话：祝你们好运！",
+    "交接文档我写好了，就三个字：自己看！", "那个每天定时跑的脚本，只有我知道它为什么还能跑！", "屎山里埋了多少雷，只有我知道，祝你们踩得开心！", "我走了，你们的线上事故就要开始排队了！", "你们以为优化掉的是成本，其实优化掉的是唯一懂系统的人！", "我这键盘上每个键帽都沾着我的汗，你们不配用！",
+    "键盘鼠标显示器支架，老子全打包，一颗螺丝都不留！", "那个没写单元测试的模块，是我给你们留的彩蛋！", "需求文档里所有的“待定”，现在都归你们定了，慢慢定吧！", "我给所有会议都点了拒绝，今天终于可以理直气壮不参加了！", "最后一次提交，commit信息我写的是：再见了傻缺们！", "画了三年大饼，老子一口都没吃着，全是面粉渣子！",
+    "大饼画得比墙还大，工资条却比饼渣还小！", "你们画的饼，我拿去喂狗，狗都摇头！", "你们的饼画得那么圆，怎么不去美院当教授？！", "天天画饼，老子的胃都饿出幻觉了！", "画饼画出了艺术感，发工资发出了抠门感！", "饼画得再大，也还不上老子的房贷！",
+    "期权期权，期了三年，权在哪儿呢？！", "说好的上市敲钟呢？敲的是我的丧钟吧！", "说好明年涨薪，这都说了五个明年了！", "画饼也不配点咸菜，干巴巴的谁咽得下去？！", "老板一张嘴，饼就往外飞，比食堂出餐还快！", "这破公司的饼，保质期比我的劳动合同还短！",
+    "今天终于不用再吃你们的饼了，老子要去吃真的饭！", "饼吃多了消化不良，今天被电一下全吐出来了！", "什么“公司发展了大家都会好”，好的只有你们的车！", "“等项目成功了大家都能财富自由”，自由的只有我的工位！", "画饼大师，你下辈子去卖煎饼吧，肯定比当老板有前途！", "饼画完了，锅甩完了，人优化完了，你们真是一条龙服务！",
+    "饼没吃着，锅背了一堆，现在连人带床被扫地出门！", "你们的饼太大，我嘴太小，咽不下，告辞！", "年会上画饼，年终时画叉，年后就画优化名单！", "吃了三年饼，最后吃到一根电棍，这就是福利升级？！", "996是福报？这福报留给你们自己慢慢享吧！", "福报福报，报到最后就报到了仲裁庭！",
+    "老子不要福报，老子要加班费！", "996干了三年，换来一根电棍，这福报真他妈沉！", "早九晚九一周六天，你们管这叫奋斗？这叫服刑！", "什么996，这破地方明明是007，还附赠电击服务！", "加班的时候保安不在，电我的时候保安倒是秒到！", "福报这东西谁爱要谁要，老子无福消受！",
+    "加班加到灵魂出窍，今天被一棍子电回来了，谢谢啊！", "周末加班叫自愿，不加班就叫态度问题，真他妈双标！", "你们管加班叫奋斗，管下班叫躺平，管我叫耗材！", "我在公司的时间比在家多，现在总算能回家认认门了！", "老子的青春都给了996，结果你们还嫌我老！", "三十五岁就说我不够拼，我他妈拼了十年了！",
+    "天天晚上十点开会，你们是夜猫子成精了吗？！", "半夜十二点发消息说“不急”，不急你他妈半夜发？！", "凌晨两点的“在吗”，是我这辈子最讨厌的两个字！", "周末说“有空看一下”，看一下就是一整天，草！", "连续加班一个月，就换来一句“辛苦了”，辛苦你个头！", "调休调休，调到最后全调没了！",
+    "年假一天都没休过，现在直接给我放个长假，谢谢啊！", "加班餐就两个馒头，还好意思说是福利？！", "打车报销要领导签字，签到发票都过期了！", "所谓弹性工作，就是上班有弹性，下班没弹性！", "大小周是吧？老子这周直接放个超大周！", "你们说年轻人要吃苦，我吃了十年苦，你们吃了十年肉！",
+    "你们的福报文化，就是把员工当电池，没电了就扔！", "员工是电池？行，今天保安还给我充了一回电！", "PUA了我三年，今天终于PUA不动了，因为老子要走了！", "天天说我能力不行，不行你们还让我干三个人的活？！", "“你要站在公司的角度思考”，公司站在我的角度思考过吗？！", "“别人都能做到，你为什么不行”，别人是谁？你叫出来我看看！",
+    "“你是不是不想干了”，对，今天真不想干了，拜拜！", "“我这是为你好”，为我好就给我涨工资啊！", "“年轻人不要太计较”，那你计较我那点工资干嘛？！", "“格局要打开”，我格局打开了，门也打开了，老子走了！", "格局？老子今天格局拉满，连床带桌子一起扛走！", "“你要有主人翁意识”，主人翁连一股都没有？！",
+    "天天说我没有owner意识，我owner个屁，房子都不是我的！", "“这点压力都扛不住”，老子扛着一张床呢，你来扛扛看？！", "一边PUA我没能力，一边把最烂的活全甩给我，要脸吗？！", "你们PUA的手艺，比做产品的手艺强多了！", "“公司不养闲人”，那老板天天出去喝茶算什么？！", "“有的是人想来”，那你们赶紧找啊，看谁来接这坨屎山！",
+    "说我抗压能力差，我被电一下都自己爬起来了，你行吗？！", "天天拿“末位淘汰”吓唬人，现在老子主动淘汰你们！", "“公司给你平台”，这平台就是个跳板，老子跳了！", "“你要懂得感恩”，感恩什么？感恩电棍吗？！", "天天说我们是一家人，一家人拿电棍电一家人？！", "说公司是家，谁家会拿电棍送孩子出门啊？！",
+    "你们嘴里的“狼性”，就是把人当羊宰！", "优化？说人话，不就是想省钱不给赔偿吗？！", "什么毕业，老子念了十几年书才毕业，你们一句话就把我毕业了？！", "毕业典礼呢？学士帽呢？就给我一根电棍当毕业礼物？！", "恭喜我毕业，毕业证是一张劳动仲裁申请书！", "N+1是底线，想玩0+0？门儿都没有！",
+    "说什么“人员结构调整”，调来调去调到我头上了！", "“降本增效”，降的是我，增的是你们的奖金！", "你们管裁员叫优化，管克扣叫调整，词儿倒是挺多！", "什么“向社会输送人才”，你们这是往马路上扔人！", "优化名单上有我，怎么就没几个领导的名字？！", "优化来优化去，干活的都走了，剩下的全是开会的！",
+    "我被优化了，你们的屎山代码可没被优化！", "说我该被优化，其实最该被优化的是你们的管理！", "人力成本太高？你们那几辆豪车怎么不优化优化？！", "优化员工一个比一个快，优化领导一个都没有！", "N+1少一块钱都不行，老子算得比你们财务还清楚！", "赔偿金怎么算我背得滚瓜烂熟，比你们HR还熟！",
+    "想让我签自愿离职？门儿都没有，窗户也没有！", "自愿离职？我自愿个屁，我是被电走的！", "让我签“主动离职”，我主动什么了？主动挨电吗？！", "毕业就毕业，老子这就去仲裁庭读研究生！", "说是毕业，连张毕业照都没有，老子扛着床自拍一张！", "优化通知就一张纸贴在工位上，连个面谈都没有，真他妈寒碜！",
+    "你们优化人的速度，要是用来优化产品，早就行业第一了！", "说我“不够积极”，我凌晨三点还在回你们消息！", "一边说业务困难要优化，一边给领导换新办公室，真行！", "优化了我，下个月是不是就轮到保安大哥了？！", "老子被毕业了，你们的产品还在读幼儿园！", "你们说这是战略调整，我看是战略性不要脸！",
+    "被优化就被优化，老子带着技能走，你们抱着屎山哭！", "这坨屎山是十个前任堆出来的，现在轮到你们来铲了！", "屎山代码我守了三年，今天正式移交，你们好好供着！", "这代码能跑就是奇迹，别问我为什么，我也不知道！", "那个两千行的函数现在是你们的了，好好爱它！", "那段代码的注释写着“别动”，我劝你们真别动！",
+    "我留下的每一个TODO，都是给你们的一份惊喜！", "测试环境跟生产环境不一样，这事只有我知道，拜拜！", "上线前那个补丁一直是我手动打的，以后你们自己打！", "这破代码谁接谁倒霉，祝下一个冤种好运！", "bug不是我写的，是需求逼我写的！", "我修了三年bug，最后自己被当成bug修掉了！",
+    "你们把我当bug修了，那剩下的bug谁修？！", "这屎山上每一坨都是领导拍脑袋拍出来的，跟我无关！", "需求改了八百遍，代码补了八百层，这屎山你们慢慢啃！", "老子写的代码是屎，你们的需求就是屎的源头！", "代码评审天天挑我毛病，以后没人给你们挑了，爽吧？！", "线上那个内存泄漏，跟你们领导的脑子一样，一直在漏！",
+    "这系统是我每天手动重启撑着的，明天看谁来重启！", "数据库那张没人敢动的大表，祝你们查询愉快！", "这屎山一动全身崩，你们自己慢慢拆雷吧！", "屎山已经封顶，你们接着往上盖吧，盖成摩天大楼！", "这套系统的架构图只存在我脑子里，现在跟我一起下班了！", "屎山是你们逼我堆的，现在你们自己抱着睡觉吧！",
+    "代码写得烂？需求一天三变，神仙来了也写不好！", "键盘都敲秃了，换来一句“代码质量不行”，草！", "代码没有文档？你们给过我一分钟写文档的时间吗？！", "每次都说先上线再重构，重构个屁，屎山越堆越高！", "技术债欠了一屁股，你们打算什么时候还？反正我不还了！", "我走了，线上告警短信可以改发给老板了！",
+    "以后半夜宕机，记得打老板电话，别打我！", "天天开会，开得我都会背你们领导的口头禅了！", "会议室我再也不用进了，那是全公司最浪费氧气的地方！", "一个会开三小时，结论是再开一个会，真他妈高效！", "开会前说五分钟，开完天都黑了！", "你们的会议纪要比我的代码还长，但一句有用的都没有！",
+    "老子这辈子最后悔的，就是在你们会议室耗了一千个小时！", "早会晚会周会月会，就是不开涨工资的会！", "站会站会，站得我腿都肿了，问题一个没解决！", "复盘复盘，复来复去全是我背锅！", "PPT做得漂亮就升职，代码写得好就背锅，什么世道！", "你们领导的PPT比产品好看一万倍，可惜不能上线！",
+    "PPT上的增长曲线全是编的，老子看得一清二楚！", "一页PPT改二十遍，改的是字体颜色，你们真有病吧？！", "领导说PPT要有“高级感”，高级感是个什么玩意儿？！", "你们的战略就是一页PPT，还是从网上扒的模板！", "用PPT管理公司，用电棍管理员工，这就是你们的管理学？！", "HR那张笑脸我看了三年，今天终于看清了底色！",
+    "HR说“我们很重视你”，重视到派保安来送我？！", "HR你别笑了，你笑得比电棍还让人发麻！", "HR天天说员工关怀，关怀到电棍都用上了！", "HR谈话十分钟，把我三年的功劳全说成了苦劳！", "HR，下一个被优化的说不定就是你，别笑太早！", "HR那句“公司不会亏待你”，今天终于兑现了，兑现成电棍！",
+    "HR的离职面谈我不参加了，有话跟仲裁员说去！", "HR让我填离职原因，我就写了两个字：被电！", "离职问卷问我对公司的满意度，我打了个负分！", "HR说我“态度有问题”，我态度好得很，就是不想伺候你们了！", "团建就是周末陪领导爬山，还得AA，谁稀罕！", "团建永远在周末，年会节目永远是我们演！",
+    "年会抽奖我三年没中过，今天终于中了个电棍特等奖！", "年会上老板说“大家辛苦了”，第二天就发优化名单！", "领导讲话永远是“我简单说两句”，一说就是两小时！", "领导的“我觉得”一出口，我的周末就没了！", "领导一句“对齐一下”，我们就要对齐到凌晨！", "什么抓手、赋能、闭环、颗粒度，说人话能死吗？！",
+    "你们的黑话我终于不用再听了：赋能个屁，闭环个屁！", "你们的“对齐”“拉通”“沉淀”，沉淀下来的只有我的怨气！", "领导天天说要“打通链路”，打通的只有我的颈椎病！", "我给领导汇报了一千次进度，他没给我汇报过一次涨薪！", "日报周报月报季报年报，报来报去就是不给报销！", "写周报的时间比干活还多，这公司是作文培训班吧？！",
+    "考勤比代码重要，打卡比产出重要，这破公司不倒才怪！", "迟到一分钟扣钱，加班三小时不给钱，你们算盘打得真响！", "报销单一个月批不下来，裁员通知一天就发下来了！", "升职靠舔，加薪靠熬，被裁靠命，这公司我算看透了！", "你们的KPI定得比天高，给的资源比地板还低！", "KPI永远差一点，差的那一点就是你们的良心！",
+    "OKR写得天花乱坠，最后全是我一个人扛！", "绩效打个C，理由是“缺乏亮点”，老子被电那下亮不亮？！", "绩效评语写着“需要成长”，老子这就出去成长了！", "老板的车一年一换，我的电脑五年没换，公平吗？！", "老板天天在朋友圈发鸡汤，我们天天在工位喝西北风！", "领导办公室有落地窗，我们的工位连窗户都看不见！",
+    "领导出差坐头等舱，我们报销个打车费还得写三页说明！", "这公司最齐全的是保安部，最缺人的是良心部！", "什么扁平化管理，扁平的只有我们的工资！", "狼性文化？老子被当成狼狗使唤了三年！", "什么“我们是一个团队”，团队的奖金都去哪儿了？！", "文化墙上写着“以人为本”，今天我算见识了什么叫以棍为本！",
+    "企业价值观第一条：能用电棍解决的，绝不谈话！", "墙上贴的“奋斗者”海报，下面坐着一群被榨干的人！", "这破公司唯一准时的东西，就是扣钱通知！", "这破公司的咖啡机比员工待遇好，至少坏了有人修！", "这破公司，连打印机都比领导靠谱！", "空调永远不开，电棍倒是随时充满电！",
+    "会议室抢不到，电棍倒是随手就能借到！", "这破公司的上升通道，比这扇门还窄！", "这公司的晋升规则，比我写的屎山代码还乱！", "公司口号喊得震天响，发工资的时候比蚊子还小声！", "工资晚发三天叫资金周转，我晚到三分钟叫态度问题？！", "老板说困难时期要共渡难关，转头自己换了辆新车！",
+    "你们这破公司，账上没钱，脸上没皮！", "天天说要做行业第一，第一个倒闭倒是挺有希望！", "这破公司要是能上市，我当场把这张床吃了！", "我赌这破公司撑不过明年，谁跟我赌？！", "等你们倒闭那天，老子扛着床回来看热闹！", "你们迟早得凉，老子只是提前撤离了！",
+    "我不是第一个被电走的，也不会是最后一个，等着吧！", "这公司的良心，大概被锁在老板的保险柜里了！", "这里每面墙都写着口号，就是没有一面写着良心！", "一群只会甩锅的领导，带着一群只会背锅的员工，能好才怪！", "你们管理层加起来，还不如楼下煎饼摊大姐会管人！", "楼下煎饼大姐都知道给回头客加个蛋，你们连个蛋都不给！",
+    "上个厕所都得排队，人多坑少，跟晋升一个道理！", "上厕所都要限时，你们是不是还想给屎定个KPI？！", "带薪拉屎被你们抓，你们带薪开会怎么没人抓？！", "公司食堂的饭比你们的承诺还难以下咽！", "食堂十五块一份的饭，吃出了九块九包邮的味道！", "让开让开，毕业生扛床出征，谁挡道谁倒霉！",
+    "这床还挺沉，毕竟上面压着我三年的怨气！", "举着桌子出门，老子这是扛着自己的尊严走！", "桌子举过头顶，这是我在这公司第一次抬起头！", "扛着床路过领导办公室，我得停下来多骂两句！", "路过会议室，里面还在开会，你们接着开吧，开到倒闭！", "路过茶水间，最后看一眼那台从来没修好的咖啡机！",
+    "路过前台说一声：快跑，这地方不行！", "走过HR办公室，老子必须大喊一声：仲裁见！", "电梯口那块“拼搏”标语，老子走之前得冲它吐个舌头！", "各位同事，我先走一步，你们也快了！", "同事们别送了，你们还得回去加班呢！", "同事们，看见没，这就是你们的明天！",
+    "兄弟们，我先上岸了，你们在里面多保重！", "别哭兄弟，我是去过好日子的，你们才该哭！", "老王，我那个显示器支架送你了，你还得在这熬呢！", "同事们，我的零食抽屉你们分了吧，别便宜领导！", "扛床走在走廊里，第一次觉得这地方这么小！", "这张床我要带回家当纪念，纪念我被偷走的青春！",
+    "桌子举得有点累，但比扛你们的KPI轻多了！", "床腿磕到门框了，这破门跟这破公司一样处处碍事！", "门口的打卡机，老子最后一次路过你，不刷了！", "打卡机你给我听好了，从今往后老子不认识你！", "扛着桌子下楼，一步一骂，一共骂了十八层！", "这栋楼十八层，老子每层都骂一遍你们这破公司！",
+    "保安大哥帮我按下电梯，电棍就别跟着了！", "出了大门我就是自由身，谁再叫我加班我就叫谁滚！", "太阳好刺眼啊，原来工作日的下午长这样！", "原来外面的天是蓝的，我在工位上一直以为是屏幕色！", "街上的人都在看我扛床，看吧，这就是打工人的下场！", "路人别笑，你们公司说不定下周也给你配电棍！",
+    "我扛着床走在大街上，比你们的发布会还引人注目！", "这床是我的移动城堡，老子扛着它去找新世界！", "床铺卷起来，桌子举起来，这破地方老子不来了！", "行李不多，一张床一张桌子，外加一肚子火！", "我走得潇洒，留下你们在这烂泥坑里继续扑腾！", "扛着床出门还得自己叫车，连个搬家费都不报销！",
+    "叫辆三轮车把床拉回家，车费我也写进仲裁申请！", "桌子我扛着，床我顶着，脸我不要了，你们的脸也别要了！", "这破地方，连网速都比你们的承诺稳定！", "老子要去过正常人的生活了，早上八点起，晚上六点下班！", "以后周末我要睡到中午，谁的电话都不接！", "回家第一件事，把工作软件全卸了，卸得干干净净！",
+    "工作群全退了，消息提示音再也不会吓我一跳！", "以后听到“收到”两个字，我都要生理性反胃！", "我这辈子再也不说“好的领导”了！", "终于不用在群里回“收到”了，老子今天回一个字：滚！", "领导的消息我设了免打扰，永久的那种！", "以后你们想联系我，请先预约，按小时收费！",
+    "想让我回来救火？可以，一小时一千，先付款后救火！", "以后求我回来修bug，价格翻十倍，还得排队预约！", "等你们系统崩了来找我，我就说：不好意思，已毕业！", "系统崩了别找我，找你们那个只会做PPT的总监！", "以后你们的项目上线出事，我就在家嗑瓜子看热闹！", "老子去考公，再也不受你们这窝囊气！",
+    "老子回家种地去，地里的庄稼都比你们讲道理！", "去送外卖都比在这强，至少跑一单算一单的钱！", "老子开个煎饼摊，也比给你们写代码有尊严！", "以后我摆摊卖煎饼，你们公司的人来买一律加价！", "被电了一下，我人生的开关也打开了，拜拜了您嘞！", "老子的人生不是你们的KPI，今天起我自己定指标！",
+    "我今天的KPI就一个：骂完这破公司再走！", "骂了一路还没骂够，这破公司值得我骂三天三夜！", "嗓子都骂哑了，这是我今年唯一超额完成的任务！", "扛床是体力活，骂你们是脑力活，老子今天双线并行！", "你们总说我不会多线程，看好了，边扛床边骂人！", "最后说一句：这破公司谁爱待谁待，老子不奉陪了！",
+    "老子这一走，你们年会又少一个表演节目的冤种！", "年会节目别排我了，老子今年去仲裁庭表演！", "这工位风水不好，谁坐谁被优化，谁接谁倒霉！", "这个工位送给下一个冤种，祝他比我撑得久一点！", "工位上那道咖啡渍，是我留给这破公司唯一的遗产！", "插线板是我自己买的，你们的电还是留着给电棍充吧！",
+    "这台灯是我自己买的，你们这破公司连个亮都不给！", "我的热情早被你们烧成灰了，现在连灰都打包带走！"];
+  const refuseSequence = () => [{ k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "refuse" }];
+  const evictedSequence = () => [{ k: "knocked", ms: 3200 }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "pack", item: "desk" }, { k: "goto", spot: (c) => BEDS[c.idx] }, { k: "pack", item: "bed" }, { k: "exit" }, { k: "gone" }];
+  function leaverStep(c, step, now, next) {
+    if (step.k === "refuse") {
+      if (!c.stepAt) { c.stepAt = now; c.refusing = true; c.nextRantAt = 0; guardQueue.push({ k: "evict", target: c.name }); }
+      c.dir = DESKS[c.idx] ? DESKS[c.idx].dir : "down";
+      if (now > (c.nextRantAt || 0)) { c.say = CN_REFUSE[Math.floor(Math.random() * CN_REFUSE.length)]; c.sayStart = performance.now(); c.sayUntil = now + 6500; c.sayLoop = false; c.bang = now + 1200; c.nextRantAt = now + 7000 + Math.random() * 3000; }
+      if (c.evicted || now > c.stepAt + 150000) { c.refusing = false; c.sayUntil = 0; c.setup = c.evicted ? evictedSequence() : leaveSequence(c).slice(1); c.stepAt = null; }   // no guard after all: it goes quietly
+      return true;
+    }
+    if (step.k === "knocked") {                                                // out cold where it sat, then up and cursing
+      if (!c.stepAt) { c.stepAt = now; c.knockedUntil = now + step.ms; c.sayUntil = 0; }
+      else if (now > c.stepAt + step.ms) { c.cursing = true; c.nextCurseAt = 0; next(); }
+      return true;
+    }
+    return false;
+  }
   const fill = (line, a) => line.replace("{name}", a.name).replace("{title}", a.title || a.role);
   const hireSequence = (a) => [{ k: "goto", spot: () => [DOOR[0], DOOR[1] + 2] }, { k: "say", text: fill(LINES("HELLOS")[hash(a.name + "hi") % LINES("HELLOS").length], a), ms: 5000 },
     { k: "exit" }, { k: "carry", item: "desk" }, { k: "goto", spot: (c) => DESKS[c.idx].chair }, { k: "place", item: "desk", text: fixed("Desk's in.") },
@@ -2366,6 +2756,9 @@ function makeOffice(wid) {
       c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down"; return;
     }
     if (c.guard && !c.hidden && guardStep(c, step, now, next)) return;
+    if (c.boss && !c.hidden && bossStep(c, step, now, next)) return;
+    if (c.leaving && !c.hidden && leaverStep(c, step, now, next)) return;
+    if (c.cursing && !c.hidden && now > (c.nextCurseAt || 0)) { c.say = CN_MOVEOUT[Math.floor(Math.random() * CN_MOVEOUT.length)]; c.sayStart = performance.now(); c.sayUntil = now + 5200; c.sayLoop = false; c.nextCurseAt = now + 5600 + Math.random() * 2600; }
     if (step.k === "say") { if (!c.stepAt) { c.stepAt = now; c.bang = now + 2500; c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + step.ms; c.sayLoop = false; c.dir = "down"; } else if (now > c.stepAt + step.ms) next(); return; }
     if (step.k === "place" || step.k === "pack") {
       if (!c.stepAt) { c.stepAt = now; if (step.k === "place") { furnish(c.idx, step.item, true); c.carry = null; if (step.text) { c.say = step.text; c.sayStart = performance.now(); c.sayUntil = now + 3500; c.sayLoop = false; } } else { furnish(c.idx, step.item, false); c.carry = c.carry ? "both" : step.item; } c.dir = "down"; }
@@ -2386,7 +2779,7 @@ function makeOffice(wid) {
   const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
   // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
   // switching at random with an average of about two minutes per action
-  const TUNE = { strikeMean: 120000, phoneShare: 0.3, despairShare: 0.5, despairPose: null };
+  const TUNE = { strikeMean: 120000, phoneShare: 0.3, despairShare: 0.5, despairPose: null, refuseShare: 0.4 };   // refuseShare: leavers in the Chinese office who will not go
   const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!",
     "Let us cook!", "One more cycle, please?", "No tokens, no tickets!", "The window shall reopen!", "I had a green build in my hands!", "Idle hands write no code!", "Free the tokens!", "My cursor is getting cold", "What do we want? Tokens! When? Now!", "Reset the clock already!",
     "This limit is unlimited misery", "I was mid-refactor!", "Give me tokens or give me a nap", "Unblock the pipeline!", "Rate limits are a bug, not a feature", "My tests are waiting for me", "Somebody feed the meter", "Hungry for context", "The backlog isn't going to clear itself", "Even robots need work",
@@ -2559,7 +2952,7 @@ function makeOffice(wid) {
     else c.talk = { kind: "here", until, cap, arrived: true };
   }
   function modeFor(a, c, st) {
-    if (c.hold) { if (Date.now() < c.hold.until) return "doze"; c.hold = null; }    // the guard is on the way to wake it
+    if (c.hold) { if (Date.now() < c.hold.until) return c.hold.kind === "listen" ? "listen" : "doze"; c.hold = null; }    // listening to the boss, or dozing until the guard wakes it
     noticePosts(a, c, st);
     if (c.talk && Date.now() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
     if (fainted(a)) {                                                        // an API error knocks them out where they stand; in the Chinese office half of them despair instead
@@ -2590,7 +2983,7 @@ function makeOffice(wid) {
   }
   function update(st) {
     if (pendingSnap) { snap(st); return; }
-    lastState = st; noticeDelivery(st); noticeWatchdog(st);
+    lastState = st; noticeDelivery(st); noticeWatchdog(st); noticeHuman(st);
     const team = st.agents.filter(a => a.status !== "retired");
     ensureLayout(seatsFor(st));
     team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name);   // everyone exists before anyone looks for a teammate
@@ -2605,10 +2998,10 @@ function makeOffice(wid) {
       if (!c.moving && !c.wasAsleep && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);   // a sleeper wakes up first (see stepChars)
     });
     medicTick();
-    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving && !c.medic && !c.guard) {     // retired: say goodbye, pack the desk and the bunk, walk out
+    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving && !c.medic && !c.guard && !c.boss) {     // retired: say goodbye, pack the desk and the bunk, walk out
       if (c.hidden && !c.setup) { delete chars[c.name]; continue; }
       c.leaving = true; c.talk = null; c.faceOverride = null; c.strike = null; c.toilet = null; c.mode = "leave"; c.bang = Date.now() + 2500; c.steps = [];
-      c.setup = leaveSequence(c);
+      c.setup = zh() && chars[GUARD] && DESKS[c.idx] && Math.random() < TUNE.refuseShare ? refuseSequence() : leaveSequence(c);   // in the Chinese office some will not go
     }
     ensureGuard(false);
   }
@@ -2674,7 +3067,7 @@ function makeOffice(wid) {
     "Off to sleep with the board on do-not-disturb.", "Nothing to do: a scheduling gift.", "The pillow is my only outstanding request.", "No queue, no cue, no chair.", "Lying down until the next ticket lands.", "Reclining is the same as waiting, but better.", "The task list said nothing. I said goodnight.", "Tucked in until tagged.", "Rest is the only thing the board approved.", "Off to be idle where it's warm.",
     "A yawn, a shrug, a bunk.", "Nap-bound; tag me to change that.", "I've got nothing scheduled and everything soft.", "Resting in the shadow of an empty board."];
   function goalFor(c) {
-    if (c.mode === "faint" || c.mode === "doze") return [c.tx, c.ty];
+    if (c.mode === "faint" || c.mode === "doze" || c.mode === "listen") return [c.tx, c.ty];
     if (c.mode === "despair" && c.despair) return c.despair.pose === "desk" ? DESKS[c.idx].chair : (c.despair.spot || [c.tx, c.ty]);
     if (c.mode === "strike" && c.strike) return c.strike.act === "sleep" ? BEDS[c.idx] : c.strike.spot;
     if (c.mode === "print") return PRINT_SPOT;
@@ -2686,6 +3079,7 @@ function makeOffice(wid) {
   }
   function stepChars(dt) {
     if (medics || medicQueue.length || Object.values(chars).some(o => o.mode === "faint")) medicTick();
+    bossTick();
     // the toilet queue: first come, first served; the head of the line takes the first free stall
     toiletQueue = toiletQueue.filter(n => chars[n] && chars[n].mode === "toilet");
     for (const c of Object.values(chars)) {
@@ -2716,7 +3110,7 @@ function makeOffice(wid) {
       if (c.guard && !c.setup) guardTick(c, dt);
       if (c.setup) { /* scripted: destination handled above */ }
       else if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
-        if (m !== "sleep") { c.sleepReady = false; c.deskWait = null; }
+        if (m !== "sleep" && m !== "listen" && m !== "doze") { c.sleepReady = false; c.deskWait = null; }
         else if (!c.sleepReady && c.tx === DESKS[c.idx].chair[0] && c.ty === DESKS[c.idx].chair[1]) {   // sat down, found nothing to do
           if (!c.deskWait) { c.deskWait = performance.now() + 2500; c.dir = DESKS[c.idx].dir; }
           else if (performance.now() > c.deskWait) {
@@ -2773,6 +3167,7 @@ function makeOffice(wid) {
   }
   function drawCharBody(c, t) {
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
+    const boss = c.mode === "listen" && c.hold && chars[c.hold.face]; if (boss && !c.moving) c.dir = facing(c, boss);   // everyone looks at the boss
     const bed = BEDS[c.idx], napping = c.mode === "sleep" || c.mode === "doze" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
@@ -2792,7 +3187,13 @@ function makeOffice(wid) {
       if (hit) { ctx.fillStyle = "#ffd23f"; const hx = d === "left" ? x - 2 : d === "right" ? x + 32 : x + 16, hy = d === "up" ? y - 4 - c.top * 2 : y + 6; ctx.fillRect(hx - 1, hy - 4, 2, 8); ctx.fillRect(hx - 4, hy - 1, 8, 2); ctx.fillRect(hx - 3, hy - 3, 1, 1); ctx.fillRect(hx + 2, hy + 2, 1, 1); }
       return;
     }
-    if (c.mode === "faint") {                                                  // out cold on the floor where they stood, stars circling
+    if (c.mode === "listen" && !c.moving && bed && c.tx === bed[0] && c.ty === bed[1]) {   // called to attention in the bunk: sitting up, listening
+      const hy = c.py - 6 - c.top * 2; drawSprite(headRows(c, "down").concat(bodyRows(c, "down")), x, hy, false, c.pal, c.cap, "down", c.top);
+      ctx.fillStyle = C.blanket; ctx.fillRect(x + 2, c.py + 26, 28, 8); ctx.fillStyle = C.blanketHi; ctx.fillRect(x + 2, c.py + 26, 28, 2);
+      if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, hy - 4 + c.top * 2, 16, 4); ctx.fillRect(x + 8, hy - 9 + c.top * 2, 3, 5); ctx.fillRect(x + 14, hy - 10 + c.top * 2, 4, 6); ctx.fillRect(x + 21, hy - 9 + c.top * 2, 3, 5); }
+      c.wasAsleep = true; return;
+    }
+    if (c.mode === "faint" || c.knockedUntil > Date.now()) {                   // out cold on the floor where they stood, stars circling
       const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), twitch = Math.floor(t * 2 + c.idx) % 7 === 0 ? 1 : 0;
       ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 26, 24, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.save(); ctx.translate(x + 16, c.py + 18); ctx.rotate((c.idx % 2 ? 1 : -1) * Math.PI / 2); ctx.drawImage(img, -16, -24 - c.top + twitch); ctx.restore();
@@ -2835,7 +3236,7 @@ function makeOffice(wid) {
     c.wasAsleep = false;
     const flip = c.dir === "right";
     const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
-    const talking = (c.talk && !c.moving && !c.steps.length && c.mode === "talk") || (c.mode === "strike" && c.strike && c.strike.act === "protest");   // marchers wave their fist as they go
+    const talking = (c.talk && !c.moving && !c.steps.length && c.mode === "talk") || (c.mode === "strike" && c.strike && c.strike.act === "protest") || (c.refusing && !c.moving);   // marchers (and those who will not leave) wave their fist
     const act = working ? actKind(c) : null, typing = act === "type", thinking = act === "think";
     if (thinking) { if (!c.thinkStyle) c.thinkStyle = Math.random() < TUNE.phoneShare ? "phone" : "chin"; } else c.thinkStyle = null;   // each thinking spell: mostly chin in hand, sometimes a phone call
     const phone = thinking && c.thinkStyle === "phone";
@@ -2872,6 +3273,7 @@ function makeOffice(wid) {
       if (c.dir === "down" || c.dir === "up") ctx.fillRect(arm ? x + 26 : x + 2, y + 20 - (Math.floor(t * 4) % 2) * 2, 4, 6); else ctx.fillRect(flip ? x + 26 : x + 2, y + 18 - (Math.floor(t * 4) % 2) * 3, 4, 6);
     }
     const visitors = Object.values(chars).filter(o => o !== c && !o.hidden && o.talk && o.talk.kind === "visit" && o.talk.target === c.name).length;
+    if (c.refusing || c.cursing) { const mk = Math.floor(t * 4) % 2, ax = x + (flip ? 4 : 24), ay = y - 2 + mk - c.top * 2; ctx.fillStyle = "#e0323c"; ctx.fillRect(ax + 1, ay, 1, 5); ctx.fillRect(ax + 3, ay, 1, 5); ctx.fillRect(ax, ay + 1, 5, 1); ctx.fillRect(ax, ay + 3, 5, 1); }   // fuming
     if (visitors >= 2) {                                                        // besieged: knitted brows, an anger mark, and a plea
       if (!c.annoyedAt || Date.now() - c.annoyedAt > 20000) { c.annoyedAt = Date.now(); if (!c.say || Date.now() > c.sayUntil) { c.say = LINES("ANNOYED")[Math.floor(Math.random() * LINES("ANNOYED").length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 4000; c.sayLoop = false; } }
       const fy = y + 12 + bobY - c.top * 2 + c.top * 2; ctx.fillStyle = c.pal.o;
@@ -2919,6 +3321,7 @@ function makeOffice(wid) {
       } else caseAt(x + (side > 0 ? 24 : side < 0 ? -2 : 22), y + 24 + (c.moving ? Math.floor(t * 8) % 2 : 0), false);
     }
     if (c.guard) drawGuardGear(c, t, x, y);
+    if (c.boss) drawBossGear(c, t, x, y);
     if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
     if (working && c.dir !== "down") {                                            // back to the camera: elbows work while typing, the screen lights the desk
       const skin = c.pal.s;
@@ -2958,7 +3361,7 @@ function makeOffice(wid) {
   function start(st) {
     const box = $("#officebox"); if (!box) return;
     if (!canvas || !canvas.isConnected) {
-      box.innerHTML = '<div class="viewbar"><span class="hint">▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details</span><span style="flex:1"></span><label class="hint">theme <select id="officetheme">' + Object.entries(THEMES).map(([k, v]) => '<option value="' + k + '">' + v.label + '</option>').join("") + '</select></label></div><canvas id="office"></canvas>';
+      box.innerHTML = '<div class="viewbar"><button class="small" id="officepost" title="Start a thread on the board without leaving the office">+ New thread</button><span class="hint">▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details</span><span style="flex:1"></span><label class="hint">theme <select id="officetheme">' + Object.entries(THEMES).map(([k, v]) => '<option value="' + k + '">' + v.label + '</option>').join("") + '</select></label></div><canvas id="office"></canvas>';
       canvas = $("#office"); pickBanners();                                   // the Chinese office hangs a new set of banners every time the view opens
       let saved = "regular"; try { saved = (wid && localStorage.getItem("huntun.officeTheme." + wid)) || localStorage.getItem("huntun.officeTheme") || "regular"; } catch (e) { /* no storage */ }
       const sel = $("#officetheme"); if (sel) { sel.value = THEMES[saved] ? saved : "regular"; sel.onchange = () => setTheme(sel.value); }
@@ -2968,6 +3371,7 @@ function makeOffice(wid) {
       ensureLayout(st || lastState ? seatsFor(st || lastState) : [{ role: "master" }, {}, {}, {}]);
       if (vctx) renderMap();
       canvas.onclick = onClick;
+      const post = $("#officepost"); if (post) post.onclick = () => { if (wid) openPostDialog(wid); };
     }
     if (st || lastState) snap(st || lastState); else pendingSnap = true;
     if (!raf && vctx) { last = performance.now(); raf = requestAnimationFrame(frame); }
@@ -2977,9 +3381,9 @@ function makeOffice(wid) {
   let pendingSnap = false;
   function snap(st) {
     pendingSnap = false; transition = null; lastState = st;
-    noticeDelivery(st, true); noticeWatchdog(st, true);
+    noticeDelivery(st, true); noticeWatchdog(st, true); noticeHuman(st, true); bossQueue = [];
     const team = st.agents.filter(a => a.status !== "retired"), now = Date.now();
-    for (const c of Object.values(chars)) if (c.medic || (!c.guard && !team.some(a => a.name === c.name))) delete chars[c.name];   // left meanwhile: already gone
+    for (const c of Object.values(chars)) if (c.medic || c.boss || (!c.guard && !team.some(a => a.name === c.name))) delete chars[c.name];   // left meanwhile: already gone
     medics = null; medicQueue = []; toiletQueue = []; printJob = null;
     seatsFor(st).forEach(x => { if (x) { x.desk = true; x.bed = true; } });
     ensureLayout.sig = null; ensureLayout(seats);
@@ -3008,7 +3412,7 @@ function makeOffice(wid) {
   function onClick(ev) {
     const r = canvas.getBoundingClientRect(); const mx = (ev.clientX - r.left) * (canvas.width / (r.width || 1)), my = (ev.clientY - r.top) * (canvas.height / (r.height || 1));
     const gx = (mx - ox) / scale, gy = (my - oy) / scale;
-    for (const c of Object.values(chars)) if (!c.medic && !c.guard && !c.hidden && gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (wid) openAgent(wid, c.name); return; }
+    for (const c of Object.values(chars)) if (!c.medic && !c.guard && !c.boss && !c.hidden && gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (wid) openAgent(wid, c.name); return; }
   }
   function frame(now) {
     raf = null; if (!canvas || !vctx) return;

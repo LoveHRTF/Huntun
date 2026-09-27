@@ -294,7 +294,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             if sub == "/init":
                 backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp") else None
                 try:
-                    e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0))
+                    e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0),
+                                       team_lead=body.get("team_lead") is not False)
                 except ValueError as ex:
                     raise HttpError(409 if "progress" in str(ex) else 400, str(ex)) from None
                 return self._json(202, e.summary())

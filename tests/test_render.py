@@ -137,6 +137,9 @@ class RenderTests(HubTests):
     def test_allowed_hosts_admit_a_proxy_name(self) -> None:
         pass
 
+    def test_the_master_can_lead_without_a_team_lead(self) -> None:
+        pass
+
 
 if __name__ == "__main__":
     unittest.main()

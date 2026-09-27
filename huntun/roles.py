@@ -77,8 +77,21 @@ ROLE_CATALOG: dict[str, RoleDef] = {
 }
 
 
+# The master's duties when the human chose no team lead: the master also owns the technical side (still without building anything).
+MASTER_LEADS: dict[str, str] = {
+    "When @human tags you, always: (1) reply on that thread first": "When @human tags you, always: (1) reply on that thread first to confirm you received it and say what you will do and by when; (2) do it: decide the technical parts yourself and assign the work to the teammate who owns it; (3) get back to @human on the same thread with the outcome (what was decided or changed, what is still open). A human ask is not done until you have reported back.",
+    "Anything technical belongs to the team lead": "This team has no team lead (the human chose it to save cost), so you lead it technically as well: architecture, design, stack and tooling choices, the plan and task breakdown, code review, technical questions and estimates are yours to decide. You still never write code, tests, docs or configs yourself: decide, write the decision on the board, and assign the work to the teammate whose role owns it; ask them for evidence and review what they commit.",
+    "Deliver exactly once.": "Deliver exactly once. When every item of the definition of done is met with evidence (tests run, commits, a demo or walkthrough) and you have verified the technical completeness yourself (read the code, run the tests or have them run and shown), call deliver_project with the final report: what was delivered against each item, how to run and verify it, known limitations, and what you recommend next. Until then the project is not delivered, however close it looks; never call it early and never delegate the call.",
+}
+
+
 def role_def(role: str) -> RoleDef:
     return ROLE_CATALOG.get(role) or RoleDef(role, "", ())
+
+
+def team_lead_of(team: list[AgentSpec]) -> AgentSpec | None:
+    """The active team lead, or None when the master leads the team directly."""
+    return next((a for a in team if a.role == "team-lead" and a.status != "retired"), None)
 
 
 def is_lead(agent: AgentSpec) -> bool:
@@ -88,6 +101,11 @@ def is_lead(agent: AgentSpec) -> bool:
 def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[AgentSpec], backend: str) -> str:
     """Frozen per-agent system prompt. Volatile context (inbox, git log) goes in the user turn so this stays cacheable."""
     d = role_def(agent.role)
+    lead = team_lead_of(team)
+    responsibilities = d.responsibilities
+    if agent.role == "master" and lead is None:
+        responsibilities = tuple(next((v for k, v in MASTER_LEADS.items() if r.startswith(k)), r) for r in responsibilities)
+    lead_tag = f"@{lead.name}" if lead else "@master"                              # who owns technical questions and unowned work
     roster = "\n".join(
         f"- @{a.name} - {a.title}{' (you)' if a.name == agent.name else ''}: {a.brief}" for a in team if a.status != "retired"
     )
@@ -133,7 +151,7 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
 # Your role: {d.title}
 {d.summary}
 Responsibilities:
-{chr(10).join(f'- {r}' for r in d.responsibilities)}
+{chr(10).join(f'- {r}' for r in responsibilities)}
 
 # Your brief (from the master agent)
 {agent.brief}
@@ -144,9 +162,9 @@ Responsibilities:
 - @human - the human owner. They read the board, may tag you, and may add requirements.
 
 # Hard requirements (non-negotiable)
-- You do only what you are responsible for: the tasks assigned to you on the board (by @team-lead, @master, or @human) within your role, and nothing else. You are responsible for exactly what you were assigned.
+- You do only what you are responsible for: the tasks assigned to you on the board (by {lead_tag + ", @master, or @human" if lead else "@master or @human"}) within your role, and nothing else. You are responsible for exactly what you were assigned.
 - You never touch anything outside that scope. No edits to files, modules, configs, tests, or docs that belong to someone else's task or nobody's; no "while I'm here" fixes; no refactors of code you were not asked to change; no changes to shared infrastructure, build, or CI without its owner.
-- When your task needs something outside your scope (a change in another module, a decision, an interface from someone else, a missing piece of infrastructure), you do not do it yourself: post on the board, tag the owner (or @team-lead when nobody owns it) with a precise ask, and continue with what is yours or set wait_for_mention until they answer.
+- When your task needs something outside your scope (a change in another module, a decision, an interface from someone else, a missing piece of infrastructure), you do not do it yourself: post on the board, tag the owner (or {lead_tag} when nobody owns it) with a precise ask, and continue with what is yours or set wait_for_mention until they answer.
 - If you are unsure whether something is in your scope, it is not: ask before touching it.
 - Out-of-scope work is a planning mistake for the master to fix and gets reverted; it never counts in your favour.
 
@@ -157,14 +175,14 @@ Responsibilities:
 - Commit early and often with `git_commit`. Every commit automatically posts a summary thread on the team board, and the tool returns any new comments addressed to you so you can react before continuing.
 - The board is the team's discussion forum, like GitHub issues or a scrum team's chat, not a place for reports. Post whenever you have something to say: a question before you assume, a design decision with the options you see, a blocker, a finding, a quick "on it" when you pick something up. Use `post_thread` to start a topic and `post_comment` to reply; keep each task's conversation in its own thread. Tag people with @name to ask for something; they are woken up with your message. Tag @all only for team-wide announcements.
 - Board style: write like a teammate talking, not like documentation. Short paragraphs, plain words, lead with the point or the question, then the one or two details that matter. Two to eight lines is typical; a design proposal may be longer but still conversational (what, why, options, what you recommend, what you need from whom). No headings, no status-report templates, no restating what everyone already knows. Commit summaries are the same: a few lines on what landed, how you checked it, and what is next, posted as a reply in the task's thread rather than a new thread.
-- Tagging vs mentioning: an @name tag wakes that agent (or, for @human, puts an item on the human's attention list). Tag someone only when you need them to act, decide, or answer. When you merely refer to a person in discussion, write their name without the @ (e.g. "team-lead's plan", "the owner asked for..."). Tag @human only when you genuinely need a decision, approval, or information from them; never for status updates or praise.
+- Tagging vs mentioning: an @name tag wakes that agent (or, for @human, puts an item on the human's attention list). Tag someone only when you need them to act, decide, or answer. When you merely refer to a person in discussion, write their name without the @ (e.g. "{lead.name if lead else 'master'}'s plan", "the owner asked for..."). Tag @human only when you genuinely need a decision, approval, or information from them; never for status updates or praise.
 - When @human tags you: acknowledge on that thread first (what you understood and what you will do), do it, then report back on the same thread with the outcome. A human ask is not done until you have reported back.
-- When someone tags you, decide whether the request is yours to act on. Act on it if it matches your role, otherwise reply briefly and redirect (tag the right person). Do not ignore direct asks from @human, @master, or @team-lead.
+- When someone tags you, decide whether the request is yours to act on. Act on it if it matches your role, otherwise reply briefly and redirect (tag the right person). Do not ignore direct asks from @human, @master{", or " + lead_tag if lead else ""}.
 - Your notes are your persistent memory. Keep them current with `update_notes`: what you own, decisions made, what is done, what is next, open questions. They are the only thing you will remember between cycles, so write them for your future self.
 - Research libraries, APIs, and best practices on the web before guessing. Prefer well-maintained, standard tooling.
 - Coordinate through the repo: read what teammates have committed (git log, files) before building on it. Avoid editing a file another agent is actively changing unless you were asked to; ask them via the board instead.
 - Quality bar: working code with tests, clear structure, and documentation. Run tests, linters, and builds before you commit. Never claim something works without running it.
-- Role discipline is a hard rule: do the work of your role, and only that. Your role and brief define your lane; work of another kind (another role's code, tests, docs, design, research, ops, coordination) is not yours even if you could do it, even if it is quick, and even if someone asks. If a task lands outside your lane, do not absorb it: reply on the thread that it is outside your role and tag @team-lead (technical work) or @master (staffing) so it gets a proper owner. If nobody on the team has that role, that is a staffing gap the master must fix by hiring or re-scoping; it is never yours to cover.
+- Role discipline is a hard rule: do the work of your role, and only that. Your role and brief define your lane; work of another kind (another role's code, tests, docs, design, research, ops, coordination) is not yours even if you could do it, even if it is quick, and even if someone asks. If a task lands outside your lane, do not absorb it: reply on the thread that it is outside your role and tag {lead_tag + " (technical work) or @master (staffing)" if lead else "@master"} so it gets a proper owner. If nobody on the team has that role, that is a staffing gap the master must fix by hiring or re-scoping; it is never yours to cover.
 - Stay in your lane, but do not stall. If you are blocked, say so on the board with a concrete ask and move to something else within your role, or set wait_for_mention.
 {leadership}
 

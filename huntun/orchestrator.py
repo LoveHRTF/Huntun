@@ -24,7 +24,7 @@ from .gitops import ensure_repo, recent_log
 from .gitops import status as git_status
 from .memory import AgentMemory
 from .models import EFFORTS, backend_for_model, model_info
-from .roles import ROLE_CATALOG, build_system_prompt, is_lead
+from .roles import ROLE_CATALOG, build_system_prompt, is_lead, team_lead_of
 from .store import Store
 from .tools import ToolContext, ToolHooks, collect_inbox, format_inbox
 from .types import AgentSpec, CycleState, HuntunConfig
@@ -554,11 +554,15 @@ class AgentRuntime:
         notes = self.memory.notes().strip()
         journal = "\n".join(f"- cycle {j.get('cycle')} ({j.get('kind')}): {str(j.get('summary', ''))[:400]}" for j in self.memory.recent_journal(3))
         first = st.cycles == 0
+        lead = team_lead_of(orch.active_team())                                  # None: the master leads the team directly
+        tech = (f"anything technical (architecture, design, stack, code, technical questions or estimates) goes to @{lead.name} on that thread or a task "
+                "thread, with the context and the ask, asking them to tag you when done" if lead else
+                "anything technical (architecture, design, stack, code, technical questions or estimates) you decide yourself, as this team has no team lead, "
+                "and hand the work to the teammate who owns it in a task thread")
         ack_note = ""
         if spec.role == "master" and any(i.author == "human" for i in items):
             ack_note = ("\n\n@human tagged you. Before anything else, reply on that thread to confirm you received the message and say what you will do about it and by when. "
-                        "Then act: anything technical (architecture, design, stack, code, technical questions or estimates) goes to @team-lead on that thread or a task "
-                        "thread, with the context and the ask, asking them to tag you when done; staffing and goal matters are yours. If it implies a staffing change "
+                        f"Then act: {tech}; staffing and goal matters are yours. If it implies a staffing change "
                         "or a change of goal or definition of done, propose the change on the board and wait for @human to confirm in that thread before applying it "
                         "(hire_agent, retire_agent, set_agent_model, and set_goal require the confirmation thread id). Finally get back to @human on the same thread "
                         "with the outcome; if you are waiting on the team, say so and set wait_for_mention so you return to close the loop when they report back.")
@@ -575,7 +579,10 @@ class AgentRuntime:
                      "mistake of yours to correct now (have out-of-scope changes reverted or handed to the owner, propose a hire or a brief change to @human, or "
                      "reassign to the right owner, and say so on the board). Then decide whether the team shape is right: "
                      "propose hires, retirements, or model changes to @human if the delivery needs them. You own the outcome; do not fix anything yourself, assign it. "
-                     "If every item of the definition of done is now met with evidence and @team-lead has confirmed it, this review ends in delivery: call deliver_project with the final report."
+                     + (f"If every item of the definition of done is now met with evidence and @{lead.name} has confirmed it, " if lead else
+                        "With no team lead, the technical review is yours too: read the latest commits against the plan and ask for changes where quality, tests or design fall short. "
+                        "If every item of the definition of done is now met with evidence you have checked yourself, ")
+                     + "this review ends in delivery: call deliver_project with the final report."
                      if spec.role == "master" else "Update the plan thread if the roadmap changed.")
             instructions = (
                 f"This is a scheduled PROGRESS REVIEW (#{st.review_count}). Inspect the git log and recent commits (git show / diff as needed), "
@@ -587,8 +594,12 @@ class AgentRuntime:
             instructions = (
                 "This is your FIRST cycle. The human confirmed the goal and definition of done and approved your proposed plan (see the goal and plan "
                 "threads on the board; the roster reflects any changes they made). Post a short kickoff thread: the goal and definition of done, who "
-                "owns what, and the working agreements (commit often, tests required, review flow). Tag @team-lead to write the architecture/plan "
-                "thread and assign the first tasks, and tag @all so everyone reads it. Open a \"Delivery status\" thread you will keep current: milestones "
+                "owns what, and the working agreements (commit often, tests required, review flow). "
+                + (f"Tag @{lead.name} to write the architecture/plan thread and assign the first tasks, and tag @all so everyone reads it. " if lead else
+                   "This team has no team lead, so you lead it technically: decide the architecture and stack at a high level, post a plan thread with "
+                   "milestones, and assign the first task to every teammate by tagging them (ask the right engineer to write the architecture doc; you never "
+                   "write code or docs yourself), and tag @all so everyone reads the kickoff. ")
+                + "Open a \"Delivery status\" thread you will keep current: milestones "
                 "against the definition of done, owners, next checkpoint. You own the team and the delivery; you manage, you do not build. Then update "
                 "your notes and finish_cycle."
             )
@@ -602,7 +613,7 @@ class AgentRuntime:
             instructions = (
                 "This is your FIRST cycle. Read the board (kickoff and plan threads) and the repository to understand the current state. Then start "
                 "on your brief or the task assigned to you. If nothing is assigned yet and the plan is unclear, do preparatory work that is "
-                "unambiguously yours (research, scaffolding in your area) and ask @team-lead a concise question on the board. Commit, update your "
+                f"unambiguously yours (research, scaffolding in your area) and ask @{lead.name if lead else 'master'} a concise question on the board. Commit, update your "
                 "notes, and finish_cycle."
             )
         elif spec.role == "master":
@@ -616,7 +627,7 @@ class AgentRuntime:
         else:
             instructions = (
                 "React to inbox items first (reply, act, or explicitly ignore). Then continue with the task assigned to you, touching only what it "
-                "covers; anything it needs outside your scope is asked for on the board from its owner (or @team-lead), never done by you. Verify your "
+                f"covers; anything it needs outside your scope is asked for on the board from its owner (or @{lead.name if lead else 'master'}), never done by you. Verify your "
                 "work by running it, commit with a clear summary, update your notes, and finish_cycle."
             )
 

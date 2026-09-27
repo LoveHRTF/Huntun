@@ -297,6 +297,22 @@ class HubTests(unittest.TestCase):
         self.srv.call(f"/api/workspaces/{wid}/forget", {})
         self.assertEqual(self.srv.call("/api/workspaces")["workspaces"], [])
 
+    def test_the_master_can_lead_without_a_team_lead(self) -> None:
+        from huntun.config import load_config
+
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "team_lead": False})
+        self.assertEqual(self.wait_state(wid, ("goal_proposed", "error"))["state"], "goal_proposed")
+        self.srv.call(f"/api/workspaces/{wid}/confirm-goal", {"goal": "Add a CLI to myapp", "definition_of_done": "CLI runs"})
+        w = self.wait_state(wid, ("proposed", "error"))
+        self.assertEqual(w["state"], "proposed", w.get("error"))
+        self.assertFalse(load_config(self.project).team_lead)
+        self.assertIn('Do not include a "team-lead"', FakeBackend.last_prompt)
+        st = self.srv.call(f"/api/w/{wid}/state")
+        self.assertEqual([a["role"] for a in st["agents"]], ["master", "fullstack", "tech-writer"])   # the proposed lead was dropped
+        w = self.srv.call(f"/api/workspaces/{wid}/approve", {"agents": []})
+        self.assertEqual((w["state"], w["approved"]), ("ready", True))
+
     def test_init_requires_goal_and_reports_errors(self) -> None:
         w = self.srv.call("/api/workspaces", {"path": str(self.project)})
         with self.assertRaises(urllib.error.HTTPError) as cm:

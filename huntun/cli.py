@@ -62,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_dir(s)
     s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"], help="model backend (default: auto-detect)")
     s.add_argument("--context", default="", help="extra context for the master: constraints, stack preferences, existing code")
+    s.add_argument("--no-team-lead", action="store_true", help="no team lead: the master leads the team directly (fewer agents, lower cost)")
     s.add_argument("goal", nargs="+", help="what the team should build")
 
     s = sub.add_parser("start", help="run all agents and the local discussion board")
@@ -84,7 +85,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.cmd == "serve":
             asyncio.run(cmd_serve(args.port, Path(args.dir).resolve() if args.dir else None, running=None, open_browser=not args.no_open))
         elif args.cmd == "init":
-            asyncio.run(cmd_init(workspace, " ".join(args.goal).strip(), args.backend, args.context))
+            asyncio.run(cmd_init(workspace, " ".join(args.goal).strip(), args.backend, args.context, team_lead=not args.no_team_lead))
         elif args.cmd == "start":
             asyncio.run(cmd_start(workspace, args.port, args.paused))
         elif args.cmd == "approve":
@@ -107,7 +108,7 @@ def _require_init(workspace: Path) -> None:
         raise RuntimeError(f"{workspace} is not initialized; run `huntun init \"<goal>\"` there first")
 
 
-async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str) -> None:
+async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str, team_lead: bool = True) -> None:
     if not goal:
         raise RuntimeError('init needs a goal, e.g.  huntun init "Build a CLI todo app in Go with a TUI"')
     if is_initialized(workspace):
@@ -115,6 +116,7 @@ async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str
     workspace.mkdir(parents=True, exist_ok=True)
     config = default_config(goal)
     config.context = context.strip()
+    config.team_lead = team_lead
     if backend:
         config.backend = backend
     backend_name = resolve_backend(config)

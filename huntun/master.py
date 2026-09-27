@@ -245,7 +245,7 @@ Pick a model and effort for every agent from its role and the difficulty of its 
 {catalog_text(config.backend)}
 {_vendor_note(config)}
 Effort levels: low, medium, high, xhigh, max. Higher effort means more reasoning per step and more tokens. Guidance:
-- team-lead: a frontier model at high or xhigh effort (architecture, reviews, integration).
+{"- team-lead: a frontier model at high or xhigh effort (architecture, reviews, integration)." if config.team_lead else "- There is no team lead: you lead the team yourself, so pick strong engineers for the parts that need judgment."}
 - engineers on well-specified features: a strong model at medium or high effort; a frontier model only for the hardest, most cross-cutting component.
 - qa, tech-writer, scrum-master, and other routine roles: a fast or strong model at low or medium effort.
 - Research-heavy roles (ux-researcher, data-scientist): a strong model at medium effort.
@@ -260,10 +260,10 @@ For each agent, estimate how many work cycles it needs to finish its part and th
 
 # Rules
 - {"The human allows at most " + str(config.max_agents) + " agents besides you; do not exceed it." if config.max_agents else "The human set no limit on team size; still keep it as small as the work allows."}
-- Always include exactly one "team-lead". Include a "scrum-master" only for teams of 5 or more workers.
+- {'Always include exactly one "team-lead".' if config.team_lead else 'Do not include a "team-lead": the human chose to have you lead the team directly to save cost. You will decide the architecture, write the plan thread, assign the tasks and review the work yourself (you still never write code), so make every brief self-contained with a concrete first task.'} Include a "scrum-master" only for teams of 5 or more workers.
 - Choose the number of agents per role from the goal's actual needs (a CLI tool may need 2-3 agents; a full product with ML needs more). Fewer, well-briefed agents beat many idle ones; you can hire more later.
 - Every agent name must be unique and a lowercase slug (letters, digits, hyphens). Use numbered names for multiple agents in one role (backend-1, backend-2).
-- Each brief must state what the agent owns, its first concrete task, and who it coordinates with. The team lead's brief must include writing the initial architecture / plan thread and assigning first tasks.
+- Each brief must state what the agent owns, its first concrete task, and who it coordinates with.{" The team lead's brief must include writing the initial architecture / plan thread and assigning first tasks." if config.team_lead else " With no team lead, name in each brief who reviews its work (you, or a teammate) and whom to ask technical questions (you)."}
 - Agents share one git repository and a discussion board; briefs should reflect that.
 
 Submit the plan by calling the propose_team tool."""
@@ -302,10 +302,12 @@ async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str =
                                 personality=personality_text(str(a.get("personality") or ""), str(a.get("personality_note") or "")),
                                 personality_preset=str(a.get("personality")) if a.get("personality") in PERSONALITY_IDS else "custom",
                                 estimated_cycles=max(1, int(a.get("estimated_cycles") or 0)), tokens_per_cycle=max(10_000, int(a.get("tokens_per_cycle") or 0))))
+    if not config.team_lead:                                                      # the master leads directly: no team lead, whatever the model proposed
+        agents = [a for a in agents if a.role != "team-lead"] or agents
     if config.max_agents and len(agents) > config.max_agents:
         keep = [a for a in agents if a.role == "team-lead"][:1] + [a for a in agents if a.role != "team-lead"]
         agents = keep[: config.max_agents]
-    if not any(a.role == "team-lead" for a in agents):
+    if config.team_lead and not any(a.role == "team-lead" for a in agents):
         agents.insert(0, AgentSpec("team-lead", "team-lead", ROLE_CATALOG["team-lead"].title,
                                    "Own architecture and coordination. Write the initial plan thread, assign first tasks, review commits.", created_at=now))
     return (str(plan.get("rationale") or "") + ("\n\nEstimate notes: " + str(plan.get("estimate_notes")).strip() if plan.get("estimate_notes") else "")), agents

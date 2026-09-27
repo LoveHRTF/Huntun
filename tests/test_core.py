@@ -287,5 +287,37 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Leadership duties", lead_cc)
         self.assertIn("MCP tools", lead_cc)
 
+    def test_the_master_can_lead_without_a_team_lead(self) -> None:
+        team = [self.team[0], self.team[2]]                                               # master and backend-1, no team lead
+        master = build_system_prompt(team[0], self.config, team, "api")
+        worker = build_system_prompt(team[1], self.config, team, "api")
+        self.assertIn("This team has no team lead", master)
+        self.assertNotIn("@team-lead", master + worker)
+        self.assertIn("(by @master or @human)", worker)
+        with_lead = build_system_prompt(self.team[2], self.config, self.team, "api")
+        self.assertIn("(by @team-lead, @master, or @human)", with_lead)
+        self.assertNotIn("This team has no team lead", build_system_prompt(self.team[0], self.config, self.team, "api"))
+
+    def test_planning_follows_the_leadership_choice(self) -> None:
+        from huntun.master import plan_team
+
+        class Planner:
+            name = "fake"
+            prompt = ""
+
+            async def structured(self, **kw):
+                Planner.prompt = kw["prompt"]
+                return {"rationale": "r", "agents": [{"name": "team-lead", "role": "team-lead", "title": "Lead", "brief": "lead"},
+                                                     {"name": "dev-1", "role": "fullstack", "title": "Dev", "brief": "build"}]}
+
+        self.config.team_lead = False
+        _, agents = asyncio.run(plan_team(Planner(), self.config))
+        self.assertEqual([a.role for a in agents], ["fullstack"])                         # the proposed lead is dropped, none is added
+        self.assertIn('Do not include a "team-lead"', Planner.prompt)
+        self.config.team_lead = True
+        _, agents = asyncio.run(plan_team(Planner(), self.config))
+        self.assertEqual([a.role for a in agents], ["team-lead", "fullstack"])
+        self.assertIn('Always include exactly one "team-lead"', Planner.prompt)
+
 if __name__ == "__main__":
     unittest.main()

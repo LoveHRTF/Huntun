@@ -444,7 +444,7 @@ TOOLS: list[ToolSpec] = [
              _obj({"goal": {"type": "string"}, "definition_of_done": {"type": "string", "description": "One condition per line"},
                    "confirmation_thread_id": {"type": "integer", "description": "Thread where you proposed the change to @human and they replied confirming"}}, ["goal", "confirmation_thread_id"]), _set_goal, master_only=True),
     ToolSpec("deliver_project", "Deliver the finished project to the human. Call it exactly once, when every item of the definition of done is met with evidence "
-             "(tests run, commits, a demo or walkthrough) and @team-lead has confirmed technical completeness on the board. Posts the final report as a "
+             "(tests run, commits, a demo or walkthrough) and technical completeness is confirmed on the board (by the team lead, or checked by you when the team has none). Posts the final report as a "
              "\"Delivery report\" thread addressed to @human and records the delivery.",
              _obj({"title": {"type": "string", "description": "Short name of what was delivered, e.g. the product and version"},
                    "report": {"type": "string", "description": "The final report: what was delivered against each item of the definition of done, how to run and verify it, known limitations, and what the team recommends next"}},

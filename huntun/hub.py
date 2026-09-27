@@ -206,7 +206,7 @@ class Hub:
 
     # ---- phase 1: confirm the goal and the definition of done with the human --------------------
 
-    def begin_init(self, wid: str, goal: str, backend: str | None, context: str, max_agents: int = 0) -> WorkspaceEntry:
+    def begin_init(self, wid: str, goal: str, backend: str | None, context: str, max_agents: int = 0, team_lead: bool = True) -> WorkspaceEntry:
         """Validates and starts the goal check in the background (callable from any thread)."""
         e = self.workspaces[wid]
         with self.lock:
@@ -218,10 +218,10 @@ class Hub:
             if not goal:
                 raise ValueError("a goal is required")
             e.state, e.error, e.progress, e.started_at = "clarifying", None, "Inspecting the directory", time.time()
-        self.submit(self.clarify(wid, goal, backend, context, max_agents=max_agents))
+        self.submit(self.clarify(wid, goal, backend, context, max_agents=max_agents, team_lead=team_lead))
         return e
 
-    async def clarify(self, wid: str, goal: str, backend: str | None, context: str, conversation: str = "", max_agents: int = 0) -> WorkspaceEntry:
+    async def clarify(self, wid: str, goal: str, backend: str | None, context: str, conversation: str = "", max_agents: int = 0, team_lead: bool = True) -> WorkspaceEntry:
         """The master restates the goal, proposes a definition of done, and asks the human to confirm."""
         e = self.workspaces[wid]
         e.state, e.error, e.started_at = "clarifying", None, e.started_at or time.time()
@@ -235,6 +235,7 @@ class Hub:
                 config = default_config(goal)
                 config.context = context.strip()
                 config.max_agents = max(0, int(max_agents or 0))
+                config.team_lead = bool(team_lead)
                 if backend in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"):
                     config.backend = backend
                 config.backend = resolve_backend(config)
@@ -413,10 +414,10 @@ class Hub:
                 if text and (text != spec.personality or preset != spec.personality_preset):
                     spec.personality, spec.personality_preset = text, preset if preset in PERSONALITY_IDS else "custom"
                     changes.append(f"@{spec.name} personality -> {preset if preset in PERSONALITY_IDS else 'custom'}")
-        if not any(a.role == "team-lead" for a in team):
-            raise ValueError("the team needs a team-lead")
-        save_team(e.path, team)
         config = load_config(e.path)
+        if config.team_lead and not any(a.role == "team-lead" for a in team):
+            raise ValueError("the team needs a team-lead (or set up the project with the master leading directly)")
+        save_team(e.path, team)
         config.estimate = estimate_for(team, (config.estimate or {}).get("notes", ""))
         save_config(e.path, config)
         store = e.open_store()

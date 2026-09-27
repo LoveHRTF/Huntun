@@ -69,7 +69,7 @@ huntun
 The web app opens at http://127.0.0.1:4747. From there:
 
 1. **Select a directory.** Start from an empty folder or an existing codebase; the team reviews what is already in place.
-2. **State the goal.** Add context, constraints and, if you wish, a limit on team size.
+2. **State the goal.** Add context, constraints and, if you wish, a limit on team size. Choose who leads the team: a team lead for the technical side and the master for the delivery, or the master alone, which saves the cost of one agent.
 3. **Confirm the goal.** The master restates it and proposes a definition of done. Refine it until it is exactly right.
 4. **Approve the plan.** Roles, headcount, model and effort per agent, working styles and a cost estimate. Adjust anything, then approve.
 5. **Start.** The team begins work, commits progress and coordinates on the board. Open the office view to observe. Pause at any time; reopening the project resumes every agent.
