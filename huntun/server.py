@@ -5,6 +5,7 @@ Runs in a background thread; anything that touches agents is handed to the hub's
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -51,6 +52,23 @@ def _llamacpp_view(probe: bool = True) -> dict[str, Any]:
     return view
 
 
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def allowed_hosts() -> set[str]:
+    """Host names the server answers to: loopback only, plus HUNTUN_ALLOWED_HOSTS (comma-separated) for a proxy in front."""
+    extra = {h.strip().lower() for h in os.environ.get("HUNTUN_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    return LOCAL_HOSTS | extra
+
+
+def _hostname(host: str) -> str:
+    """ "127.0.0.1:4747" -> "127.0.0.1", "[::1]:4747" -> "[::1]"."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host.split("]", 1)[0] + "]"
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
 class HttpError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
@@ -76,15 +94,25 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             raw = self.rfile.read(n) if n else b""
             return json.loads(raw) if raw else {}
 
-        def _settings_request(self) -> None:
-            """Settings can redirect every model call, so only the Huntun page itself may change them: a JSON body (other
-            sites cannot send one without a preflight this server never answers) from this origin, when the browser says."""
-            if (self.headers.get("content-type") or "").split(";")[0].strip().lower() != "application/json":
-                raise HttpError(415, "send JSON")
-            origin = self.headers.get("origin")
+        def _guard(self, write: bool) -> None:
+            """Refuses requests another web page could make through the user's browser.
+
+            Any site open in the browser can send requests to 127.0.0.1, and the API can add projects, approve plans, start
+            agents and re-point model traffic. So: the Host must be this machine (a DNS-rebinding page names its own domain);
+            the browser must not flag the request as coming from another site (Sec-Fetch-Site) or origin (Origin); and a
+            write must carry a JSON body, which another site cannot send without a CORS preflight this server never answers.
+            The web app, the documented curl calls and scripts using urllib all pass.
+            """
             host = self.headers.get("host") or ""
-            if origin and urlparse(origin).netloc != host:
+            if _hostname(host) not in allowed_hosts():
+                raise HttpError(403, f"unknown host {host!r}; open Huntun at http://127.0.0.1 (or set HUNTUN_ALLOWED_HOSTS)")
+            if (self.headers.get("sec-fetch-site") or "").lower() in ("cross-site", "same-site"):
+                raise HttpError(403, "cross-site request refused")
+            origin = self.headers.get("origin")
+            if origin is not None and urlparse(origin).netloc.lower() != host.lower():
                 raise HttpError(403, "cross-origin request refused")
+            if write and (self.headers.get("content-type") or "").split(";")[0].strip().lower() != "application/json":
+                raise HttpError(415, "send JSON (content-type: application/json)")
 
         def _entry(self, wid: str):
             e = hub.get(wid)
@@ -118,6 +146,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             url = urlparse(self.path)
             path = url.path
             try:
+                if path.startswith("/api/"):
+                    self._guard(write=False)                                      # some reads load a project's agents
                 if path == "/":
                     data = PAGE.encode()
                     self.send_response(200)
@@ -201,9 +231,9 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
         def do_POST(self) -> None:
             path = urlparse(self.path).path
             try:
+                self._guard(write=True)
                 body = self._body()
                 if path in ("/api/providers/llamacpp", "/api/providers/llamacpp/test"):
-                    self._settings_request()
                     current = llamacpp_settings()
                     url = normalize_server_url(str(body.get("url") or ""))
                     if body.get("clear_key"):

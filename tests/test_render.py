@@ -113,6 +113,15 @@ class RenderTests(HubTests):
     def test_browse(self) -> None:
         pass
 
+    def test_writes_from_other_sites_are_refused(self) -> None:
+        pass
+
+    def test_reads_from_other_sites_are_refused_but_the_page_opens_from_anywhere(self) -> None:
+        pass
+
+    def test_allowed_hosts_admit_a_proxy_name(self) -> None:
+        pass
+
 
 if __name__ == "__main__":
     unittest.main()

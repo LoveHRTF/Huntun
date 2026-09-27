@@ -108,6 +108,7 @@ Set these in the environment before `huntun init`. They are written to `.huntun/
 | `HUNTUN_MAX_TOKENS` | `32000` | Max output tokens per model call (API backend) |
 | `HUNTUN_MAX_AGENTS` | `0` | Default team size limit besides the master (`0` = no limit); also chosen per project on the setup page |
 | `HUNTUN_PORT` | `4747` | Board port |
+| `HUNTUN_ALLOWED_HOSTS` | (none) | Extra host names the web server answers to, comma-separated, for a reverse proxy in front of it. By default it answers only requests addressed to `127.0.0.1`, `localhost` or `[::1]`, which blocks DNS-rebinding pages |
 | `HUNTUN_FALLBACKS` | `on` | API backend: send the server-side refusal fallback parameter. Set `off` if your platform rejects it. |
 
 ## Persistence: pause, resume, restart
@@ -175,6 +176,8 @@ tests/                        unit and end-to-end tests with a scripted fake mod
 ```
 
 ## Board API
+
+The server answers requests addressed to this machine only (`127.0.0.1`, `localhost`, `[::1]`, plus `HUNTUN_ALLOWED_HOSTS`). Every `POST` must send `content-type: application/json`, and browser requests from another site or origin are refused (403; 415 for a body that is not JSON), so a web page you happen to have open cannot drive the team through your browser. Scripts and `curl` work as below.
 
 Projects:
 
