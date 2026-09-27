@@ -24,6 +24,25 @@ llama.cpp's own numbers show on-demand reads costing about half of that. 64 GB c
 is the main lever for prefill on this box (the plan's 128 GB is there for this reason). `bench.py` measures your numbers
 and prints them next to both columns.
 
+### Context length
+
+The model supports 262,144 tokens. The context cache is small (~13 KB per token at q8_0, only 12 of 48 layers keep
+one), but llama.cpp's sparse-attention scorer reserves a *context x prompt-batch* float table in VRAM: 1 GiB at
+64K x 4,096, 4 GiB at 256K x 4,096. Each GiB it takes moves experts from VRAM to RAM, so one 256K slot with 4,096-token
+batches measured **5 tok/s** instead of 17. The kit therefore sizes the batch automatically (`BATCH`/`UBATCH` =
+`auto`), keeping context x batch at 64K x 4,096:
+
+| Setting (`config.local.ps1` / `flash-next.local.env`) | Context per session | Batch (auto) |
+|---|---|---|
+| default | 2 x 64K | 4,096 |
+| `CTX_PER_SLOT = 131072` | 2 x 128K | 2,048 |
+| `CTX_PER_SLOT = 131072` + `KV_UNIFIED` on | up to 256K each, 256K shared | 1,024 |
+| `PARALLEL = 1`, `CTX_PER_SLOT = 262144` | 1 x 256K | 1,024 |
+
+Smaller batches cost some prefill (each batch has a fixed ~0.65 s overhead); decode should stay near the 64K numbers
+minus a few percent for the larger cache. With a shared pool, the sessions generating at the same moment must fit in
+the pool together; idle sessions are moved to the RAM prompt cache to make room.
+
 Tried on this box and not worth it:
 
 - `UBATCH`/`BATCH` 8192 instead of 4096: prefill +5%, decode -17% (larger compute buffers push experts out of VRAM).

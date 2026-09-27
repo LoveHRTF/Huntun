@@ -24,6 +24,15 @@ if ($threads -eq "auto") {
     if (-not $threads) { $threads = [Environment]::ProcessorCount }
 }
 
+# The context one sequence can span: the whole pool when it is shared, one slot otherwise.
+$seqCtx = if ($KV_UNIFIED) { $PARALLEL * $CTX_PER_SLOT } else { $CTX_PER_SLOT }
+$ubatch = $UBATCH
+if ($ubatch -eq "auto") {   # largest power of two in [512, 4096] with seqCtx * batch <= 64K * 4096
+    $ubatch = 4096
+    while ($ubatch -gt 512 -and [long]$seqCtx * $ubatch -gt 65536L * 4096) { $ubatch = $ubatch / 2 }
+}
+$batch = if ($BATCH -eq "auto") { $ubatch } else { $BATCH }
+
 # Windows PowerShell 5.1 turns redirected stderr of native programs into errors; llama-server logs to stderr.
 $ErrorActionPreference = "Continue"
 $help = (& $server --help 2>&1 | Out-String)
@@ -36,12 +45,13 @@ $a = @(
     "-np", "$PARALLEL", "-c", "$($PARALLEL * $CTX_PER_SLOT)",
     "-fa", "on", "-ctk", $KV_TYPE, "-ctv", $KV_TYPE,
     "-t", "$threads", "-tb", "$threads",
-    "-b", "$BATCH", "-ub", "$UBATCH",
+    "-b", "$batch", "-ub", "$ubatch",
     "--jinja",
     "--metrics"
 )
 # Memory-map the weights and read the huge per-layer-embedding (N-gram) table from disk on demand.
 # Never add mlock: it would pin the whole mapping, table included, and 64 GB cannot hold it.
+if ($KV_UNIFIED) { $a += "--kv-unified" }
 if (Has "--load-mode") { $a += @("--load-mode", "mmap") }
 if (Has "--lazy-mode") { $a += @("--lazy-mode", "on") }
 else { Write-Warning "this llama-server has no --lazy-mode; the N-gram table may be loaded into RAM. Use a newer LLAMA_TAG." }

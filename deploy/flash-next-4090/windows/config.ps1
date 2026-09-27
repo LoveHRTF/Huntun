@@ -24,11 +24,15 @@ $HUNTUN_HOST_IP = ""                    # the Mac mini's IP; `setup.ps1 tune` li
 # Two parallel slots, as in the reference plan. -c is split evenly across slots.
 $PARALLEL = 2
 $CTX_PER_SLOT = 65536
+$KV_UNIFIED = $false                    # $true = the slots share one pool of PARALLEL*CTX_PER_SLOT; any slot may use all of it
 $KV_TYPE = "q8_0"
 
 $THREADS = "auto"                       # auto = physical cores (12 on a Ryzen 9 5900X)
-$BATCH = 4096
-$UBATCH = 4096
+# Prompt batch size. "auto" keeps context x batch at 64K x 4096: this model's sparse-attention scorer reserves a
+# context x batch float table in VRAM (1 GiB at 64K x 4096, 4 GiB at 256K x 4096), and every GiB it takes pushes
+# experts into RAM and slows decode (256K with 4096 measured 5 tok/s instead of 17). Smaller batches cost some prefill.
+$BATCH = "auto"
+$UBATCH = "auto"
 $FIT_TARGET_MIB = 1536                  # VRAM left free by --fit: the Windows desktop runs on the 4090 (the 5900X has no iGPU)
 $CACHE_RAM_MIB = 4096
 $REASONING_BUDGET = 8192

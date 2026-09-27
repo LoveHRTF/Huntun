@@ -30,6 +30,17 @@ if [[ "$THREADS" == "auto" ]]; then
   [[ "$THREADS" -gt 0 ]] || THREADS="$(nproc)"
 fi
 
+# The context one sequence can span: the whole pool when it is shared, one slot otherwise.
+SEQ_CTX=$CTX_PER_SLOT
+[[ "$KV_UNIFIED" == "1" ]] && SEQ_CTX=$((PARALLEL * CTX_PER_SLOT))
+auto_batch() {  # largest power of two in [512, 4096] with SEQ_CTX * batch <= 64K * 4096
+  local b=4096
+  while (( b > 512 && SEQ_CTX * b > 65536 * 4096 )); do b=$((b / 2)); done
+  echo "$b"
+}
+[[ "$UBATCH" == "auto" ]] && UBATCH="$(auto_batch)"
+[[ "$BATCH" == "auto" ]] && BATCH="$UBATCH"
+
 HELP="$("$SERVER" --help 2>&1 || true)"
 has() { grep -q -e "$1" <<<"$HELP"; }
 
@@ -46,6 +57,7 @@ args=(
 )
 # Memory-map the weights and read the huge per-layer-embedding (N-gram) table from disk on demand.
 # Never add mlock here: it would pin the whole mapping, table included, and 64 GB cannot hold it.
+[[ "$KV_UNIFIED" == "1" ]] && args+=(--kv-unified)
 has "--load-mode" && args+=(--load-mode mmap)
 if has "--lazy-mode"; then
   args+=(--lazy-mode on)
