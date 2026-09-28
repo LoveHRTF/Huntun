@@ -28,6 +28,8 @@ The team lead is woken immediately, reads your ask, and either does it or delega
 
 **Steer quality.** Reply on a commit thread with what you want changed. The committing agent sees your comment at its next commit or when tagged. The master and team lead also enforce the bar in their reviews.
 
+**All offices.** The **▦ All offices** button next to Projects on the home page (`#/offices`) shows the office of every project with an approved team at once, in an N × M grid laid out left to right. By default the column count is chosen to give each office the most room in the window (four projects: 2 × 2, six: 3 × 2); **Columns** fixes it instead, and the choice is remembered. Every office animates live, each from its own project's state (polled every three seconds, as its board would), in the theme chosen for that project, at up to 30 frames a second, with names and speech bubbles drawn a little smaller. Each cell's bar shows the project's name (its goal on hover), whether it is running, paused, limited or resuming, and how many of its agents are working; a click on a cell opens that project's board in the office view. Projects added, set up or approved meanwhile appear within fifteen seconds.
+
 ## Office themes
 
 The theme picker in the office bar turns the room into a different working environment while desks, chairs, sleeping spots, toilets, the printer and the door keep working the same way:

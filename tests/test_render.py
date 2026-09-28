@@ -113,6 +113,13 @@ class RenderTests(HubTests):
         self.render(f"#/w/{wid}/t/{st['threads'][0]['id']}", snap)
         out = self.render(f"#/w/{wid}", snap, office=True)
         self.assertIn("Threads", out["text"], "office view toggled on shows the switch-back button")
+        # every project's office at once: one cell per project with a team, its status in the cell's bar
+        out = self.render("#/offices", {"/api/workspaces": self.srv.call("/api/workspaces"), f"/api/w/{wid}/state": st, "/api/providers": {"servers": [], "types": {}, "backends": {}}})
+        self.assertIn("All offices", out["text"])
+        self.assertIn(self.project.name, out["text"])
+        self.assertIn("of " + str(len([a for a in st["agents"] if a["status"] != "retired"])) + " working", out["text"])
+        out = self.render("#/", {"/api/workspaces": self.srv.call("/api/workspaces"), "/api/fs": {"path": "/", "exists": True, "parent": None, "dirs": [], "files": 0, "initialized": False, "git": False, "home": "/"}})
+        self.assertIn("All offices", out["text"], "the Projects page links to the grid")
 
     # the inherited hub tests already run in test_hub; skip them here
     def test_interface_language_switch(self) -> None:
