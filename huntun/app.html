@@ -1120,8 +1120,12 @@ function makeOffice(wid) {
   const laptopBack = (x, w) => {                                           // occupant beyond it: a sliver of the base shows above the closed side of the lid
     Q(x - 2, 4, w + 4, 5, "#6d7484"); Q(x - 2, 4, w + 4, 1, "#8a92a3"); Q(x + 2, 5, w - 4, 2, "#4b5160");
     Q(x, 8, w, 24, "#4b5160"); Q(x + 1, 8, w - 2, 1, "#5f6675"); Q(x, 31, w, 1, "#3a3e4a"); Q(x + 2, 10, w - 4, 20, "#525a6a"); Q(x + w / 2 - 3, 18, 6, 5, "#9aa3b5"); Q(x + w / 2 - 1, 19, 2, 3, "#525a6a"); };
-  const toiletFront = () => { Q(16, 42, 32, 4, "#ffffff"); Q(18, 45, 28, 2, "#dde1e6"); Q(22, 47, 22, 8, "#e6e9ee"); Q(22, 54, 22, 1, "#c9ced6"); };                                   // the near rim and base, drawn over a seated occupant's legs
-  const toiletBowl = () => { Q(18, 20, 30, 24, "#ffffff"); Q(16, 22, 34, 20, "#ffffff"); Q(18, 22, 30, 20, "#eef0f3"); Q(20, 24, 26, 16, "#f7f8fa"); Q(24, 27, 18, 10, "#8fb8e0"); Q(26, 28, 14, 2, "#b6d3ee"); toiletFront(); };   // bowl facing the room, tank side on the right
+  const marble = (base, vein) => { Q(0, 0, 64, 64, base); [[4, 6, 18], [20, 7, 9], [30, 22, 14], [8, 36, 12], [40, 44, 18], [18, 54, 10], [46, 12, 12]].forEach(([x, y, w]) => { Q(x, y, w, 1, vein); Q(x + w, y + 1, Math.max(2, w >> 2), 1, vein); }); };
+  const walnutWall = () => { Q(0, 0, 64, 64, "#3b2414"); Q(0, 0, 56, 14, "#5a3820"); Q(0, 0, 56, 1, "#6e4628"); Q(0, 14, 56, 1, "#d4af37"); Q(0, 15, 56, 49, "#4a2e1a"); Q(0, 30, 56, 1, "#553520"); Q(0, 48, 56, 1, "#553520"); Q(0, 63, 56, 1, "#2a180c");
+    Q(56, 0, 8, 64, "#4a2e1a"); Q(55, 0, 1, 64, "#d4af37"); };                                        // a walnut stall wall seen from the room, gold trim along its top
+  const toiletFront = () => { Q(16, 42, 32, 4, "#ffffff"); Q(16, 42, 32, 1, "#f4f6f8"); Q(18, 45, 28, 2, "#e3e6ea"); Q(22, 47, 22, 8, "#f1f3f6"); Q(22, 47, 2, 8, "#ffffff"); Q(42, 47, 2, 8, "#d9dde2"); Q(22, 54, 22, 1, "#cfd4da"); Q(22, 55, 22, 1, "#d4af37"); };   // the near rim and base, drawn over a seated occupant's legs
+  const toiletBowl = () => { Q(18, 20, 30, 24, "#ffffff"); Q(16, 22, 34, 20, "#ffffff"); Q(16, 22, 1, 20, "#dde1e6"); Q(18, 20, 30, 1, "#ffffff"); Q(18, 22, 30, 20, "#e8ebef"); Q(20, 24, 26, 16, "#f7f8fa"); Q(20, 24, 26, 1, "#ffffff");
+    Q(24, 27, 18, 10, "#8fc4e8"); Q(24, 27, 18, 1, "#6fa8d2"); Q(26, 28, 14, 2, "#c3e2f7"); Q(29, 33, 6, 1, "#b0d6f0"); Q(45, 24, 2, 4, "#d4af37"); Q(45, 36, 2, 4, "#d4af37"); toiletFront(); };   // bowl facing the room, tank side on the right, gold hinges
   const keyboard = (x, y) => { Q(x, y, 28, 8, C.keys); Q(x, y, 28, 1, "#d5d8e0"); Q(x, y + 7, 28, 1, "#8f95a3"); for (const yy of [y + 2, y + 5]) for (let xx = x + 2; xx < x + 26; xx += 3) Q(xx, yy, 2, 2, C.key); Q(x + 9, y + 5, 10, 2, "#a3a8b6"); };
   const mouse = (x, y) => { Q(x + 1, y, 6, 10, "#e6e8ee"); Q(x, y + 1, 8, 8, "#e6e8ee"); Q(x + 4, y + 1, 1, 4, "#b0b4c0"); Q(x + 3, y + 2, 2, 2, "#8f95a3"); Q(x + 1, y + 9, 6, 1, "#c4c7cf"); };
   const mug = (x, y) => { Q(x + 1, y, 10, 14, "#ffffff"); Q(x, y + 1, 12, 12, "#ffffff"); Q(x + 11, y + 4, 4, 6, "#ffffff"); Q(x + 12, y + 5, 2, 4, C.deskTop); Q(x + 2, y + 1, 8, 2, "#7a4b2a"); Q(x + 3, y + 1, 2, 1, "#a06a3f"); Q(x + 1, y + 4, 1, 8, "#f5f5f5"); Q(x + 1, y + 12, 10, 1, "#dcdcdc"); Q(x + 4, y + 6, 4, 4, "#d84c4c"); };
@@ -1177,12 +1181,26 @@ function makeOffice(wid) {
     _shelf: () => { Q(4, 0, 56, 60, C.bedFrame); Q(4, 0, 56, 2, "#a97a4e"); Q(8, 4, 48, 24, "#8a5c33"); Q(8, 32, 48, 24, "#8a5c33"); Q(8, 28, 48, 4, "#c58a4a"); Q(8, 56, 48, 4, "#c58a4a"); Q(8, 28, 48, 1, "#d9a262"); Q(8, 56, 48, 1, "#d9a262");
                    [[["#d84c4c", 6, 20], ["#3a6fd8", 5, 22], ["#e6c15a", 7, 18], ["#3aa35b", 5, 21], ["#f0f0f0", 6, 19], ["#8e44ad", 6, 22], ["#e67e22", 5, 20]], [["#3a6fd8", 6, 21], ["#f0f0f0", 5, 19], ["#d84c4c", 7, 22], ["#e6c15a", 5, 18], ["#3aa35b", 6, 21], ["#e67e22", 5, 20], ["#8e44ad", 4, 17]]].forEach((books, i) => {
                      const base = i ? 56 : 28; let x = 10; books.forEach(([col, w, h]) => { Q(x, base - h, w, h, col); Q(x + w - 1, base - h, 1, h, tint(col, -0.3)); Q(x + 1, base - h + 3, w - 2, 1, "#f7f7f7"); Q(x + 1, base - h + 6, w - 2, 1, "#f7f7f7"); x += w + 1; }); }); },
-    toilet: () => { Q(0, 0, 64, 64, "#dfe3e8"); for (let i = 16; i < 64; i += 16) { Q(i, 0, 1, 64, "#c9ced6"); Q(0, i, 64, 1, "#c9ced6"); } Q(1, 1, 1, 1, "#eef1f4");
-                    Q(0, 0, 64, 8, "#5f6878"); Q(0, 0, 64, 2, "#8e97a6"); Q(0, 7, 64, 1, "#3f4652"); Q(0, 56, 64, 8, "#5f6878"); Q(0, 56, 64, 2, "#8e97a6"); Q(0, 63, 64, 1, "#3f4652");   // stall partitions above and below
-                    Q(0, 8, 2, 48, "#f4f6f8");
-                    Q(14, 9, 8, 8, "#ffffff"); Q(15, 8, 6, 1, "#f0f0f0"); Q(17, 12, 2, 2, "#c8ccd4"); Q(14, 17, 8, 6, "#f4f4f4");                                                    // paper roll hanging from the partition
-                    Q(48, 14, 12, 34, "#f4f6f8"); Q(46, 12, 14, 4, "#e6e9ee"); Q(46, 12, 14, 1, "#ffffff"); Q(47, 16, 1, 32, "#c9ced6"); Q(50, 20, 3, 5, "#9aa3b5");                     // tank against the wall, lid on top
+    toilet: () => { marble("#f5f1ea", "#e0d8cb"); Q(0, 0, 56, 3, "rgba(60,40,20,.22)"); Q(0, 61, 56, 3, "rgba(60,40,20,.12)");                                   // a marble stall between walnut walls
+                    Q(56, 0, 8, 64, "#4a2e1a"); Q(57, 0, 1, 64, "#6b4428"); Q(55, 0, 1, 64, "#d4af37"); Q(58, 10, 4, 44, "#553520");                                   // the walnut back wall, gold trim
+                    Q(6, 5, 12, 2, "#d4af37"); Q(7, 7, 10, 9, "#ffffff"); Q(7, 7, 10, 1, "#f0f0f0"); Q(11, 10, 2, 2, "#dcdcdc"); Q(7, 15, 10, 4, "#fafafa"); Q(7, 18, 10, 1, "#e6e6e6");   // gold paper holder and roll
+                    Q(44, 12, 12, 34, "#ffffff"); Q(44, 12, 2, 34, "#f2f4f6"); Q(54, 12, 2, 34, "#e1e5ea"); Q(42, 9, 15, 4, "#fafafa"); Q(42, 9, 15, 1, "#ffffff"); Q(42, 12, 15, 1, "#d9dde2");   // the tank, its lid
+                    Q(47, 21, 7, 6, "#b8952e"); Q(48, 22, 2, 3, "#f5d76e"); Q(51, 22, 2, 3, "#f5d76e");                                                                // dual-flush plate
+                    Q(46, 3, 7, 6, "#f4f4f4"); Q(46, 3, 7, 1, "#ffffff"); Q(49, -4, 1, 7, "#3d8a4c"); Q(46, -6, 4, 3, "#ff9fd0"); Q(50, -8, 4, 3, "#ff8fc8"); Q(47, -5, 1, 1, "#ffe27a"); Q(51, -7, 1, 1, "#ffe27a");   // an orchid on the lid
                     toiletBowl(); },
+    stallPanel: () => { walnutWall();                                                   // the wall at the head of a stall: its timer screen, the alarm light on top
+                    Q(6, 1, 44, 17, "#b8952e"); Q(6, 1, 44, 1, "#f5d76e"); Q(6, 17, 44, 1, "#8a6d1f"); Q(8, 3, 40, 13, "#0a0a0c"); Q(8, 3, 40, 1, "#26262c");          // high on the wall: the occupant's head covers the lower half
+                    Q(55, 9, 8, 3, "#6b6b73"); Q(55, 9, 8, 1, "#9a9aa3"); Q(55, 1, 8, 8, "#5a0a0e"); Q(56, 2, 6, 2, "#6e1216"); Q(56, 2, 2, 2, "#9a3a3e");            // the alarm light on its bracket
+                    Q(2, 26, 2, 10, "#d4af37"); Q(1, 25, 4, 2, "#f5d76e"); },
+    stallEnd: () => { walnutWall(); Q(16, 22, 32, 20, "#d4af37"); Q(16, 22, 32, 1, "#f5d76e"); Q(18, 24, 28, 16, "#1f1a12");                                   // a gold WC plaque
+                    Q(22, 26, 4, 4, "#d4af37"); Q(21, 31, 6, 7, "#d4af37"); Q(31, 25, 1, 14, "#8a6d1f"); Q(38, 26, 4, 4, "#d4af37"); Q(37, 31, 6, 3, "#d4af37"); Q(36, 34, 8, 4, "#d4af37"); },
+    vanity: () => { Q(56, 0, 8, 64, "#4a2e1a"); Q(55, 0, 1, 64, "#d4af37"); Q(57, 8, 6, 40, "#b9d7ea"); Q(57, 8, 6, 1, "#e8f4fb"); Q(56, 8, 1, 40, "#d4af37");        // the mirror on the wall
+                    Q(18, 2, 38, 60, "#efe9df"); Q(18, 2, 1, 60, "#d4af37"); Q(18, 61, 38, 1, "#cdb77a"); Q(24, 12, 14, 1, "#d9d0c1"); Q(30, 50, 16, 1, "#d9d0c1");          // a marble counter
+                    Q(26, 18, 22, 26, "#ffffff"); Q(28, 20, 18, 22, "#dfe7ee"); Q(28, 20, 18, 1, "#c5d0da"); Q(36, 30, 2, 2, "#9aa3ad");                              // the basin
+                    Q(46, 29, 10, 3, "#d4af37"); Q(45, 28, 2, 5, "#f5d76e"); Q(50, 25, 3, 2, "#f5d76e"); Q(50, 35, 3, 2, "#f5d76e");                                   // gold tap and handles
+                    Q(49, 6, 5, 8, "#d4af37"); Q(50, 4, 3, 2, "#f5d76e"); Q(22, 48, 14, 9, "#ffffff"); Q(22, 51, 14, 1, "#e6e6e6"); Q(22, 54, 14, 1, "#e6e6e6");         // soap, folded towels
+                    Q(42, 50, 7, 7, "#ffffff"); Q(45, 42, 1, 8, "#3d8a4c"); Q(42, 40, 4, 3, "#ff9fd0"); Q(46, 38, 4, 3, "#ff8fc8"); },
+
     door: () => { Q(0, 0, 64, 64, "#4a2f16"); Q(4, 0, 56, 64, C.door); Q(4, 0, 56, 1, "#9a6a3a"); Q(4, 0, 1, 64, "#9a6a3a"); Q(59, 0, 1, 64, "#4a2f16"); Q(10, 6, 44, 22, "#6a4327"); Q(12, 8, 40, 18, C.doorPanel); Q(12, 8, 40, 1, "#c3946a"); Q(10, 34, 44, 24, "#6a4327"); Q(12, 36, 40, 20, C.doorPanel); Q(12, 36, 40, 1, "#c3946a"); Q(46, 30, 8, 4, "#5c3a1c"); Q(47, 29, 6, 5, C.knob); Q(48, 30, 2, 1, "#fff0a0"); Q(4, 12, 3, 5, "#3a3a3a"); Q(4, 46, 3, 5, "#3a3a3a"); },
     mat: () => { Q(8, 40, 48, 24, C.matEdge); Q(12, 44, 40, 16, C.mat); for (let x = 16; x < 52; x += 8) Q(x, 48, 4, 8, "#7fa0e8"); Q(12, 44, 40, 1, "#7d9ce0"); Q(8, 62, 48, 2, "#4a6cae"); },
   };
@@ -1877,6 +1895,20 @@ function makeOffice(wid) {
     waterCooler: () => {                                                               // 饮水机: the bottle upside down on the cooler
       Q(18, 22, 28, 38, "#e8ecf0"); Q(18, 22, 28, 2, "#ffffff"); Q(18, 58, 28, 3, "#b9c0c9"); Q(24, 29, 4, 4, "#d84c4c"); Q(36, 29, 4, 4, "#3a6fd8"); Q(22, 37, 20, 3, "#9aa0aa"); Q(22, 44, 20, 12, "#dde1e6"); Q(22, 44, 20, 1, "#c9ced6");
       Q(20, -10, 24, 28, "#8fc6ef"); Q(22, -8, 6, 23, "#c3e4fb"); Q(20, -10, 24, 2, "#6fb0e0"); Q(20, 4, 24, 1, "#6fb0e0"); Q(27, 18, 10, 4, "#6fb0e0"); },
+    pantryFloor: () => { Q(0, 0, 32, 32, "#eadcc2"); Q(32, 32, 32, 32, "#eadcc2"); Q(32, 0, 32, 32, "#c98f5e"); Q(0, 32, 32, 32, "#c98f5e");   // café tiles, cream and terracotta
+      Q(0, 0, 32, 1, "#f5ecdb"); Q(32, 32, 32, 1, "#f5ecdb"); Q(32, 0, 32, 1, "#d9a57a"); Q(0, 32, 32, 1, "#d9a57a"); Q(31, 0, 1, 64, "#b07a4c"); Q(0, 31, 64, 1, "#b07a4c"); },
+    restroomFloor: () => { marble("#f2ece2", "#d9d0c1"); Q(0, 0, 64, 1, "#cdb77a"); Q(0, 0, 1, 64, "#cdb77a"); Q(0, 32, 64, 1, "#e2d6ba"); Q(32, 0, 1, 64, "#e2d6ba"); Q(0, 0, 3, 3, "#d4af37"); Q(31, 31, 3, 3, "#d4af37"); },   // marble, gold grout
+    pantryMicrowave: () => { counter();
+      Q(8, -2, 40, 22, "#e6e9ee"); Q(8, -2, 40, 2, "#f7f8fa"); Q(8, 19, 40, 1, "#b9c0c9"); Q(11, 1, 26, 15, "#2b2f3a"); Q(12, 2, 24, 13, "#3c4250"); Q(13, 3, 9, 2, "#5a6272"); Q(37, 3, 1, 11, "#9aa3b5");
+      Q(39, 1, 7, 15, "#c9ced6"); Q(40, 2, 5, 3, "#5cff8a"); Q(40, 7, 2, 2, "#9aa3b5"); Q(43, 7, 2, 2, "#9aa3b5"); Q(40, 10, 2, 2, "#9aa3b5"); Q(43, 10, 2, 2, "#d84c4c");
+      Q(50, 12, 12, 6, "#f2f2f2"); Q(51, 9, 4, 4, "#e0323c"); Q(55, 9, 4, 4, "#f2c14e"); Q(58, 10, 3, 3, "#3aa35b"); },                                      // and a fruit bowl
+    pantryFridge: () => { Q(6, -12, 52, 72, "#dfe3e8"); Q(6, -12, 52, 2, "#f5f7f9"); Q(6, -12, 2, 72, "#eef1f4"); Q(56, -12, 2, 72, "#c3c9d1"); Q(6, 16, 52, 2, "#b9c0c9");
+      Q(50, -6, 3, 16, "#9aa3b5"); Q(50, 22, 3, 28, "#9aa3b5"); Q(14, -4, 8, 8, "#ffd23f"); Q(26, 24, 10, 8, "#9fd3ff"); Q(14, 30, 7, 7, "#ff8fc8"); Q(28, 27, 6, 1, "#3a6fd8"); Q(10, 58, 6, 3, "#6b7280"); Q(48, 58, 6, 3, "#6b7280"); },
+    pantryMenu: () => { Q(6, 12, 52, 36, "#6b4428"); Q(6, 12, 52, 1, "#8a5c33"); Q(9, 15, 46, 30, "#1f2a24"); Q(13, 18, 22, 2, "#f5f0e6"); Q(13, 24, 28, 1, "#d8d2c4"); Q(13, 28, 24, 1, "#d8d2c4");
+      Q(13, 32, 30, 1, "#d8d2c4"); Q(13, 36, 20, 1, "#d8d2c4"); Q(13, 40, 26, 1, "#d8d2c4"); Q(44, 30, 7, 6, "#f5f0e6"); Q(51, 32, 2, 3, "#f5f0e6"); Q(46, 27, 1, 2, "#f5f0e6"); Q(48, 26, 1, 3, "#f5f0e6"); },   // the chalkboard menu
+    snackMachine: () => { Q(8, -10, 48, 70, "#c8161d"); Q(8, -10, 48, 2, "#e8414a"); Q(54, -10, 2, 70, "#8f0f15"); Q(12, -6, 30, 50, "#1f2a3a"); Q(12, -6, 30, 1, "#3c4a5c"); Q(14, -9, 20, 2, "#ffffff");
+      [["#f2c14e", "#3a6fd8", "#e0323c", "#3aa35b"], ["#8e5bd8", "#f2c14e", "#ff8fc8", "#f7f7f7"], ["#e67e22", "#3aa35b", "#3a6fd8", "#e0323c"]].forEach((row, r) => { row.forEach((col, k) => { Q(14 + k * 7, -3 + r * 14, 5, 9, col); Q(14 + k * 7, -3 + r * 14, 5, 1, "#ffffff"); }); Q(12, 7 + r * 14, 30, 1, "#9aa3b5"); });
+      Q(44, -6, 9, 30, "#2b2f3a"); for (let k = 0; k < 9; k++) Q(45 + (k % 3) * 3, -2 + Math.floor(k / 3) * 4, 2, 2, "#9aa3b5"); Q(46, 14, 5, 2, "#d4af37"); Q(12, 48, 30, 7, "#111111"); Q(12, 48, 30, 1, "#3a3a3a"); },   // snacks behind glass
     cafeTable: () => {                                                                 // a round standing table, two mugs and the sugar
       Q(18, 52, 28, 5, "#4a505c"); Q(29, 30, 6, 23, "#6b7280"); Q(30, 30, 2, 22, "#8b929c");
       Q(18, 12, 28, 22, "#d9d2c5"); Q(14, 16, 36, 14, "#d9d2c5"); Q(18, 12, 28, 20, "#e9e4da"); Q(14, 16, 36, 12, "#e9e4da"); Q(20, 12, 24, 2, "#ffffff");
@@ -2211,18 +2243,31 @@ function makeOffice(wid) {
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 5; y++) { put(mx - 2, y, "glassV"); put(mx + 3, y, "glassV"); } put(mx - 2, 6, "glassBL"); put(mx + 3, 6, "glassBR"); for (let x = mx - 1; x <= mx + 1; x++) put(x, 6, "glassH"); }   // the master's own office: thin glass partitions, door gap at the right
-    [[MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
-    TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
-    PRINTER = [1, 4]; PRINT_SPOT = [2, 4]; put(PRINTER[0], PRINTER[1], "printer");                 // the office printer against the left wall; the master prints the delivery report here
-    // the pantry (茶水间) in the top-left corner: cupboards on the wall, a counter with the coffee machine and the sink, a water
-    // cooler and a standing table. An agent resuming a cycle (its model reading the conversation back in) has a coffee here.
-    const pxMax = L.bossOffice ? mx - 3 : mx - 2;                                                   // clear of the master's desk (and glass office)
-    [[1, "pantryCabinetSign"], [2, "pantryCabinet"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 1, t); });
-    [[1, "pantryCoffee"], [2, "pantrySink"], [3, "waterCooler"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 2, t); });
-    if (pxMax >= 5) put(4, 4, "cafeTable");
+    [[MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
+    // the restroom against the right wall: two marble stalls entered from the left, walnut walls between them carrying each
+    // stall's timer and alarm light, a vanity below; marble floor in front of them
+    TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));
+    put(MW - 2, 3, "stallPanel"); put(MW - 2, 5, "stallPanel"); put(MW - 2, 7, "stallEnd"); put(MW - 2, 8, "vanity");
+    for (let y = 3; y <= 8; y++) for (const x of [MW - 3, MW - 2]) map[y][x][0] = "restroomFloor";
+    // the office printer along the bottom wall, in the first free spot from the left; the master prints the delivery report here
+    { const busy = new Set(); DESKS.forEach(d => { if (d) [d.desk, [d.desk[0] + 1, d.desk[1]], d.chair].forEach(([x, y]) => busy.add(key(x, y))); }); BEDS.forEach(([x, y]) => { busy.add(key(x, y)); busy.add(key(x, y + 1)); });
+      const free = (x, y) => x > 0 && y > 1 && x < MW - 1 && y < MH - 1 && !solid[y][x] && !busy.has(key(x, y));
+      PRINTER = null; const y = MH - 2;
+      for (let x = 1; x < MW - 2 && !PRINTER; x++) if (free(x, y)) { if (free(x + 1, y)) { PRINTER = [x, y]; PRINT_SPOT = [x + 1, y]; } else if (free(x, y - 1)) { PRINTER = [x, y]; PRINT_SPOT = [x, y - 1]; } }
+      if (!PRINTER) { PRINTER = [1, 4]; PRINT_SPOT = [2, 4]; }
+      put(PRINTER[0], PRINTER[1], "printer"); }
+    // the pantry (茶水间) in the top-left corner, five tiles square on a floor of its own: cupboards and the menu on the wall, a
+    // counter with the sink, the coffee machine and the microwave, the fridge, a water cooler and a snack machine against the
+    // left wall, and two tables. An agent resuming a cycle (its model reading the conversation back in) has a coffee here.
+    const pxMax = Math.min(5, L.bossOffice ? mx - 3 : mx - 2);                                     // clear of the master's desk (and glass office)
+    for (let y = 2; y <= 6; y++) for (let x = 1; x <= pxMax; x++) if (!solid[y][x]) map[y][x][0] = "pantryFloor";
+    [[1, "pantryCabinetSign"], [2, "pantryCabinet"], [3, "pantryCabinet"], [4, "pantryMenu"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 1, t); });
+    [[1, "pantrySink"], [2, "pantryCoffee"], [3, "pantryMicrowave"], [4, "pantryFridge"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 2, t); });
+    put(1, 4, "waterCooler"); put(1, 6, "snackMachine");
+    if (pxMax >= 5) { put(4, 4, "cafeTable"); put(3, 6, "cafeTable"); }
     QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
-    for (let x = THEME === "chinese_tech" ? 6 : 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
+    for (let x = 6; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
     // the pantry's standing spots, taken greedily in this order: one is kept only if every spot still has a way out that
@@ -2233,9 +2278,11 @@ function makeOffice(wid) {
       return spots.every(([x, y]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen.has(key(x + dx, y + dy))));
     };
     PANTRY_SPOTS = [];
-    for (const [x, y, dir, brew] of [[1, 3, "down", [1, 2]], [3, 3, "down", [3, 2]], [2, 3, "down", [2, 2]], [4, 3, "down"], [3, 4, "right"], [5, 4, "left"], [4, 5, "up"], [5, 3, "left"], [3, 5, "right"], [5, 5, "left"], [2, 5, "right"], [1, 5, "right"]]) {
+    for (const [x, y, dir, brew] of [[2, 3, "down", [2, 2]], [2, 4, "right", [1, 4]], [4, 3, "down"], [3, 4, "right"], [5, 4, "left"], [4, 5, "up"], [2, 6, "right"], [4, 6, "left"], [3, 5, "down"],
+                                     [1, 3, "down", [1, 2]], [3, 3, "down"], [5, 3, "left"], [5, 5, "left"], [5, 6, "left"], [2, 5, "right"], [1, 5, "right"]]) {
       if (x > pxMax || solid[y][x] || (x === PRINT_SPOT[0] && y === PRINT_SPOT[1]) || !pantryOut([...PANTRY_SPOTS.map(p => p.pos), [x, y]])) continue;
-      PANTRY_SPOTS.push({ pos: [x, y], dir, brew: brew && solid[brew[1]][brew[0]] ? brew.slice() : null });
+      const b = brew && solid[brew[1]][brew[0]] ? brew.slice() : null;               // where the cup is filled, and which way that faces
+      PANTRY_SPOTS.push({ pos: [x, y], dir, brew: b, brewDir: b ? (b[0] < x ? "left" : b[0] > x ? "right" : b[1] < y ? "up" : "down") : null });
     }
     if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
       const taken = new Set([key(DOOR[0] - 1, DOOR[1] + 1)]); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
@@ -3335,7 +3382,7 @@ function makeOffice(wid) {
     if (sp && sp.brew && since < BREW_MS) {                                       // at the counter: the cup fills under the machine, the cooler's tap or the sink's
       const tile = map[sp.brew[1]][sp.brew[0]].find(n => BREW[n]), b = tile && BREW[tile]; if (!b) return;
       const bx = sp.brew[0] * T, by = sp.brew[1] * T, ph = since / BREW_MS, level = Math.min(3, Math.floor(ph * 4));
-      ctx.fillStyle = c.pal.s; ctx.fillRect(x + 3, y + 13, 3, 5); ctx.fillRect(x + 26, y + 13, 3, 5);                       // both hands up at the counter
+      ctx.fillStyle = c.pal.s; if (c.dir === "up") { ctx.fillRect(x + 3, y + 13, 3, 5); ctx.fillRect(x + 26, y + 13, 3, 5); } else ctx.fillRect(c.dir === "left" ? x - 1 : x + 30, y + 18, 3, 3);   // hands at the counter, or one at the cooler
       ctx.fillStyle = mug; ctx.fillRect(bx + b.cup[0], by + b.cup[1], 5, 4); ctx.fillRect(bx + b.cup[0] + 5, by + b.cup[1] + 1, 1, 2);
       if (level) { ctx.fillStyle = b.liquid; ctx.fillRect(bx + b.cup[0] + 1, by + b.cup[1] + 4 - level, 3, level); }
       if (ph < 0.85 && Math.floor(t * 12) % 4) { ctx.fillStyle = b.liquid; ctx.fillRect(bx + b.from[0], by + b.from[1], 1, b.cup[1] - b.from[1] + 1); }
@@ -3374,7 +3421,33 @@ function makeOffice(wid) {
     ctx.fillStyle = "#8f5d34"; ctx.fillRect(cx - (w[2] >> 1), cy - 2 * h, w[2], h); if (s > 0.6) ctx.fillRect(cx, cy - 2 * h - 1, 1, 1);
     if (s > 0.5) { ctx.fillStyle = "#b07a44"; ctx.fillRect(cx - 2, cy, 1, 1); ctx.fillRect(cx - 1, cy - h, 1, 1); }
   }
+  // each stall's fixtures on the wall at its head: in the Chinese office an LED timer that runs while someone sits (dim 00:00 when
+  // empty) and an alarm light that flashes past fifteen seconds; elsewhere a vacant / occupied light
+  const LED = { 0: [7, 5, 5, 5, 7], 1: [2, 6, 2, 2, 7], 2: [7, 1, 7, 4, 7], 3: [7, 1, 7, 1, 7], 4: [5, 5, 7, 1, 1], 5: [7, 4, 7, 1, 7], 6: [7, 4, 7, 5, 7], 7: [7, 1, 1, 1, 1], 8: [7, 5, 7, 5, 7], 9: [7, 5, 7, 1, 7] };
+  function ledText(txt, x, y, on, off) {
+    for (const ch of txt) {
+      if (ch === ":") { ctx.fillStyle = on; ctx.fillRect(x, y + 1, 1, 1); ctx.fillRect(x, y + 3, 1, 1); x += 2; continue; }
+      for (let r = 0; r < 5; r++) for (let b = 0; b < 3; b++) { const lit = (LED[ch][r] >> (2 - b)) & 1; if (lit || (LED[8][r] >> (2 - b)) & 1) { ctx.fillStyle = lit ? on : off; ctx.fillRect(x + b, y + r, 1, 1); } }
+      x += 4;
+    }
+  }
+  function drawStallFixtures(t) {
+    const now = Date.now(), flash = Math.floor(t * 4) % 2 === 0;
+    TOILETS.forEach(([sx, sy], i) => {
+      const X = sx * T, Y = (sy - 1) * T, occ = Object.values(chars).find(o => o.toilet === i && o.satAt), sec = occ ? Math.floor((now - occ.satAt) / 1000) : 0;
+      if (!map[sy - 1] || !map[sy - 1][sx].includes("stallPanel")) return;
+      if (!zh()) { ctx.fillStyle = occ ? "#ff3b3b" : "#3fd46b"; ctx.fillRect(X + 6, Y + 3, 16, 3); ctx.fillStyle = occ ? "#ffb3b3" : "#b8f5c6"; ctx.fillRect(X + 7, Y + 3.5, 4, 1); return; }   // occupied / vacant
+      const alarm = occ && sec >= 15, txt = String(Math.min(99, Math.floor(sec / 60))).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+      if (alarm && flash) { ctx.fillStyle = "#3a0508"; ctx.fillRect(X + 4, Y + 1.5, 20, 6.5); }
+      ledText(txt, X + 5, Y + 2, occ ? (alarm && flash ? "#ffffff" : "#ff3b3b") : "#6b1a1e", "#1e0c0e");
+      if (alarm) {                                                                 // the alarm light on top: flashing, throwing light around
+        ctx.fillStyle = flash ? "#ff2a2a" : "#b01018"; ctx.fillRect(X + 27.5, Y + 0.5, 4, 4); ctx.fillStyle = flash ? "#ffd0d0" : "#ff6a6a"; ctx.fillRect(X + 28, Y + 1, 1.5, 1);
+        if (flash) { ctx.fillStyle = "rgba(255,42,42,.22)"; ctx.fillRect(X + 22, Y - 4, 13, 13); ctx.fillStyle = "rgba(255,90,90,.85)"; for (const [dx, dy, w, h] of [[24, 2, 2, 0.5], [24, -1.5, 1.5, 0.5], [29, -3, 0.5, 2], [24, 5.5, 1.5, 0.5], [33, 2, 1.5, 0.5]]) ctx.fillRect(X + dx, Y + dy, w, h); }
+      }
+    });
+  }
   function drawStalls(t) {
+    drawStallFixtures(t);
     const now = Date.now();
     for (const [i, fx] of Object.entries(stallFx)) {
       const s = TOILETS[i], age = now - fx.at; if (!s || age > FLUSH_AT + FLUSH_MS) { delete stallFx[i]; continue; }
@@ -3385,7 +3458,7 @@ function makeOffice(wid) {
         continue;
       }
       const ph = (age - FLUSH_AT) / FLUSH_MS, spin = ph * 18;
-      if (ph < 0.3) { ctx.fillStyle = "#6b7280"; ctx.fillRect(X + 24, Y + 11, 3, 1); ctx.fillStyle = "#c9ced6"; ctx.fillRect(X + 25, Y + 10, 1, 1); }   // the lever pressed down
+      if (ph < 0.3) { ctx.fillStyle = "#8a6d1f"; ctx.fillRect(X + 24, Y + 11, 1, 1.5); ctx.fillRect(X + 25.5, Y + 11, 1, 1.5); }   // both flush buttons pressed in
       ctx.fillStyle = "#8fb8e0"; ctx.fillRect(X + 12, Y + 14, 9, 4);
       const s2 = Math.max(0, 1 - ph * 1.8); if (s2 > 0.15) poop(X, Y + 1, s2, spin);
       for (let k = 0; k < 6; k++) { const a = spin + k * Math.PI / 3, r = 3.5 * (1 - ph * 0.4); ctx.fillStyle = k % 2 ? "#e3f2ff" : "#b6d3ee"; ctx.fillRect(Math.round(X + 16.5 + Math.cos(a) * r * 1.2), Math.round(Y + 16 + Math.sin(a) * r * 0.5), 2, 1); }
@@ -3405,7 +3478,7 @@ function makeOffice(wid) {
     const waiting = toiletQueue.filter(n => chars[n].toilet == null);
     if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
     if (printJob) for (const c of Object.values(chars)) if (c.mode === "print" && !c.moving && !c.steps.length && c.tx === PRINT_SPOT[0] && c.ty === PRINT_SPOT[1]) {
-      c.dir = "left";
+      c.dir = PRINT_SPOT[0] > PRINTER[0] ? "left" : "down";
       if (!printJob.startedAt) { printJob.startedAt = Date.now(); printJob.until = printJob.startedAt + PRINT_MS + 4000; c.say = fixed("Printing the delivery report…"); c.sayStart = performance.now(); c.sayUntil = printJob.startedAt + PRINT_MS; c.sayLoop = false; }
       else if (!printJob.done && Date.now() >= printJob.startedAt + PRINT_MS) { printJob.done = true; printed = { pages: PRINT_PAGES, title: printJob.title }; c.report = Date.now() + 25000; c.say = fixed("Delivered: {title}. The report is on the board.").replace("{title}", printJob.title || "the project"); c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
     }
@@ -3494,7 +3567,7 @@ function makeOffice(wid) {
     const boss = c.mode === "listen" && c.hold && chars[c.hold.face]; if (boss && !c.moving) c.dir = facing(c, boss);   // everyone looks at the boss
     const bed = BEDS[c.idx], napping = c.mode === "sleep" || c.mode === "doze" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
     if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir;
-      else if (c.mode === "coffee" && c.cupAt) { const sp = c.cup >= 0 ? PANTRY_SPOTS[c.cup] : null; c.dir = sp ? (sp.brew && Date.now() - c.cupAt < BREW_MS ? "up" : sp.dir) : DESKS[c.idx] ? DESKS[c.idx].dir : "down"; } }
+      else if (c.mode === "coffee" && c.cupAt) { const sp = c.cup >= 0 ? PANTRY_SPOTS[c.cup] : null; c.dir = sp ? (sp.brew && Date.now() - c.cupAt < BREW_MS ? sp.brewDir : sp.dir) : DESKS[c.idx] ? DESKS[c.idx].dir : "down"; } }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (c.mode === "strike" && c.strike && c.strike.act === "roll") {         // tantrum: rolling back and forth on the floor
       const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), ph = (Date.now() - c.strike.start) / 1000;
@@ -3612,7 +3685,7 @@ function makeOffice(wid) {
       if (c.carry === "bed" || c.carry === "both") { const by = c.carry === "both" ? cy - 14 : cy; ctx.fillStyle = C.bedFrame; ctx.fillRect(x + 1, by + bob, 30, 11); ctx.fillStyle = C.mattress; ctx.fillRect(x + 3, by + 1 + bob, 26, 8); ctx.fillStyle = C.blanket; ctx.fillRect(x + 12, by + 2 + bob, 16, 6); ctx.fillStyle = C.pillow; ctx.fillRect(x + 4, by + 2 + bob, 6, 6); }
     }
     if (c.mode === "print" && !c.moving && !c.steps.length && printJob && printJob.startedAt && !printJob.done) {   // a hand on the printer, tapping the panel now and then
-      const tap = Math.floor(t * 3 + c.idx) % 4 === 0; ctx.fillStyle = c.pal.s; ctx.fillRect(x - 3, y + 15 + (tap ? 1 : 0), 6, 3);
+      const tap = Math.floor(t * 3 + c.idx) % 4 === 0; ctx.fillStyle = c.pal.s; if (c.dir === "down") ctx.fillRect(x + 13, y + 44 + (tap ? 1 : 0), 6, 3); else ctx.fillRect(x - 3, y + 15 + (tap ? 1 : 0), 6, 3);
     }
     if (c.report > Date.now() && !c.hidden && !(c.mode === "work" && !c.moving && !c.steps.length)) {                 // the printed report in hand on the way back
       const fl2 = c.dir === "right", hx = c.dir === "down" ? x + 20 : fl2 ? x + 24 : x - 2;
@@ -3795,12 +3868,6 @@ function makeOffice(wid) {
     for (const [i, fx] of Object.entries(stallFx)) { const s = TOILETS[i], ph = (Date.now() - fx.at - FLUSH_AT) / FLUSH_MS; if (!s || ph < 0 || ph > 1) continue;   // the flush, spelled out
       ctx.font = "700 " + cssPx(10) + "px " + SANS; ctx.textAlign = "center"; ctx.globalAlpha = Math.max(0, 1 - ph * ph); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = cssPx(3);
       const txt = zh() ? "哗啦啦~" : "FLUSH~", ty = s[1] * T - 2 - Math.round(ph * 8); ctx.strokeText(txt, s[0] * T + 14, ty); ctx.fillStyle = "#2f6fd8"; ctx.fillText(txt, s[0] * T + 14, ty); ctx.globalAlpha = 1; }
-    if (THEMES[THEME].wechat) for (const c of order) if (c.toilet != null && c.satAt) {                     // the stall's stopwatch, running since they sat down
-      const [tx, ty] = TOILETS[c.toilet], sec = Math.floor((Date.now() - c.satAt) / 1000), txt = String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
-      const alarm = sec >= 15, flash = Math.floor(t * 4) % 2 === 0;                                                          // over fifteen seconds: the red alarm light comes on until they leave
-      ctx.font = "600 " + cssPx(9) + "px " + SANS; ctx.textAlign = "center"; ctx.fillStyle = alarm && flash ? "#7a0d12" : "#111111"; ctx.fillRect(tx * T - 2, ty * T - 12, 36, 11); ctx.fillStyle = alarm ? "#ffffff" : "#ff3b3b"; ctx.fillText(txt, tx * T + 16, ty * T - 3);
-      if (alarm) { ctx.fillStyle = "#5a5a60"; ctx.fillRect(tx * T + 24, ty * T - 16, 6, 4); ctx.fillStyle = flash ? "#ff2a2a" : "#7a0d12"; ctx.fillRect(tx * T + 23, ty * T - 22, 8, 6); if (flash) { ctx.fillStyle = "rgba(255,42,42,.25)"; ctx.fillRect(tx * T + 14, ty * T - 28, 26, 16); } }
-    }
     for (const c of order) if (!c.hidden) drawBubble(c, cssPx);
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
