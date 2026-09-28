@@ -181,11 +181,13 @@ Defaults for the 27B (`Q27_*` in `config.ps1` / `flash-next.env`):
 | Setting | Default | Why |
 |---|---|---|
 | `Q27_MODEL_SET` | `Q4_K_M` (16.8 GB) | `Q5_K_M` (19.5 GB) is closer to Q8 but leaves room for ~64K of context; Q8_0 (29 GB) does not fit in VRAM and would run at ~4-5 tok/s |
-| `Q27_PARALLEL`, `Q27_CTX_PER_SLOT`, `Q27_KV_UNIFIED` | 2, 65536, on | two sessions sharing a 128K pool |
-| `Q27_KV_TYPE` | `q4_0` | ~18 KB per token (16 of its 64 layers keep a cache); `q8_0` doubles it and does not fit 128K next to the weights and the desktop |
+| `Q27_PARALLEL`, `Q27_CTX_PER_SLOT`, `Q27_KV_UNIFIED` | 3, 65536, on | three sessions sharing a 192K pool, about what VRAM holds next to the weights and the desktop; each session costs little speed (two measured 43.5 tok/s each) |
+| `Q27_KV_TYPE` | `q4_0` | ~18 KB per token (16 of its 64 layers keep a cache); `q8_0` doubles it and does not fit 192K next to the weights and the desktop |
 | `Q27_MTP` | off | on drafts with the model's built-in multi-token-prediction head (`--spec-type draft-mtp`), reported +30-40% decode for one session; measure it with `bench.py --model qwen3.8-27b-uncensored` before keeping it |
 
-If the server log shows layers placed on the CPU when the 27B loads, VRAM is short: lower `Q27_CTX_PER_SLOT`.
+When the 27B loads, the server log should say `offloaded N/N layers to GPU` with both numbers equal (all layers on
+the GPU) and `n_slots = 3, n_ctx_slot = 196608`. Fewer layers on the GPU means VRAM is short: lower `Q27_CTX_PER_SLOT` (49152 gives
+3 x 48K) or `Q27_PARALLEL`.
 `bench.py --model qwen3.8-27b-uncensored` measures it (the router loads it for the run, and it stays loaded until a
 request names Flash-Next) and compares against the numbers above.
 

@@ -194,6 +194,9 @@ def main() -> int:
     if 2 in totals:
         print(f"  decode, 2 streams {totals[2]:7.1f} tok/s  plan {plan_total}   expected {expect['decode_total_2'][0]}-{expect['decode_total_2'][1]}  "
               f"-> {verdict(totals[2], *expect['decode_total_2'])}")
+    for n in sorted(totals):
+        if n > 2:                                                            # no expectation measured for more than two yet
+            print(f"  decode, {n} streams {totals[n]:7.1f} tok/s total ({totals[n] / n:.1f} per stream)")
     if deep and totals[1]:
         print(f"  long-context decode keeps {deep / totals[1] * 100:.0f}% of short-context speed")
     if not ok_messages:
