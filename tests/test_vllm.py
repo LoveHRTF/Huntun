@@ -197,7 +197,7 @@ class CycleTests(VllmTestCase):
         self.assertEqual(first["max_tokens"], 8192)                                    # a quarter of the 32k window, below HUNTUN_MAX_TOKENS
         names = {t["function"]["name"] for t in first["tools"]}
         self.assertTrue({"write_file", "run_command", "finish_cycle", "post_comment"} <= names)
-        self.assertNotIn("web_search", names)
+        self.assertTrue({"web_search", "web_fetch"} <= names, "Huntun's own web tools stand in for server-side ones")
         self.assertTrue(all(t["type"] == "function" and "parameters" in t["function"] for t in first["tools"]))
         assistant, tool1, tool2 = second["messages"][2:5]
         self.assertEqual(assistant["role"], "assistant")
@@ -397,12 +397,14 @@ class ModelChoiceTests(VllmTestCase):
         self.assertIn("qwen3", sent["properties"]["agents"]["items"]["properties"]["model"]["enum"])   # guided decoding may pick it
         self.assertNotIn("qwen3", PLAN_SCHEMA["properties"]["agents"]["items"]["properties"]["model"]["enum"])
 
-    def test_only_the_anthropic_api_promises_web_tools(self) -> None:
+    def test_compatible_providers_get_huntuns_own_web_tools(self) -> None:
         from huntun.roles import build_system_prompt
 
         dev = AgentSpec("dev-1", "backend", "Dev", "dev")
-        for b in ("deepseek", "ollama", "vllm"):
-            text = build_system_prompt(dev, self.config, [dev], b)
+        for b in ("deepseek", "ollama", "vllm", "llamacpp"):
+            self.assertIn("web_search / web_fetch for research", build_system_prompt(dev, self.config, [dev], b))
+            with mock.patch.dict(os.environ, {"HUNTUN_WEB_TOOLS": "off"}):
+                text = build_system_prompt(dev, self.config, [dev], b)
             self.assertNotIn("web_search", text)
             self.assertIn("no web search", text)
         self.assertIn("web_search", build_system_prompt(dev, self.config, [dev], "api"))

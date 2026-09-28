@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import web
 from .types import AgentSpec, HuntunConfig
 
 
@@ -122,7 +123,9 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
             "check_inbox, update_notes, list_agents, finish_cycle. Always commit with git_commit, never with git in the shell."
         )
     elif backend in ("deepseek", "ollama", "vllm", "llamacpp"):
-        file_tools = "- Use read_file / write_file / edit_file / list_files / search_files / run_command for the repository and shell. You have no web search or fetch tools."
+        file_tools = "- Use read_file / write_file / edit_file / list_files / search_files / run_command for the repository and shell" + (
+            ", and web_search / web_fetch for research (web_fetch also opens pages on this machine, such as an app you are running on localhost)."
+            if web.enabled() else ". You have no web search or fetch tools.")
     else:
         file_tools = "- Use read_file / write_file / edit_file / list_files / search_files / run_command for the repository and shell, and web_search / web_fetch for research."
     personality_section = ""

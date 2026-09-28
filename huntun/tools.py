@@ -1,6 +1,7 @@
 """Agent tools shared by both backends.
 
-The API backend exposes every tool here (plus server-side web search / fetch).
+The API backend exposes every tool here (plus server-side web search / fetch; providers without those, such as
+llama.cpp, Ollama, vLLM and DeepSeek, get Huntun's own web_search / web_fetch instead).
 The Claude Code backend exposes only the team tools (board, git, notes, cycle control) as an
 in-process MCP server and relies on Claude Code's built-in Read/Write/Edit/Bash/Grep/Glob/Web tools.
 """
@@ -14,6 +15,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from . import web
 from .config import now_iso
 from .gitops import GitError, commit, recent_log
 from .gitops import status as git_status
@@ -55,6 +57,7 @@ class ToolSpec:
     run: Callable[[dict[str, Any], ToolContext], Awaitable[str]]
     master_only: bool = False
     api_only: bool = False  # covered by Claude Code built-ins on the claude-code backend
+    web: bool = False       # Huntun's own web tools, for providers without web tools of their own
 
 
 def truncate(text: str, limit: int = MAX_TOOL_OUTPUT) -> str:
@@ -227,6 +230,14 @@ async def _run_command(a: dict[str, Any], ctx: ToolContext) -> str:
     out, code, timed_out = await sh(str(a["command"]), ctx.workspace, timeout)
     header = f"[timed out after {timeout}s]" if timed_out else f"[exit code {code}]"
     return truncate(f"{header}\n{out or '(no output)'}")
+
+
+async def _web_search(a: dict[str, Any], ctx: ToolContext) -> str:
+    return await web.search(str(a["query"]), int(a.get("max_results") or 8))
+
+
+async def _web_fetch(a: dict[str, Any], ctx: ToolContext) -> str:
+    return await web.fetch(str(a["url"]), start=int(a.get("start") or 0), max_chars=int(a.get("max_chars") or web.DEFAULT_CHARS), render=bool(a.get("render")))
 
 
 async def _git_status(a: dict[str, Any], ctx: ToolContext) -> str:
@@ -404,6 +415,15 @@ TOOLS: list[ToolSpec] = [
              _obj({"pattern": {"type": "string"}, "path": {"type": "string"}, "max_results": {"type": "integer"}}, ["pattern"]), _search_files, api_only=True),
     ToolSpec("run_command", "Run a shell command in the repository root (install dependencies, run tests, build, git log, etc). Non-interactive; output is captured. Default timeout 120s, max 600s. Never start long-lived servers without a timeout.",
              _obj({"command": {"type": "string"}, "timeout_sec": {"type": "integer"}}, ["command"]), _run_command, api_only=True),
+    ToolSpec("web_search", "Search the web. Returns titles, addresses and snippets; read a result with web_fetch.",
+             _obj({"query": {"type": "string"}, "max_results": {"type": "integer", "description": "1-20, default 8"}}, ["query"]), _web_search, web=True),
+    ToolSpec("web_fetch", "Read a web page (or JSON, text or PDF) as text with its links. Long documents come in parts: the result says which `start` "
+             "gives the next part. Also reads addresses on this machine and network, such as an app you are running on localhost.",
+             _obj({"url": {"type": "string", "description": "http:// or https:// address"},
+                   "start": {"type": "integer", "description": "character offset to continue from, default 0"},
+                   "max_chars": {"type": "integer", "description": f"characters to return, default {web.DEFAULT_CHARS}, at most {web.MAX_CHARS}"},
+                   "render": {"type": "boolean", "description": "run the page's JavaScript in a headless browser first (single-page apps); done automatically when a page looks empty without it"}},
+                  ["url"]), _web_fetch, web=True),
     ToolSpec("git_status", "Show uncommitted changes, the recent commit log, and the files you have touched since your last commit.", _obj({}), _git_status),
     ToolSpec("git_commit",
              "Commit your work. Stages `files` if given, otherwise the files you wrote/edited since your last commit (or all changes if none were tracked). Posts a short summary on the board (as a reply on `thread_id` when the work belongs to an existing discussion, otherwise as a new thread) and returns any new comments addressed to you: read them and decide whether to reply or act before continuing.",
@@ -485,6 +505,7 @@ def validate(schema: dict[str, Any], data: Any) -> str | None:
 
 
 MASTER_EXCLUDED = {"write_file", "edit_file", "git_commit"}  # the master leads; it does not build or commit
+WEB_BACKENDS = ("deepseek", "ollama", "vllm", "llamacpp")   # providers with no web tools of their own: they get web_search / web_fetch
 
 
 def _with_models(spec: ToolSpec, ids: list[str]) -> ToolSpec:
@@ -497,7 +518,8 @@ def _with_models(spec: ToolSpec, ids: list[str]) -> ToolSpec:
 
 def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
     is_master = ctx.agent.role == "master"
-    specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", "deepseek", "ollama", "vllm", "llamacpp") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)]
+    specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", *WEB_BACKENDS) or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)
+             and (not t.web or (backend in WEB_BACKENDS and web.enabled()))]
     if is_master:                                                                          # only the master's tools (hire, set model) name models
         ids = model_ids()
         specs = [_with_models(t, ids) for t in specs]

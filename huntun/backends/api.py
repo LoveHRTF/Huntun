@@ -39,10 +39,11 @@ LOCAL_PROVIDERS = ("ollama", "llamacpp")      # servers set up in the Model prov
 OPTIONAL_FIELDS = ("fallbacks", "output_config", "thinking", "cache_control", "tool_choice", "eager_input_streaming")   # dropped one by one on a 400
 
 
-def _tool_defs(ctx: ToolContext, compat: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    specs = available_tools(ctx, "api")
+def _tool_defs(ctx: ToolContext, provider: str = "api") -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The tools for one cycle: Anthropic's API searches and fetches server-side; compatible providers get Huntun's own web tools."""
+    specs = available_tools(ctx, provider)
     defs: list[dict[str, Any]] = [{"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in specs]
-    if not compat:
+    if provider == "api":
         for d in defs:
             d["eager_input_streaming"] = True
         defs.append({"type": "web_search_20260209", "name": "web_search", "max_uses": 8})
@@ -229,7 +230,7 @@ class ApiBackend:
 
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle = ctx.memory, ctx.cycle
-        defs, by_name = _tool_defs(ctx, self.compat)
+        defs, by_name = _tool_defs(ctx, self.provider)
         usage = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0, "cost_usd": 0.0}
         effective_model = model or self._default_model()
 
