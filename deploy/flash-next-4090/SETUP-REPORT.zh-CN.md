@@ -385,10 +385,13 @@ Get-Content "$env:USERPROFILE\flash-next\server.log" -Tail 30 -Wait
 |---|---|---|---|
 | 生成，单会话 | 43.9 tok/s | 约 17 tok/s | 约 2.6 倍 |
 | 生成，双会话合计 | 83.3 tok/s（各 43.5） | 约 20 tok/s | 约 4 倍 |
-| 32K 深度生成 | 43.0 tok/s | 15–19 tok/s | |
+| 生成，三会话合计（工具包默认，共享 192K） | 108.7 tok/s（各 41.0） | | |
+| 32K / 128K 深度生成 | 43.0 / 33.1 tok/s | 15–19 / 16.7 tok/s | |
 | prefill，4K / 16K / 32K | 2763 / 2804 / 2632 t/s | 约 400 / 600 / 600 t/s | 约 4.5 倍 |
 
-`/v1/messages` 工具调用检查通过（模型先思考，再调用工具）。读 3 万 token 的提示词约 11 秒，Flash-Next 要约 50 秒。
+`/v1/messages` 工具调用检查通过（模型先思考，再调用工具）。读 3 万 token 的提示词约 11 秒，Flash-Next 要约 50 秒；
+读 13.1 万 token 约 69 秒。Q4_K_M 配 256K 共享上下文放不下：所有速度都慢了约 2.3 倍（有层被挪到了 CPU 上），所以工具包
+保持 192K；换成更小的 IQ4_XS 可以腾出 256K 的空间。
 
 1. `.\setup.ps1 download 27b`（从 `orcarouter/Qwen3.8-27B-Uncensored-GGUF` 下载约 17 GB）。
 2. `.\setup.ps1 restart` **[管理员]**。两个模型都下载好后，服务器会以 llama.cpp 的 **router 模式** 启动：地址、端口、

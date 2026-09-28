@@ -403,11 +403,13 @@ lower level of capability (Artificial Analysis index 34 vs 40). Measured on this
 |---|---|---|---|
 | Decode, 1 session | 43.9 tok/s | ~17 tok/s | ~2.6× |
 | Decode, 2 sessions total | 83.3 tok/s (43.5 each) | ~20 tok/s | ~4× |
-| Decode at 32K depth | 43.0 tok/s | 15-19 tok/s | |
+| Decode, 3 sessions total (the kit's default, sharing 192K) | 108.7 tok/s (41.0 each) | | |
+| Decode at 32K / 128K depth | 43.0 / 33.1 tok/s | 15-19 / 16.7 tok/s | |
 | Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | ~400 / ~600 / ~600 t/s | ~4.5× |
 
 The `/v1/messages` tool check passes (the model thinks, then calls the tool). A 30,000-token prompt takes ~11 s instead
-of ~50 s.
+of ~50 s; a 131K prompt ~69 s. A 256K pool with Q4_K_M did not fit: everything ran ~2.3× slower (layers moved to the
+CPU), so the kit keeps 192K; the smaller IQ4_XS would leave room for 256K.
 
 1. `.\setup.ps1 download 27b` (~17 GB from `orcarouter/Qwen3.8-27B-Uncensored-GGUF`).
 2. `.\setup.ps1 restart` **[admin]**. With both models downloaded, the server starts as a llama.cpp **router**: same

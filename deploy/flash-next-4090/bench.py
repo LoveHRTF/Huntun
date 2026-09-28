@@ -29,9 +29,10 @@ WORDS = ("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo li
 # the N-gram table on NVMe (16.4-16.9 / 20.2-20.6 tok/s decode, 629-632 t/s prefill); a few percent either way is noise.
 PLAN = {"decode_total_2": 60.0, "prefill": 4000.0}
 EXPECT = {"decode_1": (15, 20), "decode_total_2": (18, 25), "prefill": (550, 800)}
-# Qwen3.8-27B Q4_K_M sits entirely in VRAM. Measured on this box (Windows 11, no MTP): 43.9 tok/s for one stream,
-# 83.3 total for two (a dense model nearly doubles), 2,632-2,804 t/s prefill, 43.0 tok/s at 32K depth.
-EXPECT_27B = {"decode_1": (40, 50), "decode_total_2": (75, 95), "prefill": (2400, 3100)}
+# Qwen3.8-27B Q4_K_M sits entirely in VRAM. Measured on this box (Windows 11, no MTP, 3 sessions sharing 192K): 39-44
+# tok/s for one stream, 83.3-83.6 total for two, 108.7 for three (41.0 each), 2,632-2,832 t/s prefill, 43.0 tok/s at 32K
+# depth and 33.1 at 128K. Everything ~2.3x slower means VRAM ran short and layers went to the CPU (see the README).
+EXPECT_27B = {"decode_1": (37, 50), "decode_total_2": (75, 95), "decode_total_3": (100, 125), "prefill": (2400, 3100)}
 MODEL = ""  # every request names it: a router serving several models routes on it, a single-model server ignores it
 
 
@@ -195,8 +196,10 @@ def main() -> int:
         print(f"  decode, 2 streams {totals[2]:7.1f} tok/s  plan {plan_total}   expected {expect['decode_total_2'][0]}-{expect['decode_total_2'][1]}  "
               f"-> {verdict(totals[2], *expect['decode_total_2'])}")
     for n in sorted(totals):
-        if n > 2:                                                            # no expectation measured for more than two yet
-            print(f"  decode, {n} streams {totals[n]:7.1f} tok/s total ({totals[n] / n:.1f} per stream)")
+        if n > 2:
+            want = expect.get(f"decode_total_{n}")
+            print(f"  decode, {n} streams {totals[n]:7.1f} tok/s total ({totals[n] / n:.1f} per stream)"
+                  + (f"   expected {want[0]}-{want[1]}  -> {verdict(totals[n], *want)}" if want else ""))
     if deep and totals[1]:
         print(f"  long-context decode keeps {deep / totals[1] * 100:.0f}% of short-context speed")
     if not ok_messages:

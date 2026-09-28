@@ -153,8 +153,10 @@ where turnaround matters; Flash-Next suits the harder ones. Measured on this box
 |---|---|---|
 | Decode, 1 session | 43.9 tok/s | ~17 tok/s |
 | Decode, 2 sessions total | 83.3 tok/s (43.5 each) | ~20 tok/s |
-| Decode at 32K depth | 43.0 tok/s | 15-19 tok/s |
+| Decode, 3 sessions total | 108.7 tok/s (41.0 each) | |
+| Decode at 32K / 128K depth | 43.0 / 33.1 tok/s | 15-19 / 16.7 tok/s |
 | Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | ~400 / ~600 / ~600 t/s |
+| Prefill, 131K prompt | 1,911 t/s (69 s) | ~500 t/s (4 minutes) |
 | `/v1/messages` tool call | passes (thinking + tool_use) | passes |
 
 ```powershell
@@ -188,6 +190,11 @@ Defaults for the 27B (`Q27_*` in `config.ps1` / `flash-next.env`):
 When the 27B loads, the server log should say `offloaded N/N layers to GPU` with both numbers equal (all layers on
 the GPU) and `n_slots = 3, n_ctx_slot = 196608`. Fewer layers on the GPU means VRAM is short: lower `Q27_CTX_PER_SLOT` (49152 gives
 3 x 48K) or `Q27_PARALLEL`.
+
+Tried and not worth it: a 256K pool (`Q27_CTX_PER_SLOT = 87296`, 3 x 87,296) with Q4_K_M. Everything ran ~2.3x slower,
+short prompts included (17.7 tok/s for one session, 47.7 total for three, prefill 1,766 t/s at 4K): the cache no longer
+fits next to the weights and the desktop, so layers moved to the CPU. For 256K, use the 1.4 GB smaller IQ4_XS
+(`Q27_MODEL_SET = "IQ4_XS"`, then `download 27b`) and check the log as above.
 `bench.py --model qwen3.8-27b-uncensored` measures it (the router loads it for the run, and it stays loaded until a
 request names Flash-Next) and compares against the numbers above.
 
