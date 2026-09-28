@@ -61,6 +61,12 @@ cmd_check() {
   local mem_gb swap_kb swappiness
   mem_gb=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
   [[ "$mem_gb" -ge 60 ]] && ok "RAM: ${mem_gb} GB" || bad "RAM: ${mem_gb} GB (needs 64 GB)"
+  # Flash-Next's decode reads most of its experts from RAM each token, so it runs at the speed of the RAM
+  local mts
+  mts="$(sudo -n dmidecode -t memory 2>/dev/null | awk -F: '/Configured Memory Speed/ && $2 ~ /[0-9]/ {gsub(/[^0-9]/, "", $2); print $2; exit}' || true)"
+  if [[ -z "$mts" ]]; then warn "RAM speed unknown: sudo dmidecode -t memory | grep 'Configured Memory Speed' (2133 means XMP/DOCP is off)"
+  elif [[ "$mts" -lt 2933 ]]; then warn "RAM runs at $mts MT/s: XMP/DOCP is probably off. Enable it in the BIOS (DDR4 kits are usually rated 3200 or 3600); Flash-Next's decode speeds up with it"
+  else ok "RAM speed: $mts MT/s"; fi
   swap_kb=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
   [[ "$swap_kb" -gt 0 ]] && ok "swap: $(( swap_kb / 1024 / 1024 )) GB" || warn "no swap: add 8-16 GB so a memory spike does not trigger the OOM killer"
   swappiness=$(cat /proc/sys/vm/swappiness)

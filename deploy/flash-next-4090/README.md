@@ -63,7 +63,8 @@ Free RAM is therefore speed.
 ## Requirements
 
 - Windows 10/11 or Ubuntu 24.04 (headless Linux is fastest), NVIDIA driver installed (`nvidia-smi` works).
-- RTX 4090 on PCIe 4.0 x16, 64 GB RAM, 8-16 GB swap or page file.
+- RTX 4090 on PCIe 4.0 x16, 64 GB RAM running at its rated speed (XMP/DOCP on in the BIOS: DDR4 otherwise runs at
+  2133 MT/s, and Flash-Next's decode is bound by RAM bandwidth), 8-16 GB swap or page file.
 - About 100 GB free on an **NVMe** drive for the model and the llama.cpp build.
 
 ## Setup on Windows
@@ -226,6 +227,9 @@ network (`ALLOW_FROM`, default `LocalSubnet`) or to the machines that need it. T
 Settings; Huntun sends the key saved under Model providers (or `HUNTUN_LLAMACPP_KEY`). Never forward the port to the internet.
 
 ## Troubleshooting
+
+- **Flash-Next decodes slowly, the 27B is fine**: check the RAM speed (`setup.ps1 check`, or Task Manager > Performance
+  > Memory). 2133 MT/s means XMP/DOCP is off; the measurements in this README were taken like that, before it was found.
 
 - **Very slow prefill, fine decode**: the N-gram table is being read inefficiently. Check `./setup.sh check` says the
   model is on NVMe and that there is free RAM for the page cache; see llama.cpp issue #28355 for a related regression.

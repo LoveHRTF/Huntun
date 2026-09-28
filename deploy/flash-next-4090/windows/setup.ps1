@@ -62,6 +62,15 @@ function Invoke-Check {
 
     $ramGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
     if ($ramGb -ge 60) { Ok "RAM: $ramGb GB" } else { Bad "RAM: $ramGb GB (needs 64 GB)" }
+    try {
+        # Flash-Next's decode reads most of its experts from RAM each token, so it runs at the speed of the RAM
+        $sticks = @(Get-CimInstance Win32_PhysicalMemory)
+        $mts = ($sticks | Measure-Object ConfiguredClockSpeed -Minimum).Minimum
+        $parts = ($sticks | ForEach-Object { "$($_.PartNumber)".Trim() } | Select-Object -Unique) -join ", "
+        if (-not $mts) { Warn "RAM speed unknown; Task Manager > Performance > Memory shows it" }
+        elseif ($mts -lt 2933) { Warn "RAM runs at $mts MT/s ($($sticks.Count) modules: $parts): XMP/DOCP is probably off. Enable it in the BIOS (DDR4 kits are usually rated 3200 or 3600); Flash-Next's decode speeds up with it" }
+        else { Ok "RAM speed: $mts MT/s ($($sticks.Count) modules)" }
+    } catch { Warn "could not read the RAM speed; Task Manager > Performance > Memory shows it" }
     $pf = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue
     $pfGb = if ($pf) { [math]::Round(($pf | Measure-Object AllocatedBaseSize -Sum).Sum / 1024) } else { 0 }
     if ($pfGb -ge 16) { Ok "page file: $pfGb GB" }

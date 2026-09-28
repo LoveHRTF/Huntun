@@ -137,7 +137,8 @@ following section 5 today avoids them.
 ## 4. Results
 
 All figures come from the kit's `bench.py` on this box, in Windows with the desktop running. Decode is in tok/s;
-"deep" means one request with that much context already in place.
+"deep" means one request with that much context already in place. Found afterwards: the RAM was running at
+2133 MT/s, DDR4's default, because XMP/DOCP was off in the BIOS. Every Flash-Next figure here was measured like that.
 
 | Configuration | Prefill 4K / 16K / 32K (t/s) | Decode, 1 session | Decode, 2 sessions total | Decode deep |
 |---|---|---|---|---|
@@ -170,6 +171,9 @@ All figures come from the kit's `bench.py` on this box, in Windows with the desk
   more than two seats on it.
 
 **What would make it faster:**
+- **RAM at its rated speed (XMP/DOCP).** Decode reads most of the experts from RAM every token, so it is almost entirely
+  bound by RAM bandwidth. 2133 → 3200 MT/s is +50% bandwidth, 3600 +69%; estimated decode ~21–25 tok/s instead of
+  ~17 (not yet measured). Prefill gains less. The 27B, which sits in VRAM, is unaffected.
 - **128 GB RAM.** The N-gram table could then stay in memory. A 4090 with the table in RAM was reported at ~1,360 t/s
   prefill, about double. This is why the reference plan specifies 128 GB. Decode would barely change, since it is
   limited by DDR4.
@@ -192,7 +196,8 @@ marked **[admin]** need a PowerShell opened *as administrator*.
 
 - **System:** Windows 10/11 and an NVIDIA driver recent enough for CUDA 12.4 (`nvidia-smi` works).
 - **Disk:** about 100 GB free on an **NVMe** drive.
-- **Memory:** a page file of 8–16 GB is recommended; the box ran fine with 4 GB.
+- **Memory:** turn on XMP/DOCP in the BIOS so the RAM runs at its rated speed (Task Manager → Performance → Memory
+  shows it; 2133 MT/s means it is off). A page file of 8–16 GB is recommended; the box ran fine with 4 GB.
 - **Tools:** git, and Python 3.10 or newer (`winget install Python.Python.3.12`).
 - **Hugging Face access:** the model repo is gated.
   - Sign in at huggingface.co, open
