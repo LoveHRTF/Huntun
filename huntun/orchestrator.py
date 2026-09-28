@@ -489,6 +489,15 @@ class AgentRuntime:
         self._status("resuming" if kind == "resume" else "working", label)
         orch.log(self.name, f"cycle {self.memory.state.cycles + 1} ({kind}) started")
         self.memory.activity("cycle", f"Cycle {self.memory.state.cycles + 1} ({kind}) started")
+        if kind == "resume":
+            # "resuming" lasts while the model reads the saved conversation back in (minutes on a local model); its first
+            # thought, words or tool call means it is working again (the office sends it from the coffee back to its desk)
+            def back_at_work(k: str) -> None:
+                if k in ("thinking", "text", "tool"):
+                    self.memory.on_activity = None
+                    self._status("working", label)
+
+            self.memory.on_activity = back_at_work
         if prompt:
             self.memory.activity("prompt", prompt)
         if kind == "review":
@@ -497,15 +506,18 @@ class AgentRuntime:
             self.memory.save_state()
 
         backend = orch.backend_for(spec)
-        result = await backend.run_cycle(
-            ctx=ctx,
-            system=build_system_prompt(spec, cfg, orch.team, orch.backend_name_for(spec)),
-            prompt=prompt,
-            model=spec.model or cfg.model,
-            effort=spec.effort or (cfg.lead_effort if self.lead else cfg.worker_effort),
-            should_stop=lambda: not orch.running() or self.current().status == "retired",
-            log=lambda line: orch.log(self.name, line),
-        )
+        try:
+            result = await backend.run_cycle(
+                ctx=ctx,
+                system=build_system_prompt(spec, cfg, orch.team, orch.backend_name_for(spec)),
+                prompt=prompt,
+                model=spec.model or cfg.model,
+                effort=spec.effort or (cfg.lead_effort if self.lead else cfg.worker_effort),
+                should_stop=lambda: not orch.running() or self.current().status == "retired",
+                log=lambda line: orch.log(self.name, line),
+            )
+        finally:
+            self.memory.on_activity = None
 
         usage = " ".join(f"{k}={v:g}" for k, v in result.usage.items())
         totals = self.memory.state.usage_totals

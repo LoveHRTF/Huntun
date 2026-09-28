@@ -136,6 +136,37 @@ class OrchestratorTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def test_a_resumed_cycle_is_working_again_at_its_first_thought(self) -> None:
+        """"resuming" lasts while the model reads the saved conversation back in; the office has those agents on a coffee break."""
+        import os
+
+        from huntun.orchestrator import AgentRuntime
+        from huntun.types import CycleResult
+
+        os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        orch = Orchestrator(self.ws)
+        spec = next(a for a in orch.team if a.name == "backend-1")
+        seen: list[str] = []
+
+        class Fake:
+            async def run_cycle(self, *, ctx, **kw):  # noqa: ANN001, ANN003
+                status = lambda: orch.store.agent_statuses()["backend-1"]["status"]  # noqa: E731
+                seen.append(status())
+                ctx.memory.activity("cycle", "compacted")                            # not the model yet
+                seen.append(status())
+                ctx.memory.activity("thinking", "where was I")
+                seen.append(status())
+                ctx.memory.activity("tool", "git_status")
+                return CycleResult("finished", "ok", "next", None, {}, None)
+
+        orch.backend_for = lambda _spec: Fake()  # type: ignore[method-assign]
+        rt = AgentRuntime(orch, spec)
+        rt.memory.save_transcript([{"role": "user", "content": "go"}])
+        asyncio.run(rt._run_one("resume"))
+        self.assertEqual(seen, ["resuming", "resuming", "working"])
+        self.assertIsNone(rt.memory.on_activity, "the watch ends with the cycle")
+        orch.store.close()
+
     def test_team_runs_end_to_end(self) -> None:
         import os
 

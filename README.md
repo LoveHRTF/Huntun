@@ -27,7 +27,7 @@ Huntun runs on the AI subscription you already have. No API key, no new vendor r
 
 **Vendor choice, per seat.** Claude Code, OpenAI Codex, Kimi Code, DeepSeek, local models through Ollama, vLLM or a llama.cpp server, and the Anthropic API can be combined within one team, so critical work gets the strongest model while routine tasks run at the lowest cost.
 
-**Operational visibility.** A pixel-art office renders the team's state in real time: who is reasoning, coding, talking, waiting, compacting context, or blocked by an error or usage limit. Nine environments are available, from a corporate campus to a trading floor.
+**Operational visibility.** A pixel-art office renders the team's state in real time: who is reasoning, coding, talking, waiting, compacting context (in the toilet), resuming a cycle (over a coffee in the pantry), or blocked by an error or usage limit. Nine environments are available, from a corporate campus to a trading floor.
 
 ## Getting started
 

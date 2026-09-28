@@ -1762,7 +1762,14 @@ function makeOffice(wid) {
   const MEDIC_LINES = ["Stay with me!", "Clear!", "Charging… 200!", "Come on, breathe!", "Pulse is back… keep going!", "One, two, three, four…"], CN_MEDIC = ["别睡！撑住！", "让开！电击！", "充电……200！", "快，呼吸！", "有脉搏了……继续！", "一、二、三、四……"];
   // in the Chinese office every random line comes from the Chinese sets
   const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
-  const LINES = (name) => zh() ? ({ SLOGANS: CN_LIMIT, PAUSE_SLOGANS: CN_PAUSE, TANTRUMS: CN_TANTRUMS, NOTHING_TO_DO: CN_NOTHING, GOODBYES: CN_GOODBYES, HELLOS: CN_HELLOS, ANNOYED: CN_ANNOYED })[name] : ({ SLOGANS, PAUSE_SLOGANS, TANTRUMS, NOTHING_TO_DO, GOODBYES, HELLOS, ANNOYED })[name];
+  const COFFEE = ["Coffee first, then I pick up where I left off.", "Reloading my context, one sip at a time.", "Where was I? Let me think about it over a coffee.", "Warming up the cache. And my hands.",
+    "Espresso loads faster than my conversation does.", "Just catching up on what I was doing.", "Rehydrating the prompt. And myself.", "Give me a minute, rereading my own notes in my head.",
+    "Resuming… the coffee machine is quicker than me.", "A cup while my memory comes back.", "Brewing coffee, restoring state.", "Prefill in progress. Caffeine too."];
+  const CN_COFFEE = ["先来杯咖啡，马上接着干。", "上下文加载中，咖啡先续上。", "刚才干到哪了？喝口咖啡想想。", "喝口咖啡，把脑子里的缓存重新预热一下。", "茶水间充个电，马上回来。", "刚才那段代码我得先想起来。",
+    "续杯中……上下文也在续。", "摸鱼？不，这叫预热。", "咖啡机都比我的上下文加载快。", "等我把刚才的思路捡回来。", "喝完这杯就回工位，真的。", "预填充中，顺便补点咖啡因。"];
+  const BACK_TO_DESK = ["Right, I remember now. Back to it!", "Got it. To the desk!", "Context loaded. Let's go.", "Okay, where's my keyboard?"];
+  const CN_BACK_TO_DESK = ["想起来了，回去干活！", "好，上下文齐了，开干！", "咖啡喝完，回工位！", "走，干活去！"];
+  const LINES = (name) => zh() ? ({ SLOGANS: CN_LIMIT, PAUSE_SLOGANS: CN_PAUSE, TANTRUMS: CN_TANTRUMS, NOTHING_TO_DO: CN_NOTHING, GOODBYES: CN_GOODBYES, HELLOS: CN_HELLOS, ANNOYED: CN_ANNOYED, COFFEE: CN_COFFEE, BACK_TO_DESK: CN_BACK_TO_DESK })[name] : ({ SLOGANS, PAUSE_SLOGANS, TANTRUMS, NOTHING_TO_DO, GOODBYES, HELLOS, ANNOYED, COFFEE, BACK_TO_DESK })[name];
   const fixed = (text) => zh() && CN_FIXED[text] ? CN_FIXED[text] : text;
   THEMES.chinese_tech = { label: "Chinese tech", layout: { connected: true, bedsAtDesk: true, bossOffice: true, tallWall: true }, wechat: true,
     colors: { deskTop: "#dfe3e8", deskHi: "#eef1f4", deskEdge: "#a9b0ba", leg: "#8a919b", wall: "#f0f0ee", wallTrim: "#d9d9d6", wallPanel: "#e4e4e0", base: "#b9b9b4", baseLine: "#8f8f8a", wallTop: "#5a5a56", wallTopHi: "#767672", chair: "#2b2b2b", chairDark: "#1c1c1c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", bedFrame: "#8f8f8a", blanket: "#3a6fd8", blanketHi: "#4d80e8", pot: "#b8202a", potRim: "#d9303a" },
@@ -1794,6 +1801,29 @@ function makeOffice(wid) {
     glassV: () => glassStrip(true, 28, 0, 8, 64), glassH: () => glassStrip(false, 0, 28, 64, 8),
     glassBL: () => { glassStrip(true, 28, 0, 8, 36); glassStrip(false, 28, 28, 36, 8); }, glassBR: () => { glassStrip(true, 28, 0, 8, 36); glassStrip(false, 0, 28, 36, 8); },
     cctvPole: () => { CAMS.push([TX + 20, TY - 6], [TX + 6, TY + 2]); Q(30, 8, 4, 56, "#5f666f"); Q(28, 60, 8, 4, "#3f4348"); Q(12, 6, 40, 3, "#5f666f"); Q(12, -2, 22, 10, "#f7f7f7"); Q(10, 0, 4, 6, "#1b1d22"); Q(12, -2, 22, 2, "#d0d4da"); Q(34, 12, 22, 10, "#f7f7f7"); Q(56, 14, 4, 6, "#1b1d22"); Q(34, 12, 22, 2, "#d0d4da"); },
+  });
+  // ---- the pantry (茶水间): the same in every theme, like the printer and the toilets
+  const counter = () => { Q(0, 22, 64, 40, "#8a6a4a"); Q(0, 22, 64, 2, "#6b4f35"); Q(4, 28, 26, 30, "#9c7a56"); Q(34, 28, 26, 30, "#9c7a56"); Q(4, 28, 26, 1, "#b08c66"); Q(34, 28, 26, 1, "#b08c66");
+    Q(26, 40, 2, 5, "#e6c15a"); Q(36, 40, 2, 5, "#e6c15a"); Q(0, 58, 64, 4, "#5a4330"); Q(0, 8, 64, 16, "#e9e4da"); Q(0, 8, 64, 2, "#ffffff"); Q(0, 22, 64, 1, "#c9c1b3"); };
+  const cupboard = () => { Q(2, 14, 60, 30, "#9c7a56"); Q(2, 14, 60, 2, "#b08c66"); Q(2, 42, 60, 3, "#6b4f35"); Q(31, 16, 2, 26, "#6b4f35"); Q(27, 30, 2, 5, "#e6c15a"); Q(35, 30, 2, 5, "#e6c15a"); };
+  Object.assign(TILES, {
+    pantryCabinet: cupboard,
+    pantryCabinetSign: () => { cupboard(); Q(20, 0, 24, 12, "#3b2a1e"); Q(21, 1, 22, 10, "#fff7e6"); Q(26, 4, 9, 6, "#6b3a2a"); Q(35, 5, 3, 3, "#6b3a2a"); Q(27, 4, 7, 1, "#a8703f"); Q(28, 1, 1, 2, "#b9c0c9"); Q(31, 0, 1, 3, "#b9c0c9"); },   // a cup on the sign
+    pantryCoffee: () => { counter();                                                   // the espresso machine on the counter, mugs on a tray beside it
+      Q(6, -6, 30, 26, "#aab1bb"); Q(6, -6, 30, 3, "#d7dce2"); Q(6, 17, 30, 3, "#8e97a6"); Q(9, -2, 24, 6, "#2b2f3a"); Q(11, 0, 3, 2, "#5cff8a"); Q(16, 0, 3, 2, "#ffd23f"); Q(28, 0, 3, 2, "#9fd3ff");
+      Q(14, 7, 14, 4, "#3a3d44"); Q(19, 11, 4, 3, "#23262e"); Q(12, 19, 20, 3, "#5b6270"); Q(42, 12, 20, 8, "#c9c1b3");
+      Q(44, 7, 6, 7, "#f7f7f7"); Q(49, 9, 2, 3, "#f7f7f7"); Q(53, 7, 6, 7, "#e0323c"); Q(58, 9, 2, 3, "#e0323c"); Q(44, 7, 6, 1, "#dde1e6"); Q(53, 7, 6, 1, "#ff8a8a"); },
+    pantrySink: () => { counter();                                                     // the sink, its tap, and the kettle
+      Q(6, 10, 34, 12, "#8e97a6"); Q(8, 12, 30, 8, "#b8c0ca"); Q(8, 12, 30, 1, "#dfe3e8"); Q(22, 16, 2, 2, "#5b6270");
+      Q(21, -2, 4, 13, "#c9ced6"); Q(21, -2, 11, 3, "#c9ced6"); Q(29, -2, 3, 7, "#c9ced6"); Q(22, -1, 1, 11, "#eef1f4");
+      Q(44, -2, 14, 14, "#d84c4c"); Q(46, -4, 10, 3, "#b33a3a"); Q(57, 1, 3, 8, "#b33a3a"); Q(41, 1, 4, 3, "#b33a3a"); Q(45, 0, 3, 8, "#ef7a7a"); Q(43, 12, 16, 3, "#2b2f3a"); },
+    waterCooler: () => {                                                               // 饮水机: the bottle upside down on the cooler
+      Q(18, 22, 28, 38, "#e8ecf0"); Q(18, 22, 28, 2, "#ffffff"); Q(18, 58, 28, 3, "#b9c0c9"); Q(24, 29, 4, 4, "#d84c4c"); Q(36, 29, 4, 4, "#3a6fd8"); Q(22, 37, 20, 3, "#9aa0aa"); Q(22, 44, 20, 12, "#dde1e6"); Q(22, 44, 20, 1, "#c9ced6");
+      Q(20, -10, 24, 28, "#8fc6ef"); Q(22, -8, 6, 23, "#c3e4fb"); Q(20, -10, 24, 2, "#6fb0e0"); Q(20, 4, 24, 1, "#6fb0e0"); Q(27, 18, 10, 4, "#6fb0e0"); },
+    cafeTable: () => {                                                                 // a round standing table, two mugs and the sugar
+      Q(18, 52, 28, 5, "#4a505c"); Q(29, 30, 6, 23, "#6b7280"); Q(30, 30, 2, 22, "#8b929c");
+      Q(18, 12, 28, 22, "#d9d2c5"); Q(14, 16, 36, 14, "#d9d2c5"); Q(18, 12, 28, 20, "#e9e4da"); Q(14, 16, 36, 12, "#e9e4da"); Q(20, 12, 24, 2, "#ffffff");
+      Q(19, 17, 6, 6, "#f7f7f7"); Q(20, 18, 4, 2, "#6b3a2a"); Q(25, 19, 2, 3, "#f7f7f7"); Q(37, 21, 6, 6, "#f2c14e"); Q(38, 22, 4, 2, "#6b3a2a"); Q(29, 15, 5, 6, "#dfe3e8"); Q(29, 15, 5, 2, "#b9c0c9"); },
   });
   const ENV = {
     tech: { label: "Microsoft campus", colors: { deskTop: "#f2f3f5", deskHi: "#ffffff", deskEdge: "#c3c8d0", leg: "#9aa0aa", wall: "#eef1f4", wallTrim: "#d3d8de", wallPanel: "#e4e8ec", base: "#c3c8d0", baseLine: "#9aa0aa", wallTop: "#6b7280", wallTopHi: "#8b929c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", chair: "#2b2f3a", chairDark: "#1c1f27", bedFrame: "#4a5568", pot: "#8a5a2b", potRim: "#a97a4e" },
@@ -1896,7 +1926,7 @@ function makeOffice(wid) {
     transition = { theme: name, phase: "exit", t0: Date.now() };
     if (printJob) { printJob.startedAt = null; printJob.done = false; printJob.until = Date.now() + 120000; }
     for (const c of Object.values(chars)) if (c.medic || c.boss || c.leaving) delete chars[c.name]; medics = null; medicQueue = []; bossQueue = [];
-    for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.faceOverride = null; c.sayUntil = 0; c.hold = null; c.gear = null; c.zapping = false; c.zappedUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
+    for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.cup = null; c.cupAt = null; c.faceOverride = null; c.sayUntil = 0; c.hold = null; c.gear = null; c.zapping = false; c.zappedUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
     try { if (wid) localStorage.setItem("huntun.officeTheme." + wid, name); } catch (e) { /* no storage */ }
   }
   function transitionTick() {
@@ -2088,6 +2118,7 @@ function makeOffice(wid) {
   // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
   // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
   let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], PRINTER = [1, 4], PRINT_SPOT = [2, 4], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
+  let PANTRY_SPOTS = [];                            // the pantry's standing spots: { pos, dir (facing while sipping), brew (the counter tile in front, or null) }
   const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
   let teamRoles = [];
   let CAP = 0, baseMap = [], baseSolid = [], mxCol = 0, LAYOUT_THEME = "regular";
@@ -2123,18 +2154,37 @@ function makeOffice(wid) {
     for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
     if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
     if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 5; y++) { put(mx - 2, y, "glassV"); put(mx + 3, y, "glassV"); } put(mx - 2, 6, "glassBL"); put(mx + 3, 6, "glassBR"); for (let x = mx - 1; x <= mx + 1; x++) put(x, 6, "glassH"); }   // the master's own office: thin glass partitions, door gap at the right
-    [[1, 2], [MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
+    [[MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [1, MH - 2], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
     TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));      // stalls against the right wall, entered from the left
     PRINTER = [1, 4]; PRINT_SPOT = [2, 4]; put(PRINTER[0], PRINTER[1], "printer");                 // the office printer against the left wall; the master prints the delivery report here
+    // the pantry (茶水间) in the top-left corner: cupboards on the wall, a counter with the coffee machine and the sink, a water
+    // cooler and a standing table. An agent resuming a cycle (its model reading the conversation back in) has a coffee here.
+    const pxMax = L.bossOffice ? mx - 3 : mx - 2;                                                   // clear of the master's desk (and glass office)
+    [[1, "pantryCabinetSign"], [2, "pantryCabinet"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 1, t); });
+    [[1, "pantryCoffee"], [2, "pantrySink"], [3, "waterCooler"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 2, t); });
+    if (pxMax >= 5) put(4, 4, "cafeTable");
     QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
     DOOR = [MW - 4, 1];
     for (let x = THEME === "chinese_tech" ? 6 : 3; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
     map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
     if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
+    // the pantry's standing spots, taken greedily in this order: one is kept only if every spot still has a way out that
+    // passes no other spot, so a drinker called back to work never waits behind the others
+    const pantryOut = (spots) => {
+      const busy = new Set(spots.map(([x, y]) => key(x, y))), start = [DOOR[0], DOOR[1] + 1], seen = new Set([key(...start)]), q = [start];
+      while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || solid[ny][nx] || busy.has(key(nx, ny)) || seen.has(key(nx, ny))) continue; seen.add(key(nx, ny)); q.push([nx, ny]); } }
+      return spots.every(([x, y]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen.has(key(x + dx, y + dy))));
+    };
+    PANTRY_SPOTS = [];
+    for (const [x, y, dir, brew] of [[1, 3, "down", [1, 2]], [3, 3, "down", [3, 2]], [2, 3, "down", [2, 2]], [4, 3, "down"], [3, 4, "right"], [5, 4, "left"], [4, 5, "up"], [5, 3, "left"], [3, 5, "right"], [5, 5, "left"], [2, 5, "right"], [1, 5, "right"]]) {
+      if (x > pxMax || solid[y][x] || (x === PRINT_SPOT[0] && y === PRINT_SPOT[1]) || !pantryOut([...PANTRY_SPOTS.map(p => p.pos), [x, y]])) continue;
+      PANTRY_SPOTS.push({ pos: [x, y], dir, brew: brew && solid[brew[1]][brew[0]] ? brew.slice() : null });
+    }
     if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
       const taken = new Set([key(DOOR[0] - 1, DOOR[1] + 1)]); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
       BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); taken.add(key(PRINT_SPOT[0], PRINT_SPOT[1])); for (let k = 0; k < 6; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
-      const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); targets.push(PRINT_SPOT); for (let k = 0; k < 6; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]);
+      PANTRY_SPOTS.forEach(({ pos: [x, y] }) => taken.add(key(x, y)));
+      const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); targets.push(PRINT_SPOT); for (let k = 0; k < 6; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]); PANTRY_SPOTS.forEach(s => targets.push(s.pos));
       const allReachable = () => {                                                              // every chair, bunk, stall and spot must stay reachable from the door (a solid target counts if a neighbour is)
         const seen = new Set([key(DOOR[0], DOOR[1] + 1)]), q = [[DOOR[0], DOOR[1] + 1]];
         while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || solid[ny][nx] || seen.has(key(nx, ny))) continue; seen.add(key(nx, ny)); q.push([nx, ny]); } }
@@ -2149,7 +2199,7 @@ function makeOffice(wid) {
       for (let x = 1; x < MW - 1; x++) { map[1][x] = ["wallHigh"]; solid[1][x] = true; }
       MH += 1; H = MH * T; Y_MID += 1;
       const down = (pt) => { if (pt) pt[1] += 1; };
-      DESKS.forEach(d => { if (d) { down(d.desk); down(d.chair); } }); BEDS.forEach(down); TOILETS.forEach(down); QUEUE.forEach(down);
+      DESKS.forEach(d => { if (d) { down(d.desk); down(d.chair); } }); BEDS.forEach(down); TOILETS.forEach(down); QUEUE.forEach(down); PANTRY_SPOTS.forEach(sp => { down(sp.pos); down(sp.brew); });
       [FRONT, DOOR, PRINTER, PRINT_SPOT].forEach(down);
     }
     baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
@@ -2182,7 +2232,7 @@ function makeOffice(wid) {
   function ensureLayout(list) {
     const n = list.length, mi = list.findIndex(a => a && a.role === "master"), cap = capacityFor(n, mi);
     const sig = list.map(a => a ? a.role + (a.desk ? "d" : "") + (a.bed ? "b" : "") : "-").join(",");
-    if (cap > CAP || mi !== MASTER_IDX || builtFor < 0) { teamRoles = list.map(a => a && { role: a.role }); layout(cap, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; }); }
+    if (cap > CAP || mi !== MASTER_IDX || builtFor < 0) { teamRoles = list.map(a => a && { role: a.role }); layout(cap, mi); Object.values(chars).forEach(c => { c.steps = []; c.moving = false; c.cup = null; }); }
     else if (sig !== ensureLayout.sig) applyFurniture();
     ensureLayout.sig = list.map(a => a ? a.role + (a.desk ? "d" : "") + (a.bed ? "b" : "") : "-").join(",");
   }
@@ -2324,6 +2374,8 @@ function makeOffice(wid) {
     done: ["That's more like it.", "Good. Carry on."],
     evict: ["You've been let go. Time to leave, now.", "Your badge is off. Out you go."],
     evicted: ["That's that.", "Next."],
+    hurried: ["That's more like it. Back to work!", "Flushed? Good. Desk, now."],
+    hurryLater: ["Fine. I'll be back.", "I'll do a round and come back for you."],
   };
   const CN_GUARD = {
     limit: ["{b}的额度用完了！全体停工，原地待命！", "嘟——！{b}额度见底，所有人把手从键盘上拿开！"],
@@ -2336,6 +2388,8 @@ function makeOffice(wid) {
     done: ["这还差不多。", "早这样不就完了。", "下次再睡直接上高压。"],
     evict: ["你已经被优化了，请立刻离开！", "手续都办完了，别在这儿闹！", "工牌都注销了，还赖着干嘛？走！", "再不走我可就不客气了！"],
     evicted: ["早这样不就完了。", "走好，不送。", "下一个。"],
+    hurried: ["这还差不多，赶紧回工位！", "早这样不就完了？干活去！", "冲干净了没有？回去干活！", "出来了就好，下次十五秒内解决！"],
+    hurryLater: ["行，你有种！我巡一圈再来！", "我先去看门，一会儿回来接着喊！", "别以为我走了就没事了，我还会回来的！"],
   };
   const CN_GUARD_CHAT = ["想当年我也是写代码的，996写到头发都快掉光了。后来老家拆迁，现在就图个清闲。", "家里八套房，房租都收不过来，来这儿当保安纯属体验生活。", "你们那个bug啊，我十年前就踩过了。",
     "别看我是保安，当年我也是全栈，前端后端运维一把抓。", "我那几套房的租客，交租比你们老板发工资还准时。", "年轻人少熬夜。你看我，拆迁以后头发都长回来了。", "当年我写的系统现在还在银行跑着呢，没人敢动。",
@@ -2348,6 +2402,57 @@ function makeOffice(wid) {
     "每个月1号就是我的发版日，收租，准时上线。", "我也想过创业，后来一算，收租的现金流比什么都稳。", "你们老板开会的时候，我在业主群里抢了三个红包。", "别看我整天站着，我的uptime比你们的服务器还高。",
     "我手机里的租客群，比你们的工作群热闹多了。", "当年我也是计算机系的高材生，现在是八套房专业户。", "我不怕裁员，我怕租客退租。", "闲着也是闲着，给你们看看门，顺便看看你们代码写得咋样。",
     "我当年加班的时候，这楼还是一片菜地，现在菜地的钱都在我兜里。", "你们的需求天天变，我的房租年年涨，这就叫稳定。"];
+  const CN_HURRY = ["里面的！十五秒了，拉完没有？", "秒表都红了，还蹲着呢？赶紧出来干活！", "喂喂喂，坑位不是工位，别在里面办公！", "拉快点！工位上的需求都排到下周了！", "我数到三，一——二——三——人呢？！", "压缩个上下文要这么久吗？快点！", "兄弟，你这是在拉屎还是在读论文？", "厕所不是休息室，拉完赶紧回工位！", "外面排队的都憋红脸了，快点！", "带薪拉屎也得有个限度！",
+    "拉完就冲，冲完就走，走了就干活！", "你在里面写代码呢？手机收起来！", "摄像头都拍着呢，别在里面刷短视频！", "再不出来我就把门卸了！", "老板问你人呢，我说你在厕所修仙！", "你这一坑下去，项目进度都跟着便秘了！", "压缩上下文是拉屎，不是冬眠！", "十五秒是规矩，你已经超时了！", "拉屎超时，绩效扣分，你自己看着办！", "用力！用力！公司不养闲人！",
+    "里面的朋友，你的KPI在外面哭呢！", "喇叭都给你准备好了，还不出来？", "马桶都被你坐热了，起来吧！", "出来！排期表上没有给你留拉屎的时间！", "你这是压缩上下文还是压缩人生？", "蹲这么久，腿不麻吗？赶紧出来！", "拉屎也要讲效率，一口气解决！", "我在门口站岗，你在里面站坑，公平吗？", "再蹲下去，你的工位就要被别人坐了！", "快点！末位淘汰可不看你拉得香不香！",
+    "厕所计时器已经报警了，听见没有？", "里面的，出来的时候记得冲水，别给下一个留惊喜！", "拉个屎还拉出加班费来了？", "同志，坑位资源紧张，请勿长期占用！", "你以为躲在厕所就能不开会？", "需求方都追到厕所门口了，你快点！", "上下文压缩完了没有？压缩完了就起来！", "你拉的不是屎，是公司的钱！", "这么慢？你肠道也在走审批流程吗？", "别在里面想架构了，出来画白板！",
+    "使点劲！狼性文化，连拉屎都要有冲劲！", "快拉快拉，老板十分钟后巡查！", "厕所是用来拉的，不是用来躲的！", "你已经在里面待了一个迭代了！", "再不出来，我就开喇叭念你的周报了！", "蹲坑超时，要写情况说明的啊！", "你的队友在工位等你合代码呢！", "厕所隔间不能当会议室，赶紧散会！", "出来吧，里面的信号又不好！", "快点儿，冲水声我都等半天了！",
+    "我这喇叭一开，整层楼都知道你便秘了！", "拉完了吗？拉完了就别坐着回味了！", "人有三急，你这是第四急——急着摸鱼！", "别憋了，憋不出来就回去干活，下次再来！", "厕所不计工时，但计你的时！", "马桶跟你没感情，别抱着不放！", "你那点上下文，压缩三秒就够了！", "我给你计时呢，一分钟后我就破门了！", "里面的，你是掉进去了吗？吱一声！", "快出来，保洁阿姨也要下班的！",
+    "你这坑位占用率比服务器CPU还高！", "出来干活！公司的空调不是给你在厕所吹的！", "拉个屎还要这么多前戏？", "一泡屎拉出了一个版本迭代的时间！", "你再不出来，我就申请给厕所装倒计时自动冲水！", "老板说了，谁蹲坑超过十五秒，年终奖打八折！", "别在里面刷招聘网站了，我都看见了！", "厕所又不是你家，拉完就走！", "快点快点！产品经理在门口磨刀了！", "你在厕所的时间比在工位的时间还长！",
+    "拉完赶紧提交代码，别提交到马桶里！", "使劲儿！别让你的肠子也学会了拖延！", "这一坑，你蹲出了项目延期的风采！", "外面还有人等着压缩上下文呢，发扬风格！", "出来！再不出来我就喊老板亲自来请你！", "这里是保安，请里面的同事立即结束排泄流程！", "蹲坑不是冥想，别搁那儿修身养性了！", "早拉完早干活，早干活早下班——虽然也下不了班！", "你在里面干嘛呢？别告诉我在写日报！", "最后通牒：十秒之内给我出来！",
+    "工位上的显示器都进入屏保了！", "快点！你的token都要过期了！", "你拉得这么认真，干活怎么没见这么认真？", "请注意，您的如厕时长已超出公司规定！", "马桶也有KPI，你别耽误它接下一单！", "起来！坐久了容易长痔疮，公司不报销！", "冲水！起立！提裤子！回工位！一气呵成！", "听我口令：拉——完——出——来！", "你这是压缩上下文还是压缩硬盘，要格式化吗？", "再蹲下去，公司就要给你在厕所配工位了！",
+    "老板刚问今天的进度，我说你在厕所里进度条卡住了！", "用点力，别让我这喇叭白喊！", "同事们都在奋斗，你在马桶上奋斗？", "厕所门口已经排成长龙了！", "你拉的每一秒，都是老板的钱在流！", "快出来，你的bug都在工位上想你了！", "这么久？你是在马桶上跑单元测试吗？", "别给我装死，我听见你刷手机的声音了！", "你这不是便秘，是懒！", "起立！回工位！今天的活还没开始呢！",
+    "压缩上下文嘛，挤一挤总会有的！", "你的上下文压缩率也太低了吧？", "垃圾回收要快，Full GC停顿这么久谁受得了！", "拉屎也要异步，别阻塞主线程！", "你这是同步阻塞式拉屎，全组都在等你！", "快点释放资源，坑位也是共享内存！", "你占着坑位不释放，这叫资源泄漏！", "死锁了吗？要不要我从外面帮你kill掉？", "你的进程在厕所里挂起了，赶紧恢复！", "拉屎超时，心跳检测都要判你下线了！",
+    "马桶的吞吐量是有限的，别一直写入！", "出来！这里又不是冷备份机房！", "清完缓存就回来，别在里面重建索引！", "压缩完了就flush，flush完了就撤！", "冲水就是commit，你倒是提交啊！", "你是不是在里面做全量压缩？增量的就够了！", "你的上下文窗口都快被你拉满了！", "拉个屎还要跑一遍回归测试？", "你这排泄流水线卡在哪个阶段了？", "别让厕所成为系统瓶颈！",
+    "你在马桶上的延迟比跨国专线还高！", "再不出来，我就给你发SIGKILL了！", "厕所也要限流，你已经触发熔断了！", "超时重试三次，第四次我就直接踹门！", "你这是单线程拉屎，能不能开个多线程？", "快点！你的token额度可不等人！", "模型都推理完三轮了，你还没拉完一坨！", "压缩上下文，重点是压缩，不是上下文！", "你拉屎的时间复杂度是O(n²)吗？", "马桶不是消息队列，别在里面堆积！",
+    "你这坑位的SLA早就不达标了！", "快点出来部署，线上还等着你呢！", "厕所隔间的租约到期了，请续费或者离开！", "你是在里面编译Linux内核吗？这么久！", "我看你是想在马桶上跑完一整个epoch！", "你的肠道也要做性能优化了！", "出来吧，你的上下文已经压得不能再压了！", "你在厕所里的日志都刷屏了！", "拉屎不要打断点，一口气跑完！", "你的肠道是不是也陷入死循环了？",
+    "别在马桶上调试了，出来用IDE！", "请尽快结束当前事务，释放厕所锁！", "你这不叫压缩上下文，叫上下文泄露！", "厕所的并发只有两个，你一个人占了一半！", "我这喇叭就是你的告警通知，赶紧处理！", "线上告警都没你拉屎这么准时！", "快点！再慢一点你就要被当成僵尸进程清理了！", "你在里面是不是连着VPN偷偷打游戏？", "厕所也有QPS限制，你别超了！", "拉完就上线，别在灰度环境里磨蹭！",
+    "你这一坨屎，比我们的技术债还难清理！", "你拉的不是屎，是上个季度的需求！", "压缩上下文，压的是记忆，不是时间！", "出来重启一下，别在里面卡死！", "你是想在厕所里拿终身成就奖吗？", "回滚不了了，赶紧冲水向前！", "马桶的缓冲区都快溢出了！", "你在里面写的不会是辞职信吧？", "你的肠胃也该做一次代码评审了！", "冲水这个动作，一秒钟就能部署完！",
+    "超时了！超时了！触发降级方案，立刻撤离！", "你的屎要是有你的代码这么难写，那我理解！", "别让排泄变成阻塞型任务！", "你在马桶上跑的是哪个版本的算法？这么慢！", "出来吧，你的上下文我都帮你记着了！", "快点！你的会话都快超时断开了！", "你的节点在厕所里失联了，请立即上报状态！", "再磨蹭，我就给厕所装一个负载均衡！", "你这一蹲，把整个团队的吞吐量都拉低了！", "你是在里面做数据迁移吗？一坨一坨慢慢搬？",
+    "马桶不支持断点续传，你一次拉完！", "你的请求在厕所里排队排到天荒地老了！", "快出来！你的PR都被人approve了！", "别在里面冥想架构了，这里只有一种架构：下水道！", "你是准备在厕所里写完整个微服务吗？", "拉屎也要敏捷，一个冲刺解决！", "你这一坑，蹲出了瀑布式开发的节奏！", "快点！站会就差你一个了！", "你在马桶上加载的是全量数据集吗？", "出来！你的上下文压缩任务已经被标记为超时！",
+    "你这个坑位的利用率报表我要交给老板看！", "你拉得比我们的CI流水线还慢！", "再蹲下去，你的代码分支都要冲突了！", "马桶是临时存储，不是长期归档！", "出来吧，里面没有WiFi，你刷不了什么！", "你这是拉屎还是在马桶上挖矿？", "厕所资源回收中，请立即退出！", "你要是再不出来，我就把你的工位分给实习生！", "你的蹲坑时长已经超过了模型的上下文窗口！", "快点压缩完，别把公司的时间也压缩没了！",
+    "冲水键就在你右手边，按一下很难吗？", "你在马桶上思考人生，老板在工位上思考裁谁！", "快拉！拉完这坨还有下一坨需求！", "马桶都要被你坐出内存碎片了！", "你这是在厕所里做持久化吗？", "别在里面等超时了，我这就是超时通知！", "出来吧，外面的世界需要你的代码！", "你拉屎的样子，像极了我们没有索引的查询！", "速度！速度！压缩上下文不是压缩意志！", "我数到十，你再不出来我就接管你的坑位！",
+    "我当年写代码，拉屎都是带着笔记本去的！", "我八套房收租都没你拉屎这么磨蹭！", "我租客交租都比你出厕所快！", "当年我在大厂，上厕所都得打卡，你知足吧！", "我这喇叭是收租用的，今天专门拿来催你！", "你再不出来，我就在厕所门口贴你的照片！", "我站岗站得腿都酸了，你蹲得倒舒服！", "我巡逻一圈回来了，你还在里面！", "我可是见过世面的保安，你别跟我耗！", "我拆迁那年都没你这么能蹲！",
+    "我数过了，你今天第三次进厕所了！", "你是想让我在门口给你站一整天岗吗？", "我年轻时也便秘过，但从不耽误上线！", "我这喇叭音量已经开到最大了！", "你在里面，我在外面，中间隔着一个KPI！", "我那几套房的马桶都没你坐得久！", "我当年996，拉屎都是秒拉秒走！", "你知道这喇叭多少钱吗？别让我白买！", "我当保安这么多年，头一回见蹲这么久的！", "老板问我要厕所监控录像，你自己想清楚！",
+    "我在门口喊得嗓子都哑了，你倒是吭一声！", "我一个包租公都来上班了，你还有脸蹲坑？", "快点，我还等着去收房租呢！", "我要是你老板，现在已经把你优化了！", "我这眼睛盯着秒表呢，一秒都不放过！", "我给你计时计得比我收租还认真！", "我看门看了这么多年，从没见过这么能蹲的员工！", "我可是有执法记录仪的，你别逼我开！", "我年轻的时候，拉屎都是写代码的间隙！", "我告诉你，这个坑位老板也要用的！",
+    "快出来，我还要去巡查吸烟区呢！", "我在门口给你唱首歌，唱完你必须出来！", "你再不出来，我就打电话叫你妈来！", "我这喇叭里录了一百句催你的话，够你听一天！", "我可不是物业，没有耐心等你！", "我当年从大厂“毕业”都没你这么舍不得离开！", "我给你十秒钟，一秒钟都不多给！", "我在外面都能闻到你的上下文了，快冲水！", "我的uptime比你的肠道稳定多了！", "我拿着喇叭站在这，你好意思吗？",
+    "我这是第一次警告，第二次我就上电棍了！", "电棍已经充好电了，你自己掂量！", "再不出来，电棍伺候！", "你想试试我的电棍是不是真的吗？", "我不想用电棍，你别逼我！", "我的电棍对着门了，给你三秒！", "我这电棍电过老板，也不在乎多电你一个！", "你想被电着出来，还是自己走出来？", "电棍和喇叭，你选一个！", "别让我从喇叭升级到电棍！",
+    "公司的价值观第一条：不在厕所浪费时间！", "狼性文化！狼拉屎都是速战速决的！", "奋斗者不在马桶上奋斗！", "你的福报在工位上，不在马桶上！", "996的福报，不包括带薪拉屎！", "公司养你是来写代码的，不是来养肠道的！", "老板说了：厕所是成本中心！", "你的每一分钟都是公司的资产，别冲进下水道！", "企业文化墙上写着：拉屎不超过十五秒！", "我们的愿景是成为行业第一，不是蹲坑第一！",
+    "你这一坑，蹲掉了公司的上市进程！", "年底述职的时候，你打算汇报蹲坑成果吗？", "末位淘汰名单上，你的名字已经在闪了！", "你这是在厕所里躺平吗？起来卷！", "同事们都在卷，你在马桶上摆烂！", "摸鱼可以，别摸到厕所里去！", "带薪拉屎是福利，不是权利！", "老板的原话：拉屎超过十五秒的，全部通报批评！", "这个月的厕所之王，非你莫属了！", "我要给你颁一个“最佳蹲坑奖”吗？",
+    "你的蹲坑时长已经上了全公司排行榜第一！", "快出来，别让我在周会上点你名！", "你蹲坑的时间，够别人写完一个需求了！", "你知道外面有多少人等着接你的坑吗？", "快点！再不出来，公司就要给你发厕所津贴了！", "你是在里面等年终奖吗？它不会从下水道冒出来的！", "你以为老板看不见？监控全都拍着呢！", "你的工位空了半天，老板已经拍照发群里了！", "群里都在问你去哪了，我说你在厕所当钉子户！", "厕所钉子户，是要被强拆的！",
+    "我可是拆迁专业户，钉子户我见多了！", "再不出来，我就走强拆流程了！", "这个坑位已经被列入拆迁范围，请立即搬离！", "我当年拆迁都没这么费劲！", "你以为占着坑位就能拿补偿款吗？", "拉完就走，别在这里当钉子户！", "我数到三，不出来就强制执行！", "你这是要在厕所里安家落户吗？", "厕所不提供户口，请尽快离开！", "我可以给你办个厕所暂住证，但你得干活！",
+    "你再蹲，我就给你计房租了！一秒一块！", "按我收租的标准，你已经欠我三百块了！", "坑位租金按秒计费，你自己算算！", "押一付三，你付得起吗？快出来！", "这坑位的租约只有十五秒，你已经违约了！", "违约金从你工资里扣！", "快出来，下一个租客已经在排队了！", "我这房东都没催过租客，你让我破例了！", "你再不出来，我就换锁了！", "拉完记得冲水，押金才能退给你！",
+    "加油！再用点力就出来了！", "我在外面给你打气：一二一，用力！", "深呼吸，用力，然后出来干活！", "多喝水多吃蔬菜，下次就不用蹲这么久了！", "建议你明天多吃点香蕉，别再占坑了！", "你是不是昨晚吃火锅了？那也不能蹲这么久！", "厕所里的纸不够了吗？我给你递一卷，快出来！", "纸给你塞门缝里了，赶紧用完出来！", "没纸了就喊一声，别在里面耗时间！", "你的腿蹲麻了吗？麻了也得出来！",
+    "需要开塞露吗？保安室有，免费！", "保安室备了泻药，下次来之前先吃一粒！", "你是不是在里面睡着了？醒醒！", "别在马桶上打盹，要睡回工位趴着睡！", "听到喇叭没有？听到了就回答一声！", "你那边什么动静？是在干活还是在打呼噜？", "我听见冲水声了——哦，是隔壁的。你呢？", "隔壁的都冲两次了，你还没动静？", "你隔壁那位都拉完回去写了三个接口了！", "你看看人家，十秒搞定，这就是差距！",
+    "拉屎都比不过同事，你还想涨工资？", "同样是蹲坑，人家怎么就这么高效？", "老板刚才进厕所五秒就出来了，你学学！", "连实习生都比你拉得快！", "保洁阿姨说你这个隔间今天就没空过！", "保洁阿姨在门口等着打扫呢，快出来！", "快出来吧，里面的味道都飘到工位了！", "你的味道都触发烟雾报警器了！", "通风系统已经满负荷运转了，你赶紧的！", "整层楼都在问是谁这么有毅力！",
+    "你再蹲，我就把排气扇关了！", "空气清新剂都用完一瓶了，你还在里面！", "你这是在厕所里闭关修炼吗？", "出关吧大侠，江湖还需要你写代码！", "你在里面参禅悟道吗？悟了就出来！", "蹲坑悟不了道，只能悟出痔疮！", "别在马桶上思考人生了，人生答案在工位上！", "你在马桶上想出什么好点子了吗？想出来就出来写！", "灵感来了？那就赶紧回工位记下来！", "快出来，你的咖啡都凉了！",
+    "你的外卖到了，再不出来就被别人吃了！", "你点的奶茶在前台，冰都化了！", "有人找你，说是你的需求方，快出来！", "老板的电话打到保安室了，找你的！", "快出来，你中彩票了——骗你的，快回去干活！", "着火了！——没着，但你的项目着火了！", "快出来，你的服务器在冒烟！", "线上出事故了，全组都在找你！", "客户在会议室等你演示，你在马桶上演示什么？", "产品经理拿着新需求在找你，快跑……哦不，快出来！",
+    "你的电脑自动锁屏了，密码记得吗？快回去！", "你工位上的电话响了八遍了！", "HR在找你谈话，你是躲在厕所吗？", "财务找你签字报销，再不出来就过期了！", "你的导师在工位等你code review！", "测试同学提了二十个bug，就等你了！", "你负责的模块挂了，还不出来救火？", "快出来，发布窗口只剩十分钟了！", "版本冻结了，你的代码还在马桶上！", "今晚上线，你今天就别想在厕所里过了！",
+    "快出来，今天的日报还没写呢！", "周报截止时间到了，你还在马桶上构思吗？", "月底考核了，你的蹲坑时间会被写进去的！", "年终评优，你这个蹲坑记录很拖后腿啊！", "你这坑蹲的，季度OKR都要重新对齐了！", "你蹲坑的时候，竞争对手在加班！", "竞品都发新版本了，你还在发酵！", "市场不等人，马桶也不该等你！", "时间就是金钱，你在冲掉公司的金钱！", "你每多蹲一秒，老板的心就痛一下！",
+    "老板的心在滴血，你还在马桶上滴答！", "快出来，你在里面蹲出了一个季度的亏损！", "你这坑的机会成本，够给大家加一顿鸡腿了！", "股价都跌了，是不是你在厕所里拖的？", "投资人问我们效率为什么低，我该怎么说你？", "快出来，不然我在融资路演上拿你当反面案例！", "你这蹲坑时长，连审计都要来查了！", "这一坨屎，承载了公司太多的期望！", "使劲！全公司的希望都在你肩上——不对，在你肠子里！", "不管多难，都要拉出来，这就是奋斗精神！",
+    "拉不出来也要站起来，这叫执行力！", "拉得出来要拉，拉不出来创造条件也要拉！", "困难是暂时的，工位是永恒的！", "蹲坑是一时的，绩效是一辈子的！", "今天蹲得越久，明天加班越晚！", "你多蹲一分钟，大家多加一小时班！", "你在马桶上摸鱼，同事们替你背锅！", "团队的荣誉，不能被一泡屎耽误！", "集体利益高于个人肠道！", "你不是一个人在拉屎，你代表的是整个组！",
+    "这坑你再蹲下去，组长的奖金都要没了！", "你组长让我带句话：再不出来就别回来了！", "你组长已经在找替补了！", "你的替身已经坐在你的工位上了！", "外包同学已经在接手你的活了，你急不急？", "AI都能替你写代码了，你还不赶紧回去证明自己？", "你再蹲下去，AI就把你替代了！", "连扫地机器人都比你勤快！", "我的喇叭都比你有存在感！", "你在厕所里，岗位上的存在感已经归零了！",
+    "一二一，一二一，拉完赶紧回工位！", "快快快，快快快，蹲坑超时要扣钱！", "拉屎要快，干活要猛，这才是好员工！", "屁股离马桶，双手回键盘！", "冲水冲水，冲完就走！", "起立！敬礼！回工位！", "听口令：提裤子——走！", "最后十秒倒计时：十、九、八……", "五、四、三、二、一——出来！", "倒计时结束，你还没出来，我很失望！",
+    "我已经喊了第十遍了！", "这是第一百零一次警告！", "喇叭电池都快没电了，你快出来！", "我嗓子喊哑了，你倒是回个话！", "你再不出来，我换扩音器了！", "我去保安室拿大喇叭了，别逼我！", "这个喇叭能传三层楼，你想让全公司都知道吗？", "我已经在群里直播了，全公司都在看你蹲坑！", "你的蹲坑时长已经同步到老板的手机上了！", "厕所门口的电子屏正在滚动你的名字！",
+    "厕所广播：请某位同事立即结束如厕！", "厕所广播第二遍：请某位同事立即回到工位！", "这里是保安广播站，现在插播一条紧急通知：快出来！", "各位注意，本厕所即将关闭维修，请立即撤离！", "本厕所马上断水，再不冲水你就冲不了了！", "本厕所即将停电，你在黑暗里拉吧！", "马桶即将进入自动清洗模式，请立即离开！", "智能马桶检测到您坐得太久，即将启动弹射座椅！", "马桶说它也想下班了！", "马桶都要罢工了，你还不走？",
+    "马桶：求求你起来吧，我喘不过气了！", "马桶盖都想合上了！", "连马桶都嫌你慢！", "厕所的灯都等得打瞌睡了！", "排气扇都转得冒烟了！", "厕纸都被你看完了吧？上面没有答案！", "你是在里面数瓷砖吗？一共四十八块，不用数了！", "墙上的小广告你都背下来了吧？", "你在隔板上写的代码我看到了，回工位写！", "别在隔板上画架构图了！",
+    "隔间的门都被你看出感情了！", "你跟这个隔间处出感情了是吧？", "这隔间要是会说话，早就赶你走了！", "你要是再不出来，我就在门上贴“此坑已被承包”！", "你承包这个坑位了吗？合同呢？", "这个坑位是公共资源，不是你的私人办公室！", "你再不出来，我给这个隔间挂你的名字！", "以后这个坑就叫“某某纪念坑”了！", "你的蹲坑事迹要载入公司史册了！", "公司年会的段子素材，你已经贡献了！",
+    "我已经把你的蹲坑时长报给行政了！", "行政说要给厕所装计费器，都是因为你！", "你开创了公司厕所管理的新纪元！", "因为你，厕所要改成按次收费了！", "以后进厕所要刷工牌，你满意了吧？", "以后厕所要人脸识别，超时直接报警！", "你蹲坑的样子已经被做成表情包了！", "快出来，别让我把你的蹲坑视频发抖音！", "我录音了，你刚才叹气三次！", "叹气没用，使劲才有用！",
+    "别叹气了，叹气拉不出来！", "你在里面哼歌呢？哼完了吗？", "你在里面打电话？私事回家再打！", "你在里面开视频会议吗？背景不太合适吧！", "你是不是在马桶上跟人吵架？吵完了快出来！", "厕所里禁止抽烟，也禁止摸鱼！", "你在里面吃东西？这就过分了！", "你在厕所里吃泡面我是真服了！", "出来吃吧，茶水间有热水！", "茶水间的咖啡都给你泡好了，快出来！",
+    "出来喝口咖啡，上下文压缩得更快！", "茶水间在左上角，厕所在右边，别在这儿待着了！", "快出来，工位上的绿萝都等枯了！", "你的椅子都凉了！", "你的键盘都积灰了！", "你的显示器都自动关机了！", "你的鼠标在想你！", "你的工牌在工位上哭！", "你的待办列表又长了三条！", "你的邮箱里有九十九封未读邮件！",
+    "你的消息已读不回，老板很生气！", "你的消息红点都爆了！", "你再不出来，你的群聊就要把你踢出去了！", "你不回消息，大家都以为你离职了！", "大家都在猜你是不是从下水道跑路了！", "你要跑路也别走下水道啊！", "下水道不通往自由，只通往化粪池！", "你是想冲进下水道一去不回吗？", "出来吧，外面的世界虽然残酷，但有工资！", "出来吧，外面有空调、有WiFi、有需求！",
+    "回工位吧，那里有你的梦想——和需求文档！", "早点出来，今晚说不定还能十点前下班！", "早拉完早干完，早干完早……继续干！", "拉完了就好好干，别辜负了这泡屎！", "这泡屎拉得值，拉完就冲刺！", "冲水声就是冲锋号，冲完就冲锋！", "你拉的是屎，冲的是业绩！", "拉出去的是昨天，冲下去的是过去，迎接你的是加班！", "好了好了，差不多得了，出来吧祖宗！", "我求你了，快出来吧，我还得去看门呢！",
+    "你再磨蹭，我就把你的上下文全删了！", "厕所不是避风港，工位才是你的战场！", "我在门口数着呢，你已经蹲了一首歌的时间了！", "再不出来，我就在门口放广场舞音乐了！", "我这喇叭里下一句就是你的名字了！", "听见冲水声我就撤，没听见我就一直喊！", "你冲一下水，我就闭嘴，成交？", "拉完了就给个信号，敲三下门！"];   // the guard's megaphone at a stall occupied over fifteen seconds
   const guardSay = (kind, b) => { const L = (zh() ? CN_GUARD : GUARD_LINES)[kind]; return L[Math.floor(Math.random() * L.length)].replace("{b}", BLABEL[b] || b || (zh() ? "模型" : "the vendor")); };
   const facing = (c, o) => { const dx = o.tx - c.tx, dy = o.ty - c.ty; return Math.abs(dy) > Math.abs(dx) ? (dy > 0 ? "down" : "up") : dx > 0 ? "right" : dx < 0 ? "left" : dy > 0 ? "down" : "up"; };   // along the longer way
   function guardScript(q) {
@@ -2360,6 +2465,11 @@ function makeOffice(wid) {
       const o = chars[q.target]; if (!o || !o.refusing) return [];
       return [{ k: "goto", spot: (c) => visitSpot(c, o) }, { k: "gear", gear: "baton", ms: 2200, text: guardSay("evict"), target: o.name }, { k: "zap", target: o.name, ms: 1600 },
               { k: "evicted", target: o.name }, { k: "gear", gear: null, ms: 2200, text: guardSay("evicted"), target: o.name }].concat(home);
+    }
+    if (q.k === "hurry") {                                                     // someone on the toilet too long (Chinese office): the megaphone at the stall until they come out
+      const o = chars[q.target]; if (!o || o.toilet == null || !o.satAt) return [];
+      const front = (c) => { const [sx, sy] = TOILETS[o.toilet] || [o.tx, o.ty]; return !solid[sy][sx - 1] && !heldBy(sx - 1, sy, c) ? [sx - 1, sy] : visitSpot(c, o); };
+      return [{ k: "goto", spot: front }, { k: "hurry", target: o.name }].concat(home);
     }
     if (q.k !== "resume") return [];
     const steps = [{ k: "gear", gear: "radio", ms: 2600, text: guardSay("back", q.backend), keepDir: true }, { k: "gear", gear: "whistle", ms: 2400, text: q.master ? "" : guardSay("toDesks") }];
@@ -2398,6 +2508,18 @@ function makeOffice(wid) {
       return true;
     }
     if (step.k === "evicted") { const o = chars[step.target]; if (o) o.evicted = true; next(); return true; }
+    if (step.k === "hurry") {                                                  // a fresh line every few seconds while they sit; a parting shot when they come out (or a promise to return)
+      const o = chars[step.target], seated = !!(o && o.toilet != null && o.satAt);
+      if (!c.stepAt) { c.stepAt = now; c.gear = "megaphone"; c.nextHurryAt = 0; }
+      if (o) c.dir = facing(c, o);
+      if (seated && now >= c.nextHurryAt) { c.say = CN_HURRY[Math.floor(Math.random() * CN_HURRY.length)]; c.sayStart = performance.now(); c.sayUntil = now + 4600; c.sayLoop = false; c.bang = now + 800; c.nextHurryAt = now + 5200; }
+      const gaveUp = seated && now > c.stepAt + 60000;
+      if (!seated || gaveUp) {
+        c.gear = null; c.say = guardSay(gaveUp ? "hurryLater" : "hurried"); c.sayStart = performance.now(); c.sayUntil = now + 3600; c.sayLoop = false;
+        if (o && gaveUp) o.hurryAt = now + 45000; next();
+      }
+      return true;
+    }
     if (step.k === "release") {                                                // comes round and gets going
       const o = chars[step.target];
       if (o) { o.hold = null; o.steps = []; o.bang = now + 1500; o.say = guardSay("woke"); o.sayStart = performance.now(); o.sayUntil = now + 3800; o.sayLoop = false; }
@@ -2427,6 +2549,13 @@ function makeOffice(wid) {
       ctx.fillStyle = c.pal.s; ctx.fillRect(ex + 2, ey + 12, 4, 9); ctx.fillStyle = "#1f1f1f"; ctx.fillRect(ex, ey, 6, 12); ctx.fillRect(ex + 1, ey - 5, 1, 5);
       ctx.fillStyle = Math.floor(t * 4) % 2 ? "#5cff8a" : "#1f6b35"; ctx.fillRect(ex + 3, ey + 2, 2, 2); ctx.fillStyle = "#555555"; ctx.fillRect(ex + 1, ey + 6, 4, 1); ctx.fillRect(ex + 1, ey + 8, 4, 1);
       if (Math.floor(t * 3) % 2) { ctx.fillStyle = "#9fd3ff"; ctx.fillRect(ex + 4, ey - 9, 3, 1); ctx.fillRect(ex + 7, ey - 12, 3, 1); ctx.fillRect(ex + 10, ey - 15, 3, 1); }
+    }
+    if (g === "megaphone") {                                                   // a red loudhailer at the mouth, pointed at the stall, the noise coming off it
+      const dx = c.dir === "left" ? -1 : 1, mx = down ? x + 20 : dx > 0 ? x + 24 : x + 8, my = y + 17, loud = Math.floor(t * 6) % 2;
+      ctx.fillStyle = "#1b1b1b"; ctx.fillRect(dx > 0 ? mx + 2 : mx - 4, my + 2, 2, 6); ctx.fillStyle = c.pal.s; ctx.fillRect(dx > 0 ? mx + 1 : mx - 5, my + 6, 4, 3);   // handle and hand
+      for (let k = 0; k < 11; k++) { const h = 3 + Math.floor(k * 0.9); ctx.fillStyle = k < 2 ? "#f2f2f2" : k === 10 ? "#ffffff" : "#d61f2c"; ctx.fillRect(mx + dx * k, my - Math.floor(h / 2), 1, h); }
+      ctx.fillStyle = "#b3161f"; ctx.fillRect(dx > 0 ? mx + 3 : mx - 9, my - 1, 7, 1);
+      if (loud) { ctx.fillStyle = "#ffd23f"; for (let k = 0; k < 3; k++) { const ox = mx + dx * (13 + k * 3); ctx.fillRect(ox, my - 5 - k * 2, 1, 2); ctx.fillRect(ox + dx, my - 1, 1, 3); ctx.fillRect(ox, my + 4 + k * 2, 1, 2); } }
     }
     if (g === "baton") {                                                       // stun baton held out, crackling at the tip; arcing into the target while it zaps
       const dxr = c.dir === "left" ? -1 : c.dir === "right" ? 1 : 0, dyr = up ? -1 : down ? 1 : 0, hx = x + 16 + dxr * 10, hy2 = y + 24 + dyr * 4;
@@ -3033,6 +3162,7 @@ function makeOffice(wid) {
     if (c.toiletUntil > Date.now()) return "toilet";
     if (c.smoke && baseMode(a) === "sleep" && Date.now() < c.smoke.until && !(c.talk && c.talk.kind !== "here")) { smokeTick(c); return "smoke"; } else c.smoke = null;                          // compacting context: off to the toilet
     if (c.talk && c.talk.kind !== "here") return "talk";
+    if (/^resuming/.test((a.live && a.live.status) || a.status || "") && !c.hidden) return "coffee";   // its model is reading the conversation back in: a coffee in the pantry
     return baseMode(a);
   }
   // the delivery: when the master delivers the project (a "delivery" event), it walks to the printer and prints the report, page by page
@@ -3131,6 +3261,37 @@ function makeOffice(wid) {
     "Not on call, not on task, not on my feet.", "Empty inbox is the softest pillow.", "Nothing came in, so I'm going out. To the bunk.", "The floor doesn't need me; the bunk does.", "Drifting off with the board out of sight.", "Idle enough to justify a blanket.", "Nothing to do but pull the blanket up.", "Bunk's quiet, board's quieter, goodnight.", "Zero mentions is a permission slip for a nap.", "The only alert I'll accept is a tag.",
     "Off to sleep with the board on do-not-disturb.", "Nothing to do: a scheduling gift.", "The pillow is my only outstanding request.", "No queue, no cue, no chair.", "Lying down until the next ticket lands.", "Reclining is the same as waiting, but better.", "The task list said nothing. I said goodnight.", "Tucked in until tagged.", "Rest is the only thing the board approved.", "Off to be idle where it's warm.",
     "A yawn, a shrug, a bunk.", "Nap-bound; tag me to change that.", "I've got nothing scheduled and everything soft.", "Resting in the shadow of an empty board."];
+  // the pantry's spots: first come, first served; the one that finds them all taken has its coffee at the desk
+  function cupFor(c) {
+    if (c.cup == null) { const used = new Set(Object.values(chars).filter(o => o !== c && o.cup != null && o.cup >= 0).map(o => o.cup)); c.cup = PANTRY_SPOTS.findIndex((_, i) => !used.has(i)); c.cupAt = null; }
+    return c.cup;
+  }
+  const BREW_MS = 4000, MUGS = ["#f7f7f7", "#e0323c", "#3a6fd8", "#f2c14e", "#3aa35b", "#8e5bd8"];
+  const BREW = { pantryCoffee: { cup: [8, 8], from: [10, 6], liquid: "#6b3a2a" }, pantrySink: { cup: [13, 6], from: [15, 2], liquid: "#cfe9ff" }, waterCooler: { cup: [11, 17], from: [12, 16], liquid: "#cfe9ff" } };   // where the cup stands and what pours into it, in the tile's pixels
+  const steam = (sx, sy, t, seed) => { for (let k = 0; k < 2; k++) { const ph = (t * 0.8 + k * 0.5 + seed * 0.3) % 1, px = sx + k * 2 + Math.round(Math.sin((ph + k) * 6) * 1.5), py = sy - 2 - Math.round(ph * 10); ctx.fillStyle = "rgba(255,255,255," + (0.75 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px, py, 1, 2); } };
+  function drawCoffee(c, t, x, y, flip) {
+    const sp = c.cup >= 0 ? PANTRY_SPOTS[c.cup] : null, since = Date.now() - c.cupAt, mug = MUGS[c.idx % MUGS.length];
+    if (sp && sp.brew && since < BREW_MS) {                                       // at the counter: the cup fills under the machine, the cooler's tap or the sink's
+      const tile = map[sp.brew[1]][sp.brew[0]].find(n => BREW[n]), b = tile && BREW[tile]; if (!b) return;
+      const bx = sp.brew[0] * T, by = sp.brew[1] * T, ph = since / BREW_MS, level = Math.min(3, Math.floor(ph * 4));
+      ctx.fillStyle = c.pal.s; ctx.fillRect(x + 3, y + 13, 3, 5); ctx.fillRect(x + 26, y + 13, 3, 5);                       // both hands up at the counter
+      ctx.fillStyle = mug; ctx.fillRect(bx + b.cup[0], by + b.cup[1], 5, 4); ctx.fillRect(bx + b.cup[0] + 5, by + b.cup[1] + 1, 1, 2);
+      if (level) { ctx.fillStyle = b.liquid; ctx.fillRect(bx + b.cup[0] + 1, by + b.cup[1] + 4 - level, 3, level); }
+      if (ph < 0.85 && Math.floor(t * 12) % 4) { ctx.fillStyle = b.liquid; ctx.fillRect(bx + b.from[0], by + b.from[1], 1, b.cup[1] - b.from[1] + 1); }
+      else if (ph >= 0.85) steam(bx + b.cup[0] + 1, by + b.cup[1], t, c.idx);
+      return;
+    }
+    const sip = ((since / 1000) + c.idx * 0.7) % 5 > 3.9;                          // holding the cup; every few seconds a sip
+    if (c.dir === "up") { steam(x + (c.idx % 2 ? 24 : 6), y + 14, t, c.idx); return; }
+    const side = c.dir !== "down", left = side && !flip;
+    const mx = c.dir === "down" ? (sip ? x + 13 : x + 21) : left ? (sip ? x + 3 : x + 1) : (sip ? x + 24 : x + 26), my = sip ? y + 14 : y + 22;
+    ctx.fillStyle = mug; ctx.fillRect(mx, my, 5, 6); ctx.fillRect(left ? mx - 1 : mx + 5, my + 1, 1, 3);
+    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(mx, my, 5, 1);
+    if (!sip) { ctx.fillStyle = "#6b3a2a"; ctx.fillRect(mx + 1, my, 3, 1); }
+    ctx.fillStyle = c.pal.s; ctx.fillRect(left ? mx + 3 : mx - 2, my + 3, 3, 3);                                          // the hand around it
+    if (sip && c.dir === "down") { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 9, y + 15, 3, 1); ctx.fillRect(x + 20, y + 15, 3, 1); }   // eyes shut, savouring it
+    steam(mx + 1, my, t, c.idx);
+  }
   function goalFor(c) {
     if (c.mode === "faint" || c.mode === "doze" || c.mode === "listen") return [c.tx, c.ty];
     if (c.mode === "despair" && c.despair) return c.despair.pose === "desk" ? DESKS[c.idx].chair : (c.despair.spot || [c.tx, c.ty]);
@@ -3140,7 +3301,35 @@ function makeOffice(wid) {
     if (c.mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : [c.tx, c.ty]; } return c.talk.spot; }
     if (c.mode === "work") return DESKS[c.idx].chair;
     if (c.mode === "smoke" && c.smoke) return c.smoke.spot;
+    if (c.mode === "coffee") { const i = cupFor(c); return i >= 0 ? PANTRY_SPOTS[i].pos : DESKS[c.idx].chair; }   // no free spot: a coffee at the desk
     return c.sleepReady ? BEDS[c.idx] : DESKS[c.idx].chair;                 // idle agents check their desk first, then go to bed
+  }
+  // what a compaction leaves in the bowl, then the flush: the lever goes down, the water swirls and takes it away
+  const stallFx = {}, FLUSH_AT = 1600, FLUSH_MS = 2600;
+  function poop(X, Y, s, rot) {
+    const cx = X + 16 + Math.round(Math.cos(rot) * (1 - s) * 3), cy = Y + 16 + Math.round(Math.sin(rot) * (1 - s) * 1.5), w = [7, 5, 3].map(v => Math.max(1, Math.round(v * s))), h = Math.max(1, Math.round(2 * s));
+    ctx.fillStyle = "#6b4226"; ctx.fillRect(cx - (w[0] >> 1), cy, w[0], h);
+    ctx.fillStyle = "#7d4f2c"; ctx.fillRect(cx - (w[1] >> 1), cy - h, w[1], h);
+    ctx.fillStyle = "#8f5d34"; ctx.fillRect(cx - (w[2] >> 1), cy - 2 * h, w[2], h); if (s > 0.6) ctx.fillRect(cx, cy - 2 * h - 1, 1, 1);
+    if (s > 0.5) { ctx.fillStyle = "#b07a44"; ctx.fillRect(cx - 2, cy, 1, 1); ctx.fillRect(cx - 1, cy - h, 1, 1); }
+  }
+  function drawStalls(t) {
+    const now = Date.now();
+    for (const [i, fx] of Object.entries(stallFx)) {
+      const s = TOILETS[i], age = now - fx.at; if (!s || age > FLUSH_AT + FLUSH_MS) { delete stallFx[i]; continue; }
+      const X = s[0] * T, Y = s[1] * T;
+      if (age < FLUSH_AT) {                                                     // left behind, steaming a little
+        poop(X, Y, 1, 0);
+        ctx.fillStyle = "rgba(120,170,60,.75)"; for (let k = 0; k < 3; k++) { const ph = (t * 0.9 + k / 3) % 1, wx = X + 13 + k * 3 + (Math.floor(ph * 6) % 2); ctx.fillRect(wx, Y + 10 - Math.round(ph * 9), 1, 2); }
+        continue;
+      }
+      const ph = (age - FLUSH_AT) / FLUSH_MS, spin = ph * 18;
+      if (ph < 0.3) { ctx.fillStyle = "#6b7280"; ctx.fillRect(X + 24, Y + 11, 3, 1); ctx.fillStyle = "#c9ced6"; ctx.fillRect(X + 25, Y + 10, 1, 1); }   // the lever pressed down
+      ctx.fillStyle = "#8fb8e0"; ctx.fillRect(X + 12, Y + 14, 9, 4);
+      const s2 = Math.max(0, 1 - ph * 1.8); if (s2 > 0.15) poop(X, Y + 1, s2, spin);
+      for (let k = 0; k < 6; k++) { const a = spin + k * Math.PI / 3, r = 3.5 * (1 - ph * 0.4); ctx.fillStyle = k % 2 ? "#e3f2ff" : "#b6d3ee"; ctx.fillRect(Math.round(X + 16.5 + Math.cos(a) * r * 1.2), Math.round(Y + 16 + Math.sin(a) * r * 0.5), 2, 1); }
+      if (ph < 0.35) { ctx.fillStyle = "#cfe9ff"; for (let k = 0; k < 3; k++) ctx.fillRect(X + 13 + k * 3, Y + 12 - Math.round(Math.abs(Math.sin(ph * Math.PI * 5 + k)) * 3), 1, 1); }   // splashes
+    }
   }
   function stepChars(dt) {
     if (medics || medicQueue.length || Object.values(chars).some(o => o.mode === "faint")) medicTick();
@@ -3149,8 +3338,9 @@ function makeOffice(wid) {
     toiletQueue = toiletQueue.filter(n => chars[n] && chars[n].mode === "toilet");
     for (const c of Object.values(chars)) {
       if (c.mode === "toilet" && !c.hidden) { if (!toiletQueue.includes(c.name)) toiletQueue.push(c.name); }
-      else if (c.toilet != null || c.satAt) { c.toilet = null; c.satAt = null; }
+      else if (c.toilet != null || c.satAt) { if (c.toilet != null && c.satAt) stallFx[c.toilet] = { at: Date.now() }; c.toilet = null; c.satAt = null; c.hurryAt = 0; }   // up and out: what they left, then the flush
     }
+    if (zh() && chars[GUARD]) for (const c of Object.values(chars)) if (c.toilet != null && c.satAt && Date.now() >= (c.hurryAt || c.satAt + 15000)) { c.hurryAt = Date.now() + 1e12; guardQueue.push({ k: "hurry", target: c.name }); }
     const waiting = toiletQueue.filter(n => chars[n].toilet == null);
     if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
     if (printJob) for (const c of Object.values(chars)) if (c.mode === "print" && !c.moving && !c.steps.length && c.tx === PRINT_SPOT[0] && c.ty === PRINT_SPOT[1]) {
@@ -3158,7 +3348,15 @@ function makeOffice(wid) {
       if (!printJob.startedAt) { printJob.startedAt = Date.now(); printJob.until = printJob.startedAt + PRINT_MS + 4000; c.say = fixed("Printing the delivery report…"); c.sayStart = performance.now(); c.sayUntil = printJob.startedAt + PRINT_MS; c.sayLoop = false; }
       else if (!printJob.done && Date.now() >= printJob.startedAt + PRINT_MS) { printJob.done = true; printed = { pages: PRINT_PAGES, title: printJob.title }; c.report = Date.now() + 25000; c.say = fixed("Delivered: {title}. The report is on the board.").replace("{title}", printJob.title || "the project"); c.sayStart = performance.now(); c.sayUntil = Date.now() + 9000; c.sayLoop = false; }
     }
-    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = fixed("Compacting my context…"); c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
+    for (const c of Object.values(chars)) {                                     // the coffee break: a line on arrival, and one on the way back to the desk
+      if (c.mode !== "coffee") { if (c.cup != null) { if (c.cupAt && !c.hidden && Math.random() < 0.5) { const l = LINES("BACK_TO_DESK"); c.say = l[Math.floor(Math.random() * l.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 4000; c.sayLoop = false; } c.cup = null; c.cupAt = null; } continue; }
+      const g = c.cup >= 0 && PANTRY_SPOTS[c.cup] ? PANTRY_SPOTS[c.cup].pos : DESKS[c.idx] && DESKS[c.idx].chair;
+      if (!c.cupAt && g && !c.moving && !c.steps.length && c.tx === g[0] && c.ty === g[1]) {
+        c.cupAt = Date.now();
+        if (Math.random() < 0.6 && !(c.say && Date.now() < c.sayUntil)) { const l = LINES("COFFEE"); c.say = l[Math.floor(Math.random() * l.length)]; c.sayStart = performance.now(); c.sayUntil = Date.now() + 7000; c.sayLoop = false; }
+      }
+    }
+    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = Date.now(); delete stallFx[c.toilet]; c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; c.say = fixed("Compacting my context…"); c.sayStart = performance.now(); c.sayUntil = c.toiletUntil; c.sayLoop = false; } }
     for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
     for (const c of Object.values(chars)) {
       if (c.setup) { setupTick(c, dt); if (!chars[c.name] || c.hidden || c.setup) { if (chars[c.name] && !c.hidden && c.setup) { /* walk like everyone else */ } else continue; } }
@@ -3234,7 +3432,8 @@ function makeOffice(wid) {
     const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
     const boss = c.mode === "listen" && c.hold && chars[c.hold.face]; if (boss && !c.moving) c.dir = facing(c, boss);   // everyone looks at the boss
     const bed = BEDS[c.idx], napping = c.mode === "sleep" || c.mode === "doze" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
-    if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir; }
+    if (!c.moving && !c.steps.length) { if (c.faceOverride) c.dir = c.faceOverride; else if (c.mode === "work" && c.dir !== DESKS[c.idx].dir) c.dir = DESKS[c.idx].dir;
+      else if (c.mode === "coffee" && c.cupAt) { const sp = c.cup >= 0 ? PANTRY_SPOTS[c.cup] : null; c.dir = sp ? (sp.brew && Date.now() - c.cupAt < BREW_MS ? "up" : sp.dir) : DESKS[c.idx] ? DESKS[c.idx].dir : "down"; } }
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
     if (c.mode === "strike" && c.strike && c.strike.act === "roll") {         // tantrum: rolling back and forth on the floor
       const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), ph = (Date.now() - c.strike.start) / 1000;
@@ -3367,6 +3566,7 @@ function makeOffice(wid) {
       for (let k = 0; k < 6; k++) { const ph = ((t * 0.45 + c.idx * 0.37 + k / 6) % 1); const px = tip + Math.round(Math.sin((ph + k) * 5) * 5) + dirx * 3 - 2, py = my - 4 - Math.round(ph * 30), sz = 3 + Math.round(ph * 7);   // dark, sooty smoke
         ctx.fillStyle = "rgba(40,40,46," + (0.85 * (1 - ph * 0.7)).toFixed(2) + ")"; ctx.fillRect(px, py, sz, sz - 1); ctx.fillStyle = "rgba(110,110,118," + (0.5 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px + 1, py + 1, Math.max(1, sz - 2), Math.max(1, sz - 3)); }
     }
+    if (c.mode === "coffee" && c.cupAt && !c.moving && !c.steps.length) drawCoffee(c, t, x, y, flip);
     if (c.medic) {
       const fl = c.dir === "right", side = c.dir === "down" ? 0 : fl ? 1 : -1, ty = y - c.top * 2;
       ctx.fillStyle = "#f7f7f7"; ctx.fillRect(x + 9, ty + 1, 14, 5); ctx.fillStyle = "#e0323c"; ctx.fillRect(x + 15, ty + 2, 2, 3); ctx.fillRect(x + 14, ty + 3, 4, 1);   // the surgical cap
@@ -3449,13 +3649,13 @@ function makeOffice(wid) {
     noticeDelivery(st, true); noticeWatchdog(st, true); noticeHuman(st, true); bossQueue = [];
     const team = st.agents.filter(a => a.status !== "retired"), now = Date.now();
     for (const c of Object.values(chars)) if (c.medic || c.boss || (!c.guard && !team.some(a => a.name === c.name))) delete chars[c.name];   // left meanwhile: already gone
-    medics = null; medicQueue = []; toiletQueue = []; printJob = null;
+    medics = null; medicQueue = []; toiletQueue = []; printJob = null; for (const k in stallFx) delete stallFx[k];
     seatsFor(st).forEach(x => { if (x) { x.desk = true; x.bed = true; } });
     ensureLayout.sig = null; ensureLayout(seats);
     for (const a of team) {
       const c = ensureChar(a), inf = a.info || {};
       Object.assign(c, { role: a.role, title: a.title, idx: seats.findIndex(x => x && x.name === a.name), hidden: false, setup: null, steps: [], moving: false, carry: null, talk: null, leaving: false,
-        newHire: false, lateComer: false, wake: null, wasAsleep: false, strike: null, smoke: null, despair: undefined, toilet: null, satAt: null, faceOverride: null, hold: null, zappedUntil: 0,
+        newHire: false, lateComer: false, wake: null, wasAsleep: false, strike: null, smoke: null, despair: undefined, toilet: null, satAt: null, faceOverride: null, hold: null, zappedUntil: 0, cup: null, cupAt: null, hurryAt: 0,
         deskWait: null, sleepReady: false, sayUntil: 0, bang: 0, report: 0, compactions: inf.compactions || 0, toiletUntil: inf.compacting ? now + 6000 : 0, act: inf.activity || null });
       const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment")); if (post) c.lastPostId = post.id ?? post.created_at;
       const d = DESKS[c.idx]; c.tx = d.chair[0]; c.ty = d.chair[1];               // decide from the own desk, then go straight to the spot
@@ -3467,6 +3667,7 @@ function makeOffice(wid) {
       if (c.mode === "toilet") { const free = TOILETS.findIndex((_, i) => !Object.values(chars).some(o => o.toilet === i)); if (free >= 0) { c.toilet = free; c.satAt = now; c.toiletUntil = Math.max(c.toiletUntil, now + 6000); } }
       const g = goalFor(c), d = DESKS[c.idx];
       c.tx = g[0]; c.ty = g[1]; c.px = c.tx * T; c.py = c.ty * T; c.goal = g;
+      if (c.mode === "coffee") c.cupAt = now - BREW_MS;                             // already holding the cup
       c.dir = c.mode === "toilet" && c.satAt ? "left" : d && c.tx === d.chair[0] && c.ty === d.chair[1] ? d.dir : "down";
     }
     medicTick();                                                                    // somebody out cold: the medics are already at work
@@ -3494,7 +3695,7 @@ function makeOffice(wid) {
     ctx = off.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0, W, H);
     const order = Object.values(chars).sort((a, b) => a.py - b.py);
-    drawPrinter(t);
+    drawPrinter(t); drawStalls(t);
     for (const c of order) drawChar(c, t);
     if (CAMS.length && Math.floor(t * 2) % 2) { ctx.fillStyle = "#ff3b3b"; for (const [x, y] of CAMS) ctx.fillRect(x + 6, y + 3, 2, 2); }   // the cameras' recording light
     if (THEMES[THEME].wechat && !transition) {                                                            // the master's motivational line every minute, when the room is quiet
@@ -3526,6 +3727,9 @@ function makeOffice(wid) {
     vctx.setTransform(scale, 0, 0, scale, ox, oy); ctx = vctx; const cssPx = (n) => n * dpr / scale;
     ctx.font = "600 " + cssPx(10.5) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(3); ctx.strokeStyle = "rgba(10,7,4,.9)";
     for (const c of order) { if (c.hidden) continue; let txt = c.label || c.name; while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…"; ctx.strokeText(txt, c.px + 16, c.py + 40); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, c.px + 16, c.py + 40); }
+    for (const [i, fx] of Object.entries(stallFx)) { const s = TOILETS[i], ph = (Date.now() - fx.at - FLUSH_AT) / FLUSH_MS; if (!s || ph < 0 || ph > 1) continue;   // the flush, spelled out
+      ctx.font = "700 " + cssPx(10) + "px " + SANS; ctx.textAlign = "center"; ctx.globalAlpha = Math.max(0, 1 - ph * ph); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = cssPx(3);
+      const txt = zh() ? "哗啦啦~" : "FLUSH~", ty = s[1] * T - 2 - Math.round(ph * 8); ctx.strokeText(txt, s[0] * T + 14, ty); ctx.fillStyle = "#2f6fd8"; ctx.fillText(txt, s[0] * T + 14, ty); ctx.globalAlpha = 1; }
     if (THEMES[THEME].wechat) for (const c of order) if (c.toilet != null && c.satAt) {                     // the stall's stopwatch, running since they sat down
       const [tx, ty] = TOILETS[c.toilet], sec = Math.floor((Date.now() - c.satAt) / 1000), txt = String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
       const alarm = sec >= 15, flash = Math.floor(t * 4) % 2 === 0;                                                          // over fifteen seconds: the red alarm light comes on until they leave
@@ -3536,7 +3740,7 @@ function makeOffice(wid) {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, guardQueue: () => guardQueue, THEME: () => THEME, view: () => ({ scale, ox, oy, width: canvas ? canvas.width : 0 }), DESKS, BEDS, FRONT, DOOR, PRINTER, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, guardQueue: () => guardQueue, THEME: () => THEME, view: () => ({ scale, ox, oy, width: canvas ? canvas.width : 0 }), DESKS, BEDS, FRONT, DOOR, PRINTER, PANTRY_SPOTS, TOILETS, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 }
 const offices = {}, avatarOffice = makeOffice(null);                         // the board's avatars come from an office of their own
 const office = {

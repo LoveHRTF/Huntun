@@ -24,7 +24,7 @@ Huntun 直接使用你现有的 AI 订阅。无需 API key，无需引入新的�
 
 **按席位选择供应商。** Claude Code、OpenAI Codex、Kimi Code、DeepSeek、通过 Ollama、vLLM 或 llama.cpp 服务器运行的本地模型与 Anthropic API 可在同一支团队中组合使用：关键工作交给最强的模型，常规任务以最低成本完成。
 
-**运行状态一目了然。** 像素风办公室实时呈现团队状态：谁在推理、编码、讨论、等待、压缩上下文，或因错误与用量限制而受阻。提供九种环境，从企业园区到交易大厅。
+**运行状态一目了然。** 像素风办公室实时呈现团队状态：谁在推理、编码、讨论、等待、压缩上下文（在厕所里）、恢复周期（在茶水间喝咖啡），或因错误与用量限制而受阻。提供九种环境，从企业园区到交易大厅。
 
 <img width="417" height="264" alt="Screenshot 2026-09-23 at 9 07 10 PM" src="https://github.com/user-attachments/assets/a9296e75-8979-4362-80bf-4e9d891cecfd" />
 
