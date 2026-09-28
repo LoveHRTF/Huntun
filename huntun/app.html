@@ -3423,6 +3423,7 @@ function makeOffice(wid) {
   }
   // each stall's fixtures on the wall at its head: in the Chinese office an LED timer that runs while someone sits (dim 00:00 when
   // empty) and an alarm light that flashes past fifteen seconds; elsewhere a vacant / occupied light
+  const inStall = (c) => c.toilet != null && !!c.satAt && !c.moving;
   const LED = { 0: [7, 5, 5, 5, 7], 1: [2, 6, 2, 2, 7], 2: [7, 1, 7, 4, 7], 3: [7, 1, 7, 1, 7], 4: [5, 5, 7, 1, 1], 5: [7, 4, 7, 1, 7], 6: [7, 4, 7, 5, 7], 7: [7, 1, 1, 1, 1], 8: [7, 5, 7, 5, 7], 9: [7, 5, 7, 1, 7] };
   function ledText(txt, x, y, on, off) {
     for (const ch of txt) {
@@ -3741,12 +3742,13 @@ function makeOffice(wid) {
     const lines = pages[pi], shown = Math.floor(ms / 1000 * 40);
     ctx.font = "500 " + cssPx(12.75) + "px " + SANS; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     const lh = cssPx(16.5), pad = cssPx(8), lw = Math.max(...lines.map(l => ctx.measureText(l).width)), bw = Math.min(W - 16, Math.ceil(lw + pad * 2)), bh = Math.ceil(lines.length * lh + pad * 1.6);
-    let bx = Math.round(c.px + 16 - bw / 2); bx = Math.max(4, Math.min(W - bw - 4, bx));
+    const ax = inStall(c) ? c.px - 32 : c.px;                                   // someone on the toilet speaks from the stall door, so the tail stays off the timer
+    let bx = Math.round(ax + 16 - bw / 2); bx = Math.max(4, Math.min(W - bw - 4, bx));
     const by = Math.max(4, c.py - 24 - bh - 8);
     const wc = !!THEMES[THEME].wechat, edge = wc ? "#5fbf47" : "#3b2a1e", face = wc ? "#95ec69" : "#ffffff", ink = wc ? "#0b1a0b" : "#333333";   // WeChat-style green bubbles in the Chinese office
     ctx.fillStyle = edge; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4); ctx.fillStyle = face; ctx.fillRect(bx, by, bw, bh);
     if (wc) { ctx.fillStyle = edge; ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx + bw - 1, by, 1, 1); ctx.fillRect(bx, by + bh - 1, 1, 1); ctx.fillRect(bx + bw - 1, by + bh - 1, 1, 1); }
-    ctx.fillStyle = edge; ctx.fillRect(c.px + 12, by + bh + 2, 8, 2); ctx.fillRect(c.px + 14, by + bh + 4, 4, 2); ctx.fillStyle = face; ctx.fillRect(c.px + 12, by + bh, 8, 2);
+    ctx.fillStyle = edge; ctx.fillRect(ax + 12, by + bh + 2, 8, 2); ctx.fillRect(ax + 14, by + bh + 4, 4, 2); ctx.fillStyle = face; ctx.fillRect(ax + 12, by + bh, 8, 2);
     let count = 0; ctx.fillStyle = ink;
     lines.forEach((l, i) => { const take = Math.max(0, Math.min(l.length, shown - count)); ctx.fillText(l.slice(0, take), bx + pad, by + pad * 0.5 + lh * (i + 0.85)); count += l.length; });
     if (pages.length > 1) { ctx.fillStyle = "#9aa3bd"; ctx.font = "500 " + cssPx(9.75) + "px " + SANS; ctx.textAlign = "right"; ctx.fillText((pi + 1) + "/" + pages.length, bx + bw - cssPx(3), by + bh - cssPx(2.5)); }
@@ -3864,7 +3866,9 @@ function makeOffice(wid) {
     // text goes straight onto the visible canvas under the display transform, so it is rasterised at device resolution at a fixed on-screen size
     vctx.setTransform(scale, 0, 0, scale, ox, oy); ctx = vctx; const cssPx = (n) => n * dpr * (compact ? 0.85 : 1) / scale;   // a little smaller in a grid cell
     ctx.font = "600 " + cssPx(10.5) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(3); ctx.strokeStyle = "rgba(10,7,4,.9)";
-    for (const c of order) { if (c.hidden) continue; let txt = c.label || c.name; while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…"; ctx.strokeText(txt, c.px + 16, c.py + 40); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, c.px + 16, c.py + 40); }
+    for (const c of order) { if (c.hidden) continue; let txt = c.label || c.name; while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…";
+      const [lx, ly] = inStall(c) ? [c.px - 16, c.py + 24] : [c.px + 16, c.py + 40];     // on the toilet: the name on the floor in front of the stall, clear of the timers on the stall walls
+      ctx.strokeText(txt, lx, ly); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, lx, ly); }
     for (const [i, fx] of Object.entries(stallFx)) { const s = TOILETS[i], ph = (Date.now() - fx.at - FLUSH_AT) / FLUSH_MS; if (!s || ph < 0 || ph > 1) continue;   // the flush, spelled out
       ctx.font = "700 " + cssPx(10) + "px " + SANS; ctx.textAlign = "center"; ctx.globalAlpha = Math.max(0, 1 - ph * ph); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = cssPx(3);
       const txt = zh() ? "哗啦啦~" : "FLUSH~", ty = s[1] * T - 2 - Math.round(ph * 8); ctx.strokeText(txt, s[0] * T + 14, ty); ctx.fillStyle = "#2f6fd8"; ctx.fillText(txt, s[0] * T + 14, ty); ctx.globalAlpha = 1; }
