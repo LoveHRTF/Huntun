@@ -18,7 +18,7 @@
 | Model | [`Navin-Models/Qwen3.8-Flash-Next-Uncensored-AD-4.27-GGUF`](https://huggingface.co/Navin-Models/Qwen3.8-Flash-Next-Uncensored-AD-4.27-GGUF), set `-mainline` (33 files, 88 GiB), served as `qwen3.8-flash-next-uncensored` |
 | Server | llama.cpp `llama-server` (official Windows CUDA 12.4 build), port 8080, API key, firewall limited to the local subnet, starts as the scheduled task `flash-next` |
 | Context | 2 parallel sessions sharing one 256K pool (either session can grow to the model's 262,144-token maximum) |
-| Measured speed | Decode ~17 tok/s for one session, ~20 tok/s total for two; does not slow down with context length (16.7 tok/s at 117K). Prefill ~500–630 t/s |
+| Measured speed | With the RAM at DDR4-3200: decode 22 tok/s for one session, 26 tok/s total for two; does not slow down with context length. Prefill ~430–480 t/s with the shared 256K pool (~500–630 with larger batches). At first the RAM ran at 2133 MT/s: 17 and 20 tok/s |
 | Against the reference plan | Plan (RTX 5090 + 128 GB): ~60 tok/s total for two streams, prefill >4,000 t/s. This box reaches about a third of the decode and a sixth of the prefill |
 | Clients | Browser chat and Chatbox on the LAN (`http://10.0.0.72:8080`), and Huntun on the Mac mini |
 
@@ -138,7 +138,8 @@ following section 5 today avoids them.
 
 All figures come from the kit's `bench.py` on this box, in Windows with the desktop running. Decode is in tok/s;
 "deep" means one request with that much context already in place. Found afterwards: the RAM was running at
-2133 MT/s, DDR4's default, because XMP/DOCP was off in the BIOS. Every Flash-Next figure here was measured like that.
+2133 MT/s, DDR4's default, because XMP/DOCP was off in the BIOS. Every row but the last was measured like that; the last
+is with the RAM raised to 3200 MT/s (still at 1.2 V with the board's automatic timings).
 
 | Configuration | Prefill 4K / 16K / 32K (t/s) | Decode, 1 session | Decode, 2 sessions total | Decode deep |
 |---|---|---|---|---|
@@ -149,31 +150,31 @@ All figures come from the kit's `bench.py` on this box, in Windows with the desk
 | 2 × 128K, batch 2048 (auto) | 484 / 523 / 526 | 16.8 | 19.7 | 18.7 at 32K |
 | 2 × 128K, batch 2048, 120K prompt | 536 at 4K, 497 at 120K (241.7 s) | 16.0 | 20.3 | 16.7 at 117K |
 | `--load-mode none` (pinned RAM) | did not start on Windows | | | |
-| **2 sessions sharing 256K, batch 1024 (in use now)** | not measured yet | | | |
+| **2 sessions sharing 256K, batch 1024, RAM at DDR4-3200 (in use now)** | 481 / 431 / 455 | 22.0 (23.2 per request) | 26.1 | 22.9 at 32K |
 
 **Against the plan:**
 
 | | Plan (RTX 5090 + 128 GB) | This box |
 |---|---|---|
 | Parallel sessions | 2 | 2 (sharing 256K) |
-| Decode, 2 sessions total | ~60 tok/s | ~20 tok/s |
-| Decode, 1 session | – | ~17 tok/s |
-| Prefill | >4,000 t/s | ~500–630 t/s |
+| Decode, 2 sessions total | ~60 tok/s | ~26 tok/s |
+| Decode, 1 session | – | ~22 tok/s |
+| Prefill | >4,000 t/s | ~430–630 t/s (by batch size) |
 | Slows down with context length | "no" | Confirmed flat up to 117K |
 
 **What it means in use:**
-- **Responsive enough.** About 17 tok/s is comfortable for one agent or one chat.
-- **Two sessions share the speed.** With two at once, each gets about 10 tok/s (20 in total).
+- **Responsive enough.** About 22 tok/s is comfortable for one agent or one chat.
+- **Two sessions share the speed.** With two at once, each gets about 13 tok/s (26 in total).
 - **Only the first long prompt is slow.** llama.cpp keeps a conversation's processed prompt, so later turns only read
-  the new text: a 5,000-token tool result takes about 8 s. A 20,000-token first prompt takes about 30 s; a full 256K
-  context read from scratch takes 7–10 minutes.
+  the new text: a 5,000-token tool result takes about 8 s. A 20,000-token first prompt takes 30–45 s; a full 256K
+  context read from scratch takes about 10 minutes.
 - **More agents than slots queue.** Huntun tells the master that the server runs 2 sessions at once, so it staffs no
   more than two seats on it.
 
 **What would make it faster:**
 - **RAM at its rated speed (XMP/DOCP).** Decode reads most of the experts from RAM every token, so it is almost entirely
-  bound by RAM bandwidth. 2133 → 3200 MT/s is +50% bandwidth, 3600 +69%; estimated decode ~21–25 tok/s instead of
-  ~17 (not yet measured). Prefill gains less. The 27B, which sits in VRAM, is unaffected.
+  bound by RAM bandwidth. 2133 → 3200 MT/s (+50% bandwidth) measured +30% decode: 22.0 tok/s instead of ~17, 26.1 total
+  for two instead of ~20. Prefill did not gain. The 27B, which sits in VRAM, is unaffected. Done on this box (section 4).
 - **128 GB RAM.** The N-gram table could then stay in memory. A 4090 with the table in RAM was reported at ~1,360 t/s
   prefill, about double. This is why the reference plan specifies 128 GB. Decode would barely change, since it is
   limited by DDR4.
@@ -182,8 +183,6 @@ All figures come from the kit's `bench.py` on this box, in Windows with the desk
 - **Nothing left to tune in the software settings.** Larger batches and pinned memory were both tried (section 3).
 
 **Still open:**
-- **Shared 256K pool speed.** Not benchmarked; it uses a smaller batch (1,024), so prefill is expected somewhat lower
-  than with 2 × 128K.
 - **Tool-call check.** The `/v1/messages` tool-call check (`bench.py` without `--skip-messages`) was never reported
   back in our conversation. Run it once before relying on the model in Huntun (step 9).
 
@@ -297,7 +296,8 @@ window:
 ```
 
 - **Run it twice.** The first run after a start reads the N-gram table from disk cold.
-- **Expected on this box:** decode about 17 tok/s (1 session) and 20 tok/s (2 sessions), prefill about 500–630 t/s.
+- **Expected on this box** (RAM at DDR4-3200): decode about 22 tok/s (1 session) and 26 tok/s (2 sessions), prefill
+  about 430–630 t/s depending on the batch size.
 - **Long context:** add `--sizes 4096,120000` to measure speed with 120K of context in place (the prompt alone takes
   about 4 minutes).
 
@@ -368,8 +368,8 @@ It prints `http://<LAN address>:8080` (here `http://10.0.0.72:8080`) and the key
 - **Huntun** (Mac mini, current main):
   1. Open **⚙ Model providers** in the header, then **+ Add a server**.
   2. Type: *llama.cpp server*. Name: e.g. "4090 box". Address: `http://<address>:8080`. API key: the key.
-  3. Optional note for the master, e.g. *"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20
-     total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse"*.
+  3. Optional note for the master, e.g. *"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~22 tok/s for one session, ~26
+     total for two, prefill ~450 t/s; good for implementation and tasks cloud models refuse"*.
   4. **Test** shows the model, the context and "2 sessions at once"; **Save** makes it available to every seat, the
      master included.
   5. Alternatively, export `HUNTUN_LLAMACPP_URL`, `HUNTUN_LLAMACPP_KEY` and `HUNTUN_LLAMACPP_NOTE` before starting
@@ -406,14 +406,14 @@ lower level of capability (Artificial Analysis index 34 vs 40). Measured on this
 
 | | Qwen3.8-27B | Flash-Next | Ratio |
 |---|---|---|---|
-| Decode, 1 session | 43.9 tok/s | ~17 tok/s | ~2.6× |
-| Decode, 2 sessions total | 83.3 tok/s (43.5 each) | ~20 tok/s | ~4× |
+| Decode, 1 session | 43.9 tok/s | 22.0 tok/s | ~2× |
+| Decode, 2 sessions total | 83.3 tok/s (43.5 each) | 26.1 tok/s | ~3.2× |
 | Decode, 3 sessions total (the kit's default, sharing 192K) | 108.7 tok/s (41.0 each) | | |
-| Decode at 32K / 128K depth | 43.0 / 33.1 tok/s | 15-19 / 16.7 tok/s | |
-| Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | ~400 / ~600 / ~600 t/s | ~4.5× |
+| Decode at 32K / 128K depth | 43.0 / 33.1 tok/s | 22.9 / 16.7 tok/s (128K at DDR4-2133) | |
+| Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | 481 / 431 / 455 t/s | ~6× |
 
 The `/v1/messages` tool check passes (the model thinks, then calls the tool). A 30,000-token prompt takes ~11 s instead
-of ~50 s; a 131K prompt ~69 s. A 256K pool with Q4_K_M did not fit: everything ran ~2.3× slower (layers moved to the
+of 50–65 s; a 131K prompt ~69 s. A 256K pool with Q4_K_M did not fit: everything ran ~2.3× slower (layers moved to the
 CPU), so the kit keeps 192K; the smaller IQ4_XS would leave room for 256K.
 
 1. `.\setup.ps1 download 27b` (~17 GB from `orcarouter/Qwen3.8-27B-Uncensored-GGUF`).

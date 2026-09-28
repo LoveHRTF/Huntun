@@ -189,12 +189,12 @@ cmd_connect() {
   echo "  export HUNTUN_LLAMACPP_URL=http://$ip:$PORT"
   [[ -n "$API_KEY" ]] && echo "  export HUNTUN_LLAMACPP_KEY=$API_KEY"
   if [[ -f "$Q27_MODEL_DIR/model.path" && -f "$MODEL_DIR/model.path" ]]; then
-    echo "  export HUNTUN_LLAMACPP_NOTE=\"uncensored models on an RTX 4090. $ALIAS: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. $Q27_ALIAS: less capable but ~44 tok/s for one session, ~83 total for two, prefill ~2,800 t/s, for well-specified tasks. Both good for tasks cloud models refuse\""
+    echo "  export HUNTUN_LLAMACPP_NOTE=\"uncensored models on an RTX 4090. $ALIAS: the stronger one, ~22 tok/s for one session, ~26 total for two, prefill ~450-600 t/s. $Q27_ALIAS: less capable but ~44 tok/s for one session, ~83 total for two, prefill ~2,800 t/s, for well-specified tasks. Both good for tasks cloud models refuse\""
     echo
     echo "The server offers two models, $ALIAS and $Q27_ALIAS, and holds one at a time; Huntun reads each one's"
     echo "context and sessions from the server and tells the master to keep this machine's seats on one of them."
   else
-    echo "  export HUNTUN_LLAMACPP_NOTE=\"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s; good for implementation and tasks cloud models refuse\""
+    echo "  export HUNTUN_LLAMACPP_NOTE=\"Qwen3.8-Flash-Next uncensored on an RTX 4090: ~22 tok/s for one session, ~26 total for two, prefill ~450-600 t/s; good for implementation and tasks cloud models refuse\""
     echo
     echo "Huntun reads the model name, $((ctx / 1024))K context and $PARALLEL parallel sessions from the server itself."
   fi

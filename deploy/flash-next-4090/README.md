@@ -15,15 +15,16 @@ The reference plan runs Flash-Next on an RTX 5090 + 128 GB with the per-layer-em
 two parallel streams, about 60 tok/s total decode, prefill above 4,000 t/s. This kit keeps the same shape
 (two parallel slots, N-gram table read from NVMe on demand) on an RTX 4090, Ryzen 9 5900X and 64 GB DDR4:
 
-| | Plan (5090 + 128 GB) | This box, measured (Windows 11) |
-|---|---|---|
-| Parallel streams | 2 | 2 (64K context each) |
-| Decode, 1 stream | | 16.4-16.9 tok/s |
-| Decode, 2 streams total | ~60 tok/s | 20.2-20.6 tok/s |
-| Decode at 32K context | | 15-19 tok/s (no slowdown with length) |
-| Prefill | >4,000 t/s | ~630 t/s |
+| | Plan (5090 + 128 GB) | This box, measured (Windows 11), RAM at DDR4-3200 | Same, RAM at DDR4-2133 (XMP off) |
+|---|---|---|---|
+| Parallel streams | 2 | 2 (sharing 256K) | 2 (64K context each) |
+| Decode, 1 stream | | 22.0 tok/s | 16.4-16.9 tok/s |
+| Decode, 2 streams total | ~60 tok/s | 26.1 tok/s (13.6 each) | 20.2-20.6 tok/s |
+| Decode at 32K context | | 22.9 tok/s (no slowdown with length) | 15-19 tok/s |
+| Prefill | >4,000 t/s | 431-481 t/s (batch 1,024) | ~630 t/s (batch 4,096) |
 
-Decode is bound by DDR4 bandwidth: the experts that do not fit in 24 GB of VRAM live in RAM. Prefill is bound by
+Decode is bound by DDR4 bandwidth: the experts that do not fit in 24 GB of VRAM live in RAM. Raising the RAM from 2133
+to 3200 MT/s (+50% bandwidth) raised decode by ~30%. Prefill is bound by
 reading the N-gram table from disk for every prompt token: with the table in RAM, a 4090 reaches ~1,360 t/s, and
 llama.cpp's own numbers show on-demand reads costing about half of that. 64 GB cannot hold the table; 128 GB can, which
 is the main lever for prefill on this box (the plan's 128 GB is there for this reason). `bench.py` measures your numbers
@@ -145,18 +146,18 @@ FIT_TARGET_MIB=1536   # if a desktop session shares the GPU
 
 ## A second model: Qwen3.8-27B
 
-Flash-Next is the stronger model but runs at ~17 tok/s with ~600 t/s prefill, because most of it lives in RAM and on the
+Flash-Next is the stronger model but runs at ~22 tok/s with ~450-600 t/s prefill, because most of it lives in RAM and on the
 NVMe drive. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in the 4090's VRAM and is much faster, at a lower
 level of capability (Artificial Analysis index 34 vs 40, Terminal-Bench 2.1 73.0 vs 84.3). It suits well-specified tasks
 where turnaround matters; Flash-Next suits the harder ones. Measured on this box (Windows 11, `bench.py`, no MTP):
 
 | | Qwen3.8-27B Q4_K_M | Flash-Next (for comparison) |
 |---|---|---|
-| Decode, 1 session | 43.9 tok/s | ~17 tok/s |
-| Decode, 2 sessions total | 83.3 tok/s (43.5 each) | ~20 tok/s |
+| Decode, 1 session | 43.9 tok/s | 22.0 tok/s |
+| Decode, 2 sessions total | 83.3 tok/s (43.5 each) | 26.1 tok/s (13.6 each) |
 | Decode, 3 sessions total | 108.7 tok/s (41.0 each) | |
-| Decode at 32K / 128K depth | 43.0 / 33.1 tok/s | 15-19 / 16.7 tok/s |
-| Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | ~400 / ~600 / ~600 t/s |
+| Decode at 32K / 128K depth | 43.0 / 33.1 tok/s | 22.9 / ~17 tok/s (128K measured at DDR4-2133) |
+| Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | 481 / 431 / 455 t/s |
 | Prefill, 131K prompt | 1,911 t/s (69 s) | ~500 t/s (4 minutes) |
 | `/v1/messages` tool call | passes (thinking + tool_use) | passes |
 
@@ -229,7 +230,7 @@ Settings; Huntun sends the key saved under Model providers (or `HUNTUN_LLAMACPP_
 ## Troubleshooting
 
 - **Flash-Next decodes slowly, the 27B is fine**: check the RAM speed (`setup.ps1 check`, or Task Manager > Performance
-  > Memory). 2133 MT/s means XMP/DOCP is off; the measurements in this README were taken like that, before it was found.
+  > Memory). 2133 MT/s means XMP/DOCP is off; raising it to 3200 took this box from ~17 to 22 tok/s.
 
 - **Very slow prefill, fine decode**: the N-gram table is being read inefficiently. Check `./setup.sh check` says the
   model is on NVMe and that there is free RAM for the page cache; see llama.cpp issue #28355 for a related regression.

@@ -25,10 +25,12 @@ WORDS = ("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo li
          "sierra tango uniform victor whiskey xray yankee zulu river stone cloud maple ember harbor lantern meadow orbit "
          "pixel quartz saddle timber velvet willow zephyr anchor beacon canyon dune falcon glacier").split()
 
-# The reference plan (RTX 5090 + 128 GB) and what this box (RTX 4090 + 64 GB DDR4) reaches: measured on Windows 11 with
-# the N-gram table on NVMe (16.4-16.9 / 20.2-20.6 tok/s decode, 629-632 t/s prefill); a few percent either way is noise.
+# The reference plan (RTX 5090 + 128 GB) and what this box (RTX 4090 + 64 GB DDR4-3200) reaches: measured on Windows 11
+# with the N-gram table on NVMe, 22.0 tok/s decode for one stream (23.2 per request) and 26.1 total for two. Prefill
+# depends on the batch: 481/431/455 t/s at 4K/16K/32K with two sessions sharing 256K (batch 1,024); with 2 x 64K
+# (batch 4,096) it measured 629-632 t/s, at DDR4-2133. A few percent either way is noise.
 PLAN = {"decode_total_2": 60.0, "prefill": 4000.0}
-EXPECT = {"decode_1": (15, 20), "decode_total_2": (18, 25), "prefill": (550, 800)}
+EXPECT = {"decode_1": (20, 26), "decode_total_2": (24, 30), "prefill": (420, 800)}
 # Qwen3.8-27B Q4_K_M sits entirely in VRAM. Measured on this box (Windows 11, no MTP, 3 sessions sharing 192K): 39-44
 # tok/s for one stream, 83.3-83.6 total for two, 108.7 for three (41.0 each), 2,632-2,832 t/s prefill, 43.0 tok/s at 32K
 # depth and 33.1 at 128K. Everything ~2.3x slower means VRAM ran short and layers went to the CPU (see the README).
