@@ -297,21 +297,27 @@ class Orchestrator:
         self.spawn(spec)
         return f"Hired @{name} as {spec.title}. Tag them on the board to give them work."
 
-    async def set_model(self, name: str, model: str | None, effort: str | None) -> str:
+    async def set_model(self, name: str, model: str | None, effort: str | None, by: str = "master") -> str:
+        """Changes an agent's model and/or effort from its next cycle. model "default" goes back to the project backend's default."""
         spec = next((a for a in self.team if a.name == name), None)
         if not spec:
             return f"ERROR: no agent named @{name}"
-        if model and not model_info(model):
+        if model and model != "default" and not model_info(model):
             return f"ERROR: unknown model {model}"
         if effort and effort not in EFFORTS:
             return f"ERROR: effort must be one of {', '.join(EFFORTS)}"
-        if model:
+        if model == "default":
+            spec.model, spec.backend = None, ""
+        elif model:
             spec.model = model
             spec.backend = backend_for_model(model, default="")
         if effort:
             spec.effort = effort
         save_team(self.workspace, self.team)
-        self.store.log_event("master", "model", f"@{name} -> {spec.model or 'default'} / {spec.effort or 'default'}")
+        if spec.role == "master" and model:                                         # keep the project's record of the master's model in step
+            self.config.master_model = spec.model or ""
+            save_config(self.workspace, self.config)
+        self.store.log_event(by, "model", f"@{name} -> {spec.model or 'default'} / {spec.effort or 'default'}")
         return f"@{name} now uses model {spec.model or 'default'} at {spec.effort or 'default'} effort (from its next cycle)."
 
     async def retire(self, name: str) -> str:

@@ -168,6 +168,9 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     return self._json(200, {"workspaces": hub.list(), "home": str(Path.home()), "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/providers":
                     return self._json(200, _providers_view())
+                if path == "/api/models":                                           # what a seat (the master's included) can run here
+                    return self._json(200, {"models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label} for m, b in catalog_available()],
+                                            "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/fs":
                     q = parse_qs(url.query)
                     return self._json(200, browse((q.get("path") or [None])[0]))
@@ -295,7 +298,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp") else None
                 try:
                     e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0),
-                                       team_lead=body.get("team_lead") is not False)
+                                       team_lead=body.get("team_lead") is not False, master_model=str(body.get("master_model") or ""))
                 except ValueError as ex:
                     raise HttpError(409 if "progress" in str(ex) else 400, str(ex)) from None
                 return self._json(202, e.summary())
@@ -316,7 +319,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     raise HttpError(409, str(ex)) from None
             if sub == "/approve":
                 try:
-                    hub.call(hub.approve(wid, body.get("agents") or []), timeout=120)
+                    hub.call(hub.approve(wid, body.get("agents") or [], {"max_agents": body["max_agents"]} if "max_agents" in body else None), timeout=120)
                 except ValueError as ex:
                     raise HttpError(409, str(ex)) from None
                 return self._json(200, self._entry(wid).summary())
@@ -328,6 +331,12 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 except ValueError as ex:
                     raise HttpError(409, str(ex)) from None
                 return self._json(202, self._entry(wid).summary())
+            if sub == "/max-agents":
+                try:
+                    n = hub.call(hub.set_max_agents(wid, int(body.get("max_agents") or 0)), timeout=30)
+                except ValueError as ex:
+                    raise HttpError(409, str(ex)) from None
+                return self._json(200, {"max_agents": n})
             if sub == "/close":
                 hub.call(hub.close(wid), timeout=60)
                 return self._json(200, self._entry(wid).summary())
@@ -343,6 +352,13 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 if not title or not text:
                     raise HttpError(400, "title and body are required")
                 return self._json(201, store.create_thread("human", title, text))
+            mm = re.match(r"^/agents/([a-z0-9-]+)/model$", sub)
+            if mm:
+                try:
+                    msg = hub.call(hub.set_agent_model(wid, mm.group(1), str(body.get("model") or ""), str(body.get("effort") or "")), timeout=30)
+                except ValueError as ex:
+                    raise HttpError(409, str(ex)) from None
+                return self._json(200, {"ok": True, "message": msg})
             rm = re.match(r"^/attention/(\d+)/resolve$", sub)
             if rm:
                 return self._json(200, {"ok": store.resolve_attention(int(rm.group(1)))})

@@ -85,7 +85,9 @@ class RenderTests(HubTests):
         self.assertIn("No model servers yet", out["dialog"])
         w = self.srv.call("/api/workspaces", {"path": str(self.project)})
         wid = w["id"]
-        self.render(f"#/w/{wid}/setup", {"/api/workspaces": {"workspaces": [w], "home": "/"}, f"/api/workspaces/{wid}": w})
+        out = self.render(f"#/w/{wid}/setup", {"/api/workspaces": {"workspaces": [w], "home": "/"}, f"/api/workspaces/{wid}": w, "/api/models": self.srv.call("/api/models")})
+        self.assertIn("The master's model", out["text"])
+        self.assertIn("auto: the backend's default model", out["text"])
         # goal check proposed
         self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "context": ""})
         self.wait_state(wid, ("goal_proposed", "error"))
@@ -97,6 +99,8 @@ class RenderTests(HubTests):
         out = self.render(f"#/w/{wid}", self.snapshot(wid))
         self.assertIn("awaiting approval", out["status"])
         self.assertIn("Estimate to finish", out["text"])
+        self.assertIn("Plans and steers the team", out["text"], "the master's own seat is on the plan, with its model")
+        self.assertIn("Team size limit (besides the master):", out["text"])
         self.assertIn("Personality", out["text"])
         # approved: the three-column board, a thread expanded, and the agent dialog
         self.srv.call(f"/api/workspaces/{wid}/approve", {"agents": []})
@@ -105,6 +109,7 @@ class RenderTests(HubTests):
         out = self.render(f"#/w/{wid}", snap)
         self.assertIn("paused", out["status"])
         self.assertIn("Needs you", out["header"])
+        self.assertIn("Team size limit", out["text"], "the team limit can be changed while the team runs")
         self.render(f"#/w/{wid}/t/{st['threads'][0]['id']}", snap)
         out = self.render(f"#/w/{wid}", snap, office=True)
         self.assertIn("Threads", out["text"], "office view toggled on shows the switch-back button")
@@ -143,6 +148,9 @@ class RenderTests(HubTests):
         pass
 
     def test_the_master_can_lead_without_a_team_lead(self) -> None:
+        pass
+
+    def test_the_human_picks_the_masters_model_and_the_team_limit_at_any_time(self) -> None:
         pass
 
 

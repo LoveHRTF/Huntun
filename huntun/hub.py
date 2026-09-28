@@ -35,6 +35,7 @@ from .master import (
     draft_goal,
     estimate_for,
     goal_thread_body,
+    master_backend,
     master_spec,
     plan_team,
     plan_thread_body,
@@ -206,7 +207,8 @@ class Hub:
 
     # ---- phase 1: confirm the goal and the definition of done with the human --------------------
 
-    def begin_init(self, wid: str, goal: str, backend: str | None, context: str, max_agents: int = 0, team_lead: bool = True) -> WorkspaceEntry:
+    def begin_init(self, wid: str, goal: str, backend: str | None, context: str, max_agents: int = 0, team_lead: bool = True,
+                   master_model: str = "") -> WorkspaceEntry:
         """Validates and starts the goal check in the background (callable from any thread)."""
         e = self.workspaces[wid]
         with self.lock:
@@ -217,11 +219,14 @@ class Hub:
             goal = goal.strip()
             if not goal:
                 raise ValueError("a goal is required")
+            if master_model and not model_info(master_model):
+                raise ValueError(f"unknown model {master_model}")
             e.state, e.error, e.progress, e.started_at = "clarifying", None, "Inspecting the directory", time.time()
-        self.submit(self.clarify(wid, goal, backend, context, max_agents=max_agents, team_lead=team_lead))
+        self.submit(self.clarify(wid, goal, backend, context, max_agents=max_agents, team_lead=team_lead, master_model=master_model))
         return e
 
-    async def clarify(self, wid: str, goal: str, backend: str | None, context: str, conversation: str = "", max_agents: int = 0, team_lead: bool = True) -> WorkspaceEntry:
+    async def clarify(self, wid: str, goal: str, backend: str | None, context: str, conversation: str = "", max_agents: int = 0, team_lead: bool = True,
+                      master_model: str = "") -> WorkspaceEntry:
         """The master restates the goal, proposes a definition of done, and asks the human to confirm."""
         e = self.workspaces[wid]
         e.state, e.error, e.started_at = "clarifying", None, e.started_at or time.time()
@@ -236,14 +241,16 @@ class Hub:
                 config.context = context.strip()
                 config.max_agents = max(0, int(max_agents or 0))
                 config.team_lead = bool(team_lead)
+                config.master_model = master_model if model_info(master_model) else ""
                 if backend in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"):
                     config.backend = backend
                 config.backend = resolve_backend(config)
             existing = await asyncio.to_thread(describe_workspace, e.path)
             e.note(f"Workspace inspected ({len(existing)} characters of context)")
-            e.progress = f"Master agent is checking the goal via {config.backend}"
-            e.note(f"Asking the master via {config.backend}" + (" (revising after your reply)" if conversation else ""))
-            draft = await draft_goal(make_backend(config.backend, config), config, existing, conversation, log=e.note, workspace=e.path)
+            via = master_backend(config)
+            e.progress = f"Master agent is checking the goal via {via}"
+            e.note(f"Asking the master via {via}" + (f" ({config.master_model})" if config.master_model else "") + (" (revising after your reply)" if conversation else ""))
+            draft = await draft_goal(make_backend(via, config), config, existing, conversation, log=e.note, workspace=e.path)
             e.note("The master drafted the goal and definition of done; over to you")
             save_config(e.path, config)
             await ensure_repo(e.path)
@@ -321,11 +328,12 @@ class Hub:
                 raise ValueError("the goal has not been confirmed yet")
             existing = await asyncio.to_thread(describe_workspace, e.path)
             full_context = "\n\n".join(part for part in (config.context, existing) if part)
-            e.progress = f"Master agent is planning the team via {config.backend}"
-            e.note(f"Asking the master to staff the team via {config.backend}")
-            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context, log=e.note, workspace=e.path)
+            via = master_backend(config)
+            e.progress = f"Master agent is planning the team via {via}"
+            e.note(f"Asking the master to staff the team via {via}")
+            rationale, agents = await plan_team(make_backend(via, config), config, full_context, log=e.note, workspace=e.path)
             e.note(f"The master proposed {len(agents)} agents; over to you")
-            specs = [master_spec(), *agents]
+            specs = [master_spec(config), *agents]
             save_team(e.path, specs)
             config.estimate = estimate_for(specs, rationale.split("Estimate notes: ")[-1] if "Estimate notes: " in rationale else "")
             save_config(e.path, config)
@@ -371,8 +379,9 @@ class Hub:
             prev = "\n".join(f"- @{a.name} ({a.role}, model {a.model or 'default'}, effort {a.effort or 'default'}): {a.brief.splitlines()[0]}" for a in previous if a.role != "master")
             full_context = "\n\n".join(p for p in (config.context, existing,
                                                     f"# Previous proposal (rejected by the human)\n{prev}\n\n# Human feedback on it\n{feedback}\nRevise the plan to address the feedback.") if p)
-            rationale, agents = await plan_team(make_backend(config.backend, config), config, full_context, log=e.note, workspace=e.path)
-            specs = [master_spec(), *agents]
+            rationale, agents = await plan_team(make_backend(master_backend(config), config), config, full_context, log=e.note, workspace=e.path)
+            master = next((a for a in previous if a.role == "master"), None) or master_spec(config)          # the human may have set its model already
+            specs = [master, *agents]
             save_team(e.path, specs)
             config.estimate = estimate_for(specs, rationale.split("Estimate notes: ")[-1] if "Estimate notes: " in rationale else "")
             save_config(e.path, config)
@@ -384,7 +393,7 @@ class Hub:
             e.state, e.error, e.progress = "error", f"{type(ex).__name__}: {ex}", ""
         return e
 
-    async def approve(self, wid: str, edits: list[dict[str, Any]] | None = None) -> WorkspaceEntry:
+    async def approve(self, wid: str, edits: list[dict[str, Any]] | None = None, limits: dict[str, Any] | None = None) -> WorkspaceEntry:
         """Human approved the plan, optionally after editing models / effort or removing agents. Loads the team (paused)."""
         e = self.workspaces[wid]
         if not is_initialized(e.path):
@@ -393,9 +402,20 @@ class Hub:
             raise ValueError("planning is in progress")
         team = load_team(e.path)
         changes: list[str] = []
+        config = load_config(e.path)
         for edit in edits or []:
             spec = next((a for a in team if a.name == edit.get("name")), None)
-            if spec is None or spec.role == "master":
+            if spec is None:
+                continue
+            if spec.role == "master":                                               # its model and effort only: never removed, no personality
+                if "model" in edit and (edit.get("model") or None) != spec.model and (not edit.get("model") or model_info(edit["model"])):
+                    spec.model = edit.get("model") or None
+                    spec.backend = backend_for_model(spec.model, default="") if spec.model else ""
+                    config.master_model = spec.model or ""
+                    changes.append(f"@master model -> {spec.model or 'backend default'}" + (f" via {spec.backend}" if spec.backend else ""))
+                if edit.get("effort") in EFFORTS and edit["effort"] != spec.effort:
+                    spec.effort = edit["effort"]
+                    changes.append(f"@master effort -> {spec.effort}")
                 continue
             if edit.get("remove"):
                 team = [a for a in team if a.name != spec.name]
@@ -414,9 +434,13 @@ class Hub:
                 if text and (text != spec.personality or preset != spec.personality_preset):
                     spec.personality, spec.personality_preset = text, preset if preset in PERSONALITY_IDS else "custom"
                     changes.append(f"@{spec.name} personality -> {preset if preset in PERSONALITY_IDS else 'custom'}")
-        config = load_config(e.path)
+        if "max_agents" in (limits or {}):
+            config.max_agents = max(0, int(limits["max_agents"] or 0))
         if config.team_lead and not any(a.role == "team-lead" for a in team):
             raise ValueError("the team needs a team-lead (or set up the project with the master leading directly)")
+        staffed = len([a for a in team if a.role != "master"])
+        if config.max_agents and staffed > config.max_agents:
+            raise ValueError(f"the plan has {staffed} agents besides the master but the team size limit is {config.max_agents}: remove agents or raise the limit")
         save_team(e.path, team)
         config.estimate = estimate_for(team, (config.estimate or {}).get("notes", ""))
         save_config(e.path, config)
@@ -431,6 +455,43 @@ class Hub:
         await self.load(wid, running=False)
         return e
 
+    async def set_agent_model(self, wid: str, name: str, model: str, effort: str) -> str:
+        """The human changes an agent's model and/or effort on a running team (the master's included); from its next cycle."""
+        e = self.workspaces[wid]
+        if e.orchestrator is None:
+            raise ValueError("the team is not loaded; change models on the plan before approving it")
+        out = await e.orchestrator.set_model(name, model or None, effort or None, by="human")
+        if out.startswith("ERROR"):
+            raise ValueError(out.removeprefix("ERROR: "))
+        return out
+
+    async def set_max_agents(self, wid: str, max_agents: int) -> int:
+        """The human changes the team size limit (agents besides the master; 0 = none) at any time after setup.
+
+        It never retires anyone: a lower limit only stops the master from hiring until the team is below it. On a running
+        team the master is told on the plan thread, so it can staff up (or knows why a hire is refused)."""
+        e = self.workspaces[wid]
+        if not config_exists(e.path):
+            raise ValueError("the project is not set up yet")
+        n = max(0, int(max_agents or 0))
+        orch = e.orchestrator
+        config = orch.config if orch is not None else load_config(e.path)
+        before = config.max_agents
+        config.max_agents = n
+        save_config(e.path, config)
+        if n != before:
+            store = e.open_store()
+            label = f"{n} agent{'s' if n != 1 else ''} besides the master" if n else "no limit"
+            store.log_event("human", "limit", f"Team size limit -> {label}")
+            plan_thread = int(store.get_control("plan_thread_id", "0") or 0)
+            if orch is not None and e.approved() and plan_thread:
+                staffed = len([a for a in orch.active_team() if a.role != "master"])
+                note = f"@master The team size limit is now {label} (was {f'{before}' if before else 'no limit'}); the team has {staffed}."
+                if n and staffed > n:
+                    note += " Do not hire until it is below the limit; nobody is retired automatically."
+                store.add_comment(plan_thread, "human", note)
+        return n
+
     def board(self, wid: str) -> "BoardView":
         """Everything the board page needs, whether or not the agents are loaded (pre-approval they are not)."""
         e = self.workspaces[wid]
@@ -440,7 +501,7 @@ class Hub:
         if not config_exists(e.path):
             raise ValueError("project is not set up")
         config = load_config(e.path)
-        return BoardView(e.open_store(), config, load_team(e.path) or [master_spec()], config.backend, {})
+        return BoardView(e.open_store(), config, load_team(e.path) or [master_spec(config)], config.backend, {})
 
     async def load(self, wid: str, running: bool | None = False) -> WorkspaceEntry:
         """Loads an initialized workspace: opens its board and spawns its agents (paused unless running=True)."""

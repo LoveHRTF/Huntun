@@ -65,6 +65,9 @@ class HuntunConfig:
     session_max_cycles: int = 25
     backend: str = "auto"
     model: str = ""  # empty = backend default (claude-opus-5-5 for api, Claude Code's configured model for claude-code)
+    # The master's own model, chosen by the human (empty = the project backend's default). It may run on another backend
+    # than the project's: the goal check, the planning and the master's cycles all go to the backend that serves it.
+    master_model: str = ""
     lead_effort: str = "xhigh"
     worker_effort: str = "high"
     review_interval_min: float = 20

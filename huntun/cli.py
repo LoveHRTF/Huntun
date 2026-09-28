@@ -26,11 +26,13 @@ from .master import (
     describe_workspace,
     draft_goal,
     goal_thread_body,
+    master_backend,
     master_spec,
     plan_team,
     plan_thread_body,
 )
 from .memory import AgentMemory
+from .models import model_info
 from .store import Store
 
 EPILOG = """environment:
@@ -63,6 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"], help="model backend (default: auto-detect)")
     s.add_argument("--context", default="", help="extra context for the master: constraints, stack preferences, existing code")
     s.add_argument("--no-team-lead", action="store_true", help="no team lead: the master leads the team directly (fewer agents, lower cost)")
+    s.add_argument("--master-model", default="", help="the master's own model, e.g. claude-opus-5-5 (default: the backend's default model)")
+    s.add_argument("--max-agents", type=int, default=None, help="at most this many agents besides the master (default: no limit, or HUNTUN_MAX_AGENTS)")
     s.add_argument("goal", nargs="+", help="what the team should build")
 
     s = sub.add_parser("start", help="run all agents and the local discussion board")
@@ -85,7 +89,8 @@ def main(argv: list[str] | None = None) -> None:
         if args.cmd == "serve":
             asyncio.run(cmd_serve(args.port, Path(args.dir).resolve() if args.dir else None, running=None, open_browser=not args.no_open))
         elif args.cmd == "init":
-            asyncio.run(cmd_init(workspace, " ".join(args.goal).strip(), args.backend, args.context, team_lead=not args.no_team_lead))
+            asyncio.run(cmd_init(workspace, " ".join(args.goal).strip(), args.backend, args.context, team_lead=not args.no_team_lead,
+                                 master_model=args.master_model, max_agents=args.max_agents))
         elif args.cmd == "start":
             asyncio.run(cmd_start(workspace, args.port, args.paused))
         elif args.cmd == "approve":
@@ -108,7 +113,8 @@ def _require_init(workspace: Path) -> None:
         raise RuntimeError(f"{workspace} is not initialized; run `huntun init \"<goal>\"` there first")
 
 
-async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str, team_lead: bool = True) -> None:
+async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str, team_lead: bool = True, master_model: str = "",
+                   max_agents: int | None = None) -> None:
     if not goal:
         raise RuntimeError('init needs a goal, e.g.  huntun init "Build a CLI todo app in Go with a TUI"')
     if is_initialized(workspace):
@@ -117,13 +123,20 @@ async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str
     config = default_config(goal)
     config.context = context.strip()
     config.team_lead = team_lead
+    if max_agents is not None:
+        config.max_agents = max(0, max_agents)
+    if master_model:
+        if not model_info(master_model):
+            raise RuntimeError(f"unknown model {master_model}")
+        config.master_model = master_model
     if backend:
         config.backend = backend
     backend_name = resolve_backend(config)
     config.backend = backend_name
-    print(f"Workspace: {workspace}\nGoal: {goal}\nBackend: {backend_name}   Model: {config.model or '(backend default)'}\n")
+    print(f"Workspace: {workspace}\nGoal: {goal}\nBackend: {backend_name}   Master's model: {config.master_model or config.model or '(backend default)'}"
+          + (f" via {master_backend(config)}" if master_backend(config) != backend_name else "") + "\n")
     existing = describe_workspace(workspace)
-    backend_obj = make_backend(backend_name, config)
+    backend_obj = make_backend(master_backend(config), config)
     print("Master agent is checking the goal...")
     draft = await draft_goal(backend_obj, config, existing)
     print(f"\n{draft['message']}\n\nGoal as the master understands it:\n  {draft['goal']}\n\nDefinition of done:")
@@ -153,7 +166,7 @@ async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str
     print("\nMaster agent is planning the team...")
     full_context = "\n\n".join(part for part in (context.strip(), existing) if part)
     rationale, agents = await plan_team(backend_obj, config, full_context)
-    specs = [master_spec(), *agents]
+    specs = [master_spec(config), *agents]
     save_team(workspace, specs)
     store = Store(db_path(workspace))
     store.set_control("running", "0")

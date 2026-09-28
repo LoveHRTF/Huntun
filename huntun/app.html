@@ -17,9 +17,13 @@
   code, pre, .mono { font-family: var(--mono); font-size:12.5px; }
   header { display:flex; gap:12px; align-items:center; padding:0 18px; border-bottom:3px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; height:54px; box-shadow: 0 3px 0 var(--ink); }
   header h1 { margin:0; color:var(--accent); text-shadow: 2px 2px 0 var(--ink); } header h1 a { color:inherit; text-decoration:none; }
-  header .goal { color:var(--muted); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+  header .goal { color:var(--muted); flex:1 3 0; min-width:40px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
   .counters { display:flex; gap:6px; align-items:center; font-family:var(--mono); font-size:12px; }
-  .counters .c { border:2px solid var(--line); padding:3px 8px; color:var(--muted); background:var(--panel2); white-space:nowrap; } .counters .c b { color:var(--text); font-weight:600; }
+  .counters .c { border:2px solid var(--line); padding:3px 8px; color:var(--muted); background:var(--panel2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; } .counters .c b { color:var(--text); font-weight:600; }
+  .counters .c.lim { flex-shrink:0; }                                              /* the limit chips stay readable; the totals give way first */
+  .counters button.c { font:12px var(--mono); background:var(--panel2); box-shadow:none; letter-spacing:0; cursor:pointer; }
+  .counters button.c:active { transform:none; } .counters button.c:hover { background:var(--panel); }
+  @media (max-width: 1250px) { header .counters.limited .c:not(.lim) { display:none; } }
   .counters .c.lim { border-color:var(--warn); color:var(--warn); } .counters .c.lim b { color:var(--warn); }
   button { background:var(--accent); color:var(--ink); border:2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); padding:7px 12px; font: 600 12px/1 var(--sans); cursor:pointer; letter-spacing:.02em; }
   button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
@@ -159,7 +163,13 @@
   .livelog { background:#070a12; border:2px solid var(--line); padding:8px 10px; font: 11.5px/1.5 var(--mono); max-height:56vh; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text); margin-top:10px; }
   .livelog .t { color:var(--muted); margin-right:8px; } .livelog .l { display:block; }
   .lang { width:auto; flex:0 0 auto; background:var(--panel2); color:var(--text); border:2px solid var(--ink); font: 600 12px/1 var(--sans); padding:5px 6px; margin-left:8px; }
-  header .row, header .counters { flex-wrap:nowrap; flex-shrink:0; }
+  header .row { flex-wrap:nowrap; flex-shrink:0; }
+  header .counters { flex-wrap:nowrap; flex:0 1 auto; min-width:0; overflow:hidden; }      /* shrinks (the goal first) instead of pushing the header past the screen */
+  @media (max-width: 900px) { header .counters .c:not(.lim) { display:none; } }
+  select.inline { width:auto; display:inline-block; padding:3px 6px; font-size:12.5px; }
+  .teamlimit { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:-4px 0 10px; font-size:12.5px; }
+  .plan-agent.master-seat { border-color:var(--accent); }
+  .modelctl select { flex:1 1 160px; min-width:0; }
   @media (max-width: 1000px) { main.board { grid-template-columns: 1fr; height:auto; } aside { border:0; border-bottom:3px solid var(--line); } aside.right { border-left:0; } .msg { max-width:100%; } .dlg .cols { grid-template-columns:1fr; } .dlg .cols > div + div { border-left:0; border-top:3px solid var(--line); } .plan-agent { grid-template-columns: 90px minmax(0, 1fr); } .plan-agent .ctl { grid-column: 1 / -1; flex-direction:row; } }
 </style>
 </head>
@@ -216,16 +226,19 @@ const statePill = (w) => {
 };
 let MODELS = [{ id: "claude-opus-5", backend: "claude-code", vendor: "anthropic" }, { id: "claude-sonnet-5", backend: "claude-code", vendor: "anthropic" }, { id: "claude-haiku-4-5", backend: "claude-code", vendor: "anthropic" }], PERSONAS = [];
 const LOCAL_VENDORS = ["ollama", "vllm", "llamacpp"];                          // their models show as "name · server"
+const LIMIT_CHOICES = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20];                   // team size limits the human can pick (agents besides the master; 0 = none)
+const limitOptions = (cur) => (LIMIT_CHOICES.includes(cur) ? LIMIT_CHOICES : [...LIMIT_CHOICES, cur].sort((a, b) => a - b)).map(n => '<option value="' + n + '"' + (n === cur ? " selected" : "") + '>' + (n ? "up to " + n + " agents" : "no limit") + '</option>').join("");
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"], BLABEL = { api: "Anthropic API", "claude-code": "Claude Code", codex: "OpenAI Codex", kimi: "Kimi Code", deepseek: "DeepSeek", ollama: "Ollama (local)", vllm: "vLLM (local)", llamacpp: "llama.cpp server (local)" };
-const modelOptions = (selected) => { const groups = {}; for (const m of MODELS) (groups[m.backend] = groups[m.backend] || []).push(m); const known = MODELS.some(m => m.id === selected);
-  return Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(LOCAL_VENDORS.includes(m.vendor) && m.label ? m.label : m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
+// <option>s for a model picker, grouped by the backend that runs each; defaultLabel adds a first "" choice (the backend's default model)
+const modelOptions = (selected, list = MODELS, defaultLabel = "") => { const groups = {}; for (const m of list) (groups[m.backend] = groups[m.backend] || []).push(m); const known = !selected || list.some(m => m.id === selected);
+  return (defaultLabel ? '<option value=""' + (selected ? '' : ' selected') + '>' + esc(defaultLabel) + '</option>' : '') + Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(LOCAL_VENDORS.includes(m.vendor) && m.label ? m.label : m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
 
 // ---------------------------------------------------------------- interface language: the page chrome is written in English and translated in place
 // Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
 const I18N = {
   "zh-CN": {
     "+ New thread": "+ 新话题", "Start a thread on the board without leaving the office": "不离开办公室，直接在看板上发起话题", "A title and a message, please.": "请填写标题和内容。", "Who leads the team": "团队由谁领导", "A team lead and the master: the team lead owns the technical side": "团队负责人加主管：技术由团队负责人负责", "The master leads directly, no team lead (cheaper)": "主管直接领导，不设团队负责人（更省钱）",
-    "⚙ Model providers": "⚙ 模型提供方", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本机或局域网中的模型服务器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本机或局域网中的模型服务器。它们提供的每个模型都可以分配给任何席位，包括主管。", "not checked yet": "尚未检查", "{n}K context": "{n}K 上下文", "1 session at once": "同时 1 个会话", "{n} sessions at once": "同时 {n} 个会话", "loaded now": "已加载", "failed to load": "加载失败", "One model loaded at a time: switching reloads it.": "同一时间只加载一个模型：切换时会重新加载。", "Up to {n} models loaded at a time.": "同一时间最多加载 {n} 个模型。", "found locally": "本机发现", "from the environment": "来自环境变量", "Edit ›": "编辑 ›", "no API key": "无 API 密钥", "Found at the default local address.": "在本机默认地址发现。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 设置。在这里保存相同地址即可编辑。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 设置。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 设置。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "还没有模型服务器。添加本机或局域网中的 llama.cpp、Ollama 或 vLLM 服务器。", "+ Add a server": "+ 添加服务器", "← All servers": "← 全部服务器", "Add a server": "添加服务器", "Type": "类型", "Name (optional)": "名称（可选）", "e.g. 4090 box": "例如：4090 主机", "Context per session, tokens (optional)": "每个会话的上下文长度，token 数（可选）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "该服务器的 OLLAMA_CONTEXT_LENGTH；留空为 32768", "Delete": "删除", "only if a proxy in front of Ollama asks for one": "仅当 Ollama 前面的代理需要时填写", "Ollama server": "Ollama 服务器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 兼容服务器", "Model providers…": "模型提供方…", "llama.cpp server (local models)": "llama.cpp 服务器（本地模型）",
+    "⚙ Model providers": "⚙ 模型提供方", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本机或局域网中的模型服务器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本机或局域网中的模型服务器。它们提供的每个模型都可以分配给任何席位，包括主管。", "not checked yet": "尚未检查", "{n}K context": "{n}K 上下文", "1 session at once": "同时 1 个会话", "{n} sessions at once": "同时 {n} 个会话", "loaded now": "已加载", "The master's model": "主管使用的模型", "auto: the backend's default model": "自动：使用后端的默认模型", "The master checks the goal, plans the team and steers it; the rest of the team is chosen per seat on the plan. It can run on another backend than the team's.": "主管负责确认目标、规划团队并指挥团队；其他成员的模型在方案里逐个选择。主管可以用和团队不同的后端。", "backend default": "后端默认", "Plans and steers the team and answers you. Its model runs the goal check, the planning and every master cycle.": "规划并指挥团队，回答你的问题。目标确认、团队规划和主管的每个周期都用这个模型。", "Team size limit (besides the master):": "团队人数上限（不含主管）：", "no limit": "不限", "Team size limit": "团队人数上限", "now {n}": "当前 {n}", "Apply": "应用", "Takes effect from its next cycle.": "从它的下一个周期开始生效。", "Saved. Takes effect from its next cycle.": "已保存，从它的下一个周期开始生效。", "usage limit": "用量限制", "Check": "检查", "Still limited": "仍受限", "resuming…": "恢复中…", "⏳ {n} limits": "⏳ {n} 个限制", "failed to load": "加载失败", "One model loaded at a time: switching reloads it.": "同一时间只加载一个模型：切换时会重新加载。", "Up to {n} models loaded at a time.": "同一时间最多加载 {n} 个模型。", "found locally": "本机发现", "from the environment": "来自环境变量", "Edit ›": "编辑 ›", "no API key": "无 API 密钥", "Found at the default local address.": "在本机默认地址发现。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 设置。在这里保存相同地址即可编辑。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 设置。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 设置。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "还没有模型服务器。添加本机或局域网中的 llama.cpp、Ollama 或 vLLM 服务器。", "+ Add a server": "+ 添加服务器", "← All servers": "← 全部服务器", "Add a server": "添加服务器", "Type": "类型", "Name (optional)": "名称（可选）", "e.g. 4090 box": "例如：4090 主机", "Context per session, tokens (optional)": "每个会话的上下文长度，token 数（可选）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "该服务器的 OLLAMA_CONTEXT_LENGTH；留空为 32768", "Delete": "删除", "only if a proxy in front of Ollama asks for one": "仅当 Ollama 前面的代理需要时填写", "Ollama server": "Ollama 服务器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 兼容服务器", "Model providers…": "模型提供方…", "llama.cpp server (local models)": "llama.cpp 服务器（本地模型）",
     "Master agent log": "主管实时日志", "No output yet.": "暂无输出。",
     "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登录）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "Model providers": "模型提供方", "llama.cpp server": "llama.cpp 服务器", "Server address": "服务器地址", "API key": "API 密钥", "Note for the master (optional)": "给主管的说明（可选）", "Save": "保存", "Test": "测试", "checking…": "检查中…", "saving…": "保存中…", "testing…": "测试中…", "(not saved yet)": "（尚未保存）", "Detected on this machine: {x}": "本机检测到：{x}", "No provider detected yet.": "尚未检测到任何提供方。", "the server's --api-key, if it has one": "服务器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅长什么、速度如何", "auto ({x})": "自动（{x}）", "auto (nothing detected yet)": "自动（尚未检测到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未检测到",
     "Projects": "项目", "Open a project": "打开项目", "Open": "打开", "Remove": "移除", "Remove from list": "从列表移除", "Remove from this list (files and .huntun/ stay on disk)": "从此列表移除（文件与 .huntun/ 保留在磁盘上）",
@@ -255,7 +268,7 @@ const I18N = {
   },
   "zh-TW": {
     "+ New thread": "+ 新討論串", "Start a thread on the board without leaving the office": "不離開辦公室，直接在看板上發起討論串", "A title and a message, please.": "請填寫標題與內容。", "Who leads the team": "團隊由誰領導", "A team lead and the master: the team lead owns the technical side": "團隊負責人加主管：技術由團隊負責人負責", "The master leads directly, no team lead (cheaper)": "主管直接領導，不設團隊負責人（更省錢）",
-    "⚙ Model providers": "⚙ 模型提供者", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本機或區域網路中的模型伺服器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本機或區域網路中的模型伺服器。它們提供的每個模型都可以分配給任何席位，包括主管。", "not checked yet": "尚未檢查", "{n}K context": "{n}K 上下文", "1 session at once": "同時 1 個工作階段", "{n} sessions at once": "同時 {n} 個工作階段", "loaded now": "已載入", "failed to load": "載入失敗", "One model loaded at a time: switching reloads it.": "同一時間只載入一個模型：切換時會重新載入。", "Up to {n} models loaded at a time.": "同一時間最多載入 {n} 個模型。", "found locally": "本機發現", "from the environment": "來自環境變數", "Edit ›": "編輯 ›", "no API key": "無 API 金鑰", "Found at the default local address.": "在本機預設位址發現。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 設定。在這裡儲存相同位址即可編輯。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 設定。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "還沒有模型伺服器。新增本機或區域網路中的 llama.cpp、Ollama 或 vLLM 伺服器。", "+ Add a server": "+ 新增伺服器", "← All servers": "← 全部伺服器", "Add a server": "新增伺服器", "Type": "類型", "Name (optional)": "名稱（選填）", "e.g. 4090 box": "例如：4090 主機", "Context per session, tokens (optional)": "每個工作階段的上下文長度，token 數（選填）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "該伺服器的 OLLAMA_CONTEXT_LENGTH；留空為 32768", "Delete": "刪除", "only if a proxy in front of Ollama asks for one": "僅當 Ollama 前面的代理需要時填寫", "Ollama server": "Ollama 伺服器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 相容伺服器", "Model providers…": "模型提供者…", "llama.cpp server (local models)": "llama.cpp 伺服器（本地模型）",
+    "⚙ Model providers": "⚙ 模型提供者", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "本機或區域網路中的模型伺服器：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "本機或區域網路中的模型伺服器。它們提供的每個模型都可以分配給任何席位，包括主管。", "not checked yet": "尚未檢查", "{n}K context": "{n}K 上下文", "1 session at once": "同時 1 個工作階段", "{n} sessions at once": "同時 {n} 個工作階段", "loaded now": "已載入", "The master's model": "主管使用的模型", "auto: the backend's default model": "自動：使用後端的預設模型", "The master checks the goal, plans the team and steers it; the rest of the team is chosen per seat on the plan. It can run on another backend than the team's.": "主管負責確認目標、規劃團隊並指揮團隊；其他成員的模型在方案裡逐一選擇。主管可以使用和團隊不同的後端。", "backend default": "後端預設", "Plans and steers the team and answers you. Its model runs the goal check, the planning and every master cycle.": "規劃並指揮團隊，回答你的問題。目標確認、團隊規劃和主管的每個週期都用這個模型。", "Team size limit (besides the master):": "團隊人數上限（不含主管）：", "no limit": "不限", "Team size limit": "團隊人數上限", "now {n}": "目前 {n}", "Apply": "套用", "Takes effect from its next cycle.": "從它的下一個週期開始生效。", "Saved. Takes effect from its next cycle.": "已儲存，從它的下一個週期開始生效。", "usage limit": "用量限制", "Check": "檢查", "Still limited": "仍受限", "resuming…": "恢復中…", "⏳ {n} limits": "⏳ {n} 個限制", "failed to load": "載入失敗", "One model loaded at a time: switching reloads it.": "同一時間只載入一個模型：切換時會重新載入。", "Up to {n} models loaded at a time.": "同一時間最多載入 {n} 個模型。", "found locally": "本機發現", "from the environment": "來自環境變數", "Edit ›": "編輯 ›", "no API key": "無 API 金鑰", "Found at the default local address.": "在本機預設位址發現。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "由 HUNTUN_LLAMACPP_URL 設定。在這裡儲存相同位址即可編輯。", "Set by OLLAMA_HOST.": "由 OLLAMA_HOST 設定。", "Set by VLLM_BASE_URL.": "由 VLLM_BASE_URL 設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "還沒有模型伺服器。新增本機或區域網路中的 llama.cpp、Ollama 或 vLLM 伺服器。", "+ Add a server": "+ 新增伺服器", "← All servers": "← 全部伺服器", "Add a server": "新增伺服器", "Type": "類型", "Name (optional)": "名稱（選填）", "e.g. 4090 box": "例如：4090 主機", "Context per session, tokens (optional)": "每個工作階段的上下文長度，token 數（選填）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "該伺服器的 OLLAMA_CONTEXT_LENGTH；留空為 32768", "Delete": "刪除", "only if a proxy in front of Ollama asks for one": "僅當 Ollama 前面的代理需要時填寫", "Ollama server": "Ollama 伺服器", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 相容伺服器", "Model providers…": "模型提供者…", "llama.cpp server (local models)": "llama.cpp 伺服器（本地模型）",
     "Master agent log": "主管即時日誌", "No output yet.": "尚無輸出。",
     "Kimi Code (your Kimi login)": "Kimi Code（你的 Kimi 登入）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（本地模型）", "vLLM (local models)": "vLLM（本地模型）", "Model providers": "模型提供者", "llama.cpp server": "llama.cpp 伺服器", "Server address": "伺服器位址", "API key": "API 金鑰", "Note for the master (optional)": "給主管的說明（選填）", "Save": "儲存", "Test": "測試", "checking…": "檢查中…", "saving…": "儲存中…", "testing…": "測試中…", "(not saved yet)": "（尚未儲存）", "Detected on this machine: {x}": "本機偵測到：{x}", "No provider detected yet.": "尚未偵測到任何提供者。", "the server's --api-key, if it has one": "伺服器的 --api-key（如有）", "e.g. what the model is good at and how fast it is": "例如：模型擅長什麼、速度如何", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（尚未偵測到任何提供方）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未偵測到",
     "Projects": "專案", "Open a project": "開啟專案", "Open": "開啟", "Remove": "移除", "Remove from list": "從清單移除", "Remove from this list (files and .huntun/ stay on disk)": "從此清單移除（檔案與 .huntun/ 仍保留在磁碟上）",
@@ -285,7 +298,7 @@ const I18N = {
   },
   "ja": {
     "+ New thread": "+ 新しいスレッド", "Start a thread on the board without leaving the office": "オフィスを離れずにボードでスレッドを始める", "A title and a message, please.": "タイトルと本文を入力してください。", "Who leads the team": "チームを率いるのは", "A team lead and the master: the team lead owns the technical side": "チームリードとマスター：技術面はチームリードが担当", "The master leads directly, no team lead (cheaper)": "マスターが直接率いる、チームリードなし（低コスト）",
-    "⚙ Model providers": "⚙ モデルプロバイダー", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "このマシンまたはネットワーク上のモデルサーバー：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "このマシンまたはネットワーク上のモデルサーバー。提供されるモデルはマスターを含むどの席にも割り当てられます。", "not checked yet": "未確認", "{n}K context": "{n}K コンテキスト", "1 session at once": "同時 1 セッション", "{n} sessions at once": "同時 {n} セッション", "loaded now": "読み込み済み", "failed to load": "読み込みに失敗", "One model loaded at a time: switching reloads it.": "同時に読み込めるモデルは 1 つ：切り替えると読み込み直します。", "Up to {n} models loaded at a time.": "同時に最大 {n} 個のモデルを読み込みます。", "found locally": "ローカルで検出", "from the environment": "環境変数から", "Edit ›": "編集 ›", "no API key": "API キーなし", "Found at the default local address.": "既定のローカルアドレスで検出。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "HUNTUN_LLAMACPP_URL で設定。同じアドレスをここで保存すると編集できます。", "Set by OLLAMA_HOST.": "OLLAMA_HOST で設定。", "Set by VLLM_BASE_URL.": "VLLM_BASE_URL で設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "モデルサーバーはまだありません。このマシンまたはネットワーク上の llama.cpp、Ollama、vLLM サーバーを追加してください。", "+ Add a server": "+ サーバーを追加", "← All servers": "← すべてのサーバー", "Add a server": "サーバーを追加", "Type": "種類", "Name (optional)": "名前（任意）", "e.g. 4090 box": "例：4090 マシン", "Context per session, tokens (optional)": "セッションあたりのコンテキスト、トークン数（任意）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "サーバーの OLLAMA_CONTEXT_LENGTH。空欄なら 32768", "Delete": "削除", "only if a proxy in front of Ollama asks for one": "Ollama の前段のプロキシが求める場合のみ", "Ollama server": "Ollama サーバー", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 互換サーバー", "Model providers…": "モデルプロバイダー…", "llama.cpp server (local models)": "llama.cpp サーバー（ローカルモデル）",
+    "⚙ Model providers": "⚙ モデルプロバイダー", "Model servers on this machine or your network: llama.cpp, Ollama, vLLM": "このマシンまたはネットワーク上のモデルサーバー：llama.cpp、Ollama、vLLM", "Model servers on this machine or your network. Every model they serve can be picked for any seat, the master's included.": "このマシンまたはネットワーク上のモデルサーバー。提供されるモデルはマスターを含むどの席にも割り当てられます。", "not checked yet": "未確認", "{n}K context": "{n}K コンテキスト", "1 session at once": "同時 1 セッション", "{n} sessions at once": "同時 {n} セッション", "loaded now": "読み込み済み", "The master's model": "マスターのモデル", "auto: the backend's default model": "自動：バックエンドの既定モデル", "The master checks the goal, plans the team and steers it; the rest of the team is chosen per seat on the plan. It can run on another backend than the team's.": "マスターは目標の確認、チームの計画と指揮を行います。ほかのメンバーのモデルは計画で席ごとに選びます。マスターはチームと別のバックエンドでも動かせます。", "backend default": "バックエンドの既定", "Plans and steers the team and answers you. Its model runs the goal check, the planning and every master cycle.": "チームを計画・指揮し、あなたに答えます。目標確認、計画、マスターの各サイクルはこのモデルで動きます。", "Team size limit (besides the master):": "チーム人数の上限（マスターを除く）：", "no limit": "上限なし", "Team size limit": "チーム人数の上限", "now {n}": "現在 {n}", "Apply": "適用", "Takes effect from its next cycle.": "次のサイクルから反映されます。", "Saved. Takes effect from its next cycle.": "保存しました。次のサイクルから反映されます。", "usage limit": "使用量の上限", "Check": "確認", "Still limited": "まだ制限中", "resuming…": "再開中…", "⏳ {n} limits": "⏳ {n} 件の制限", "failed to load": "読み込みに失敗", "One model loaded at a time: switching reloads it.": "同時に読み込めるモデルは 1 つ：切り替えると読み込み直します。", "Up to {n} models loaded at a time.": "同時に最大 {n} 個のモデルを読み込みます。", "found locally": "ローカルで検出", "from the environment": "環境変数から", "Edit ›": "編集 ›", "no API key": "API キーなし", "Found at the default local address.": "既定のローカルアドレスで検出。", "Set by HUNTUN_LLAMACPP_URL. Save the same address here to edit it.": "HUNTUN_LLAMACPP_URL で設定。同じアドレスをここで保存すると編集できます。", "Set by OLLAMA_HOST.": "OLLAMA_HOST で設定。", "Set by VLLM_BASE_URL.": "VLLM_BASE_URL で設定。", "No model servers yet. Add a llama.cpp, Ollama or vLLM server on this machine or your network.": "モデルサーバーはまだありません。このマシンまたはネットワーク上の llama.cpp、Ollama、vLLM サーバーを追加してください。", "+ Add a server": "+ サーバーを追加", "← All servers": "← すべてのサーバー", "Add a server": "サーバーを追加", "Type": "種類", "Name (optional)": "名前（任意）", "e.g. 4090 box": "例：4090 マシン", "Context per session, tokens (optional)": "セッションあたりのコンテキスト、トークン数（任意）", "the server's OLLAMA_CONTEXT_LENGTH; 32768 if empty": "サーバーの OLLAMA_CONTEXT_LENGTH。空欄なら 32768", "Delete": "削除", "only if a proxy in front of Ollama asks for one": "Ollama の前段のプロキシが求める場合のみ", "Ollama server": "Ollama サーバー", "vLLM / OpenAI-compatible server": "vLLM / OpenAI 互換サーバー", "Model providers…": "モデルプロバイダー…", "llama.cpp server (local models)": "llama.cpp サーバー（ローカルモデル）",
     "Master agent log": "マスターのライブログ", "No output yet.": "まだ出力はありません。",
     "Kimi Code (your Kimi login)": "Kimi Code（あなたの Kimi ログイン）", "DeepSeek (DEEPSEEK_API_KEY)": "DeepSeek（DEEPSEEK_API_KEY）", "Ollama (local models)": "Ollama（ローカルモデル）", "vLLM (local models)": "vLLM（ローカルモデル）", "Model providers": "モデルプロバイダー", "llama.cpp server": "llama.cpp サーバー", "Server address": "サーバーアドレス", "API key": "API キー", "Note for the master (optional)": "マスターへのメモ（任意）", "Save": "保存", "Test": "テスト", "checking…": "確認中…", "saving…": "保存中…", "testing…": "テスト中…", "(not saved yet)": "（未保存）", "Detected on this machine: {x}": "このマシンで検出：{x}", "No provider detected yet.": "プロバイダーはまだ検出されていません。", "the server's --api-key, if it has one": "サーバーの --api-key（ある場合）", "e.g. what the model is good at and how fast it is": "例：モデルの得意分野や速度", "auto ({x})": "自動（{x}）", "auto (nothing detected yet)": "自動（まだ何も検出されていません）", "{x} ✓": "{x} ✓", "{x} · not detected": "{x} · 未検出",
     "Projects": "プロジェクト", "Open a project": "プロジェクトを開く", "Open": "開く", "Remove": "削除", "Remove from list": "一覧から削除", "Remove from this list (files and .huntun/ stay on disk)": "この一覧から削除（ファイルと .huntun/ はディスクに残ります）",
@@ -567,7 +580,7 @@ async function setupView(id) {
   const draw = async () => {
     const w = await api("/api/workspaces/" + id);
     $("#hgoal").textContent = w.path;
-    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend", "maxagents", "teamlead"]); location.hash = "#/w/" + id; return; }
+    if ((w.initialized || w.state === "goal_proposed" || w.state === "planning") && w.state !== "clarifying") { clearDrafts(id, ["goal", "context", "backend", "maxagents", "teamlead", "mastermodel"]); location.hash = "#/w/" + id; return; }
     if (w.state === "clarifying") {
       if (updateWait(w, "Checking the goal")) return;
       $("#view").innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>' + esc(w.name) + '</h3><div class="path meta">' + esc(w.path) + '</div>' +
@@ -577,7 +590,8 @@ async function setupView(id) {
       return;
     }
     const goal = $("#goal") ? $("#goal").value : loadDraft(id, "goal", ""), ctx = $("#context") ? $("#context").value : loadDraft(id, "context", ""), be = $("#backend") ? $("#backend").value : loadDraft(id, "backend", "");
-    const avail = (await api("/api/workspaces")).backends || {};                                           // providers detected on this machine
+    const catalog = await api("/api/models"), avail = catalog.backends || {};                             // providers detected on this machine, and what they run
+    const mm = $("#mastermodel") ? $("#mastermodel").value : loadDraft(id, "mastermodel", "");
     const BACKEND_OPTIONS = [["claude-code", "Claude Code (your Claude login)"], ["codex", "OpenAI Codex (your ChatGPT login)"], ["kimi", "Kimi Code (your Kimi login)"], ["deepseek", "DeepSeek (DEEPSEEK_API_KEY)"], ["ollama", "Ollama (local models)"], ["vllm", "vLLM (local models)"], ["llamacpp", "llama.cpp server (local models)"], ["api", "Anthropic API (ANTHROPIC_API_KEY)"]];
     const detected = Object.keys(avail).map(k => (BACKEND_OPTIONS.find(o => o[0] === k) || [k, k])[1].split(" (")[0]);
     const backendOptions = '<option value="">' + esc(detected.length ? "auto (" + detected.join(", ") + ")" : "auto (nothing detected yet)") + '</option>' +
@@ -590,9 +604,11 @@ async function setupView(id) {
       '<label>Team size limit (besides the master)</label><select id="maxagents"><option value="0">no limit (the master decides)</option>' + [2, 3, 4, 5, 6, 8, 10, 12].map(n => '<option value="' + n + '"' + (String(n) === loadDraft(id, "maxagents", "0") ? " selected" : "") + '>up to ' + n + ' agents</option>').join("") + '</select>' +
       '<label>Who leads the team</label><select id="teamlead"><option value="1">A team lead and the master: the team lead owns the technical side</option><option value="0"' + (loadDraft(id, "teamlead", "1") === "0" ? " selected" : "") + '>The master leads directly, no team lead (cheaper)</option></select>' +
       '<div class="hrow"><label>Backend</label><a href="#" id="provlink" class="hint">Model providers…</a></div><select id="backend">' + backendOptions + '</select>' +
+      '<label>The master\'s model</label><select id="mastermodel">' + modelOptions(mm, catalog.models || [], "auto: the backend's default model") + '</select>' +
+      '<p class="hint" style="margin-top:4px">The master checks the goal, plans the team and steers it; the rest of the team is chosen per seat on the plan. It can run on another backend than the team\'s.</p>' +
       '<div class="row"><button>Send to the master</button><button type="button" class="danger" id="forgetbtn">Remove from list</button><span class="hint">Existing files are inspected. The master first confirms the goal and a definition of done with you, then proposes a team for you to approve.</span></div></form></div>';
     if (be) $("#backend").value = be;
-    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value)); $("#teamlead").addEventListener("change", () => saveDraft(id, "teamlead", $("#teamlead").value));
+    bindDraft($("#goal"), id, "goal"); bindDraft($("#context"), id, "context"); $("#backend").addEventListener("change", () => saveDraft(id, "backend", $("#backend").value)); $("#maxagents").addEventListener("change", () => saveDraft(id, "maxagents", $("#maxagents").value)); $("#teamlead").addEventListener("change", () => saveDraft(id, "teamlead", $("#teamlead").value)); $("#mastermodel").addEventListener("change", () => saveDraft(id, "mastermodel", $("#mastermodel").value));
     if (w.error) $("#view").insertAdjacentHTML("beforeend", '<p class="hint">Your goal and context are kept as typed; fix the cause and send again.</p>');
     $("#setupform").addEventListener("submit", (e) => startPlanning(e, id));
     $("#provlink").onclick = (e) => { e.preventDefault(); openProviders(reopen); };
@@ -604,7 +620,7 @@ async function setupView(id) {
 async function startPlanning(e, id) {
   e.preventDefault();
   const btn = e.target.querySelector("button"); btn.disabled = true;
-  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null, max_agents: Number($("#maxagents").value || 0), team_lead: $("#teamlead").value !== "0" }); setupView(id); }
+  try { await api("/api/workspaces/" + id + "/init", { goal: $("#goal").value, context: $("#context").value, backend: $("#backend").value || null, max_agents: Number($("#maxagents").value || 0), team_lead: $("#teamlead").value !== "0", master_model: $("#mastermodel").value || "" }); setupView(id); }
   catch (err) { alert(err.message); btn.disabled = false; }
 }
 
@@ -645,7 +661,7 @@ function attachMentions(textarea, names) {
 // ---------------------------------------------------------------- board
 let officeOn = (() => { try { return localStorage.getItem("huntun.office") === "1"; } catch (e) { return false; } })();
 let state = null, composing = false, boardId = null, openThread = null, sortBy = localStorage.getItem("huntun.sort") || "activity", filterBy = localStorage.getItem("huntun.filter") || "all";
-let threadKey = "", chatKey = "", chatData = null;
+let threadKey = "", chatKey = "", chatData = null, boardRefresh = null;
 async function boardView(id, threadId) {
   boardId = id; openThread = threadId; threadKey = ""; chatKey = ""; approvalKey = "";
   const base = "/api/w/" + id;
@@ -653,6 +669,7 @@ async function boardView(id, threadId) {
   const refresh = async () => {
     try { state = await api(base + "/state"); }
     catch (err) { $("#main").className = ""; $("#main").innerHTML = '<section id="view"><p><a href="#/">← Projects</a></p><p class="error">' + esc(err.message) + '</p></section>'; $("#hstatus").style.display = "none"; return; }
+    boardRefresh = refresh;
     for (const a of state.agents) roleOf[a.name] = a.role;
     if (state.models && state.models.length) MODELS = state.models;
     if (state.personalities) PERSONAS = state.personalities;
@@ -661,14 +678,16 @@ async function boardView(id, threadId) {
       layout = want;
       $("#main").className = want === "board" ? "board" : "";
       $("#main").innerHTML = want === "board"
-        ? '<aside><div class="hrow"><h2>Team</h2><button class="small secondary" id="viewtoggle">' + (officeOn ? "Threads" : "Office view") + '</button></div><div id="agents"></div></aside><section id="view"><div id="threadsbox"' + (officeOn ? ' style="display:none"' : '') + '></div><div id="officebox"' + (officeOn ? '' : ' style="display:none"') + '></div></section><aside class="right"><h2>Activity</h2><div class="events" id="events"></div></aside>'
+        ? '<aside><div class="hrow"><h2>Team</h2><button class="small secondary" id="viewtoggle">' + (officeOn ? "Threads" : "Office view") + '</button></div><div class="teamlimit"><span class="hint">Team size limit</span><select id="teamlimit" class="inline" title="agents besides the master; the master cannot hire beyond it. Lowering it retires nobody."></select><span class="hint" id="teamcount"></span></div><div id="agents"></div></aside><section id="view"><div id="threadsbox"' + (officeOn ? ' style="display:none"' : '') + '></div><div id="officebox"' + (officeOn ? '' : ' style="display:none"') + '></div></section><aside class="right"><h2>Activity</h2><div class="events" id="events"></div></aside>'
         : '<section id="view" class="approve-page"><div id="approval"></div><div id="threadsbox"></div></section>';
+      if (want === "board") { $("#teamlimit").onchange = async (ev) => { const sel = ev.target; sel.disabled = true; try { const r = await api("/api/workspaces/" + id + "/max-agents", { max_agents: Number(sel.value) }); state.max_agents = r.max_agents; } catch (err) { alert(err.message); } sel.disabled = false; sel.blur(); drawTeamLimit(); }; }
       if (want === "board") { $("#viewtoggle").onclick = () => { officeOn = !officeOn; try { localStorage.setItem("huntun.office", officeOn ? "1" : ""); } catch (e) {} $("#threadsbox").style.display = officeOn ? "none" : ""; $("#officebox").style.display = officeOn ? "" : "none"; $("#viewtoggle").textContent = officeOn ? "Threads" : "Office view"; if (officeOn) office.start(id, state); else office.stop(); }; if (officeOn) office.start(id, state); }
       threadKey = ""; approvalKey = ""; goalKey = "";
     }
     $("#hgoal").textContent = state.workspace.name; $("#hgoal").title = state.workspace.path + "\n\n" + state.goal;
     const lim = state.limits || {};
-    $("#hstatus").style.display = ""; $("#hstatus").textContent = !state.goal_confirmed ? "confirm goal" : !state.approved ? "awaiting approval" : lim.paused ? "limit: " + Object.keys(lim.backends || {}).join(", ") : state.running ? "running" : "paused";
+    $("#hstatus").style.display = ""; $("#hstatus").textContent = !state.goal_confirmed ? "confirm goal" : !state.approved ? "awaiting approval" : lim.gate ? "resuming…" : lim.paused ? "usage limit" : state.running ? "running" : "paused";
+    $("#hstatus").title = lim.paused ? "paused by a usage limit: " + Object.keys(lim.backends || {}).map(b => BLABEL[b] || b).join(", ") : "";
     $("#hstatus").className = "pill " + (!state.approved ? "busy" : lim.paused ? "off" : state.running ? "on" : "off");
     drawCounters(lim, state.totals);
     const n = state.attention_count || 0;
@@ -677,7 +696,7 @@ async function boardView(id, threadId) {
     $("#needs").onclick = () => openAttention(id);
     if ($("#attdlg").open) drawAttention(id);
     if (want === "board") {
-      drawTeam();
+      drawTeam(); drawTeamLimit();
       if (officeOn) office.update(id, state);
       $("#events").innerHTML = state.events.map(e => '<div class="ev">' + avatar(e.agent, "sm") + '<div class="t"><b>@' + esc(e.agent) + '</b> ' + esc(e.kind) + ' · ' + when(e.created_at) + '<br>' + esc(e.detail.slice(0, 160)) + '</div></div>').join("") || '<div class="hint">Nothing yet.</div>';
     } else if (want === "approve") {
@@ -686,6 +705,12 @@ async function boardView(id, threadId) {
       drawGoal(id);
     }
     drawThreads(false);
+  };
+  const drawTeamLimit = () => {                                               // not while the human has the picker open
+    const sel = $("#teamlimit"); if (!sel || !state || document.activeElement === sel) return;
+    const cur = state.max_agents || 0, html = limitOptions(cur);
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    $("#teamcount").textContent = "now " + state.agents.filter(a => a.role !== "master" && a.status !== "retired").length;
   };
   const drawTeam = () => {
     $("#agents").innerHTML = state.agents.filter(a => a.status !== "retired").map(a => {
@@ -706,21 +731,42 @@ async function boardView(id, threadId) {
 }
 
 // header counters: usage-limit pauses / resumes, and how long we have been waiting for tokens
+let countersArgs = null;
+window.addEventListener("resize", () => { if (countersArgs && boardId) drawCounters(...countersArgs); });     // one chip or one per backend follows the width
 function drawCounters(lim, totals) {
+  countersArgs = [lim, totals];
   const el = $("#hcounters");
   const wid = boardId;
   const est = state && state.estimate ? ' <span class="hint">/ est ' + fmtNum(state.estimate.tokens) + (state.estimate.cost_usd ? ' · ' + money(state.estimate.cost_usd) : '') + '</span>' : "";
   const tot = totals ? '<span class="c" title="total tokens (input + output + cached) and list-price cost across all agents, and the master\'s estimate for the whole project">Σ <b>' + fmtNum(totals.tokens) + '</b> tok · <b>' + money(totals.cost_usd) + '</b>' + est + '</span>' : "";
-  if (!lim || (!lim.pause_count && !lim.paused)) { el.innerHTML = tot; return; }
-  let wait = "";
-  for (const [b, l] of Object.entries(lim.backends || {})) {
-    const secs = Math.max(0, Math.round((Date.now() - new Date(l.since)) / 1000));
-    const sched = l.resets_at ? ' · resets ' + clock(new Date(l.resets_at * 1000).toISOString()) + (l.next_probe_at ? ' · auto-check ' + clock(new Date(l.next_probe_at * 1000).toISOString()) : '') : ' · no reset time announced';
-    wait += '<span class="c lim" title="' + esc(l.reason || "") + '">⏳ ' + esc(BLABEL[b] || b) + ' limit <b>' + fmtDur(secs) + '</b>' + sched + (l.last_probe ? ' · last check ' + when(l.last_probe) : '') + '</span><button class="small probebtn" data-backend="' + esc(b) + '">Check ' + esc(b) + '</button>';
+  const limited = Object.entries(lim && lim.paused ? lim.backends || {} : {});
+  el.classList.toggle("limited", limited.length > 0);
+  if (!limited.length) {
+    el.innerHTML = tot + (lim && lim.pause_count ? '<span class="c" title="times the team was paused by a usage limit / resumed by the watchdog">limit pauses <b>' + lim.pause_count + '</b> · resumes <b>' + lim.resume_count + '</b></span>' : '');
+    return;
   }
-  el.innerHTML = tot + wait + '<span class="c" title="times the team was paused by a usage limit / resumed by the watchdog">limit pauses <b>' + lim.pause_count + '</b> · resumes <b>' + lim.resume_count + '</b></span>' + (lim.gate ? '<span class="c lim">master resuming first…</span>' : '');
-  el.querySelectorAll(".probebtn").forEach(b => b.onclick = async () => { const label = b.textContent; b.disabled = true; b.textContent = "Checking…"; try { const r = await api("/api/workspaces/" + wid + "/probe-limit", { backend: b.dataset.backend }); if (!r.ok) { b.textContent = "Still limited"; setTimeout(() => { b.disabled = false; b.textContent = label; }, 3000); } } catch (err) { alert(err.message); b.disabled = false; b.textContent = label; } });
+  // A usage limit: a short chip per limited backend (one for all of them on a narrow window). The details are in its
+  // tooltip and a click asks the backend whether the limit has lifted, so the header keeps its width.
+  const since = (l) => Math.max(0, Math.round((Date.now() - new Date(l.since)) / 1000));
+  const detail = (b, l) => [(BLABEL[b] || b) + ": " + (l.reason || "usage limit"), "limited for " + fmtDur(since(l)),
+    l.resets_at ? "resets " + clock(new Date(l.resets_at * 1000).toISOString()) + (l.next_probe_at ? " · auto-check " + clock(new Date(l.next_probe_at * 1000).toISOString()) : "") : "no reset time announced",
+    l.last_probe ? "last check " + when(l.last_probe) : ""].filter(Boolean).join("\n");
+  const tail = "\nlimit pauses " + lim.pause_count + " · resumes " + lim.resume_count + (lim.gate ? "\nthe master resumes first, then releases the team" : "") + "\n(click to check now)";
+  const chip = (backends, label, secs, title) => '<button class="c lim limchip" data-backends="' + esc(backends.join(",")) + '" title="' + esc(title + tail) + '">⏳ ' + esc(label) + ' <b>' + fmtDurShort(secs) + '</b></button>';
+  const chips = limited.length > 1 && window.matchMedia("(max-width: 1000px)").matches
+    ? chip(limited.map(([b]) => b), limited.length + " limits", Math.max(...limited.map(([, l]) => since(l))), limited.map(([b, l]) => detail(b, l)).join("\n\n"))
+    : limited.map(([b, l]) => chip([b], SHORT_BACKEND[b] || b, since(l), detail(b, l))).join("");
+  el.innerHTML = chips + tot;
+  el.querySelectorAll(".limchip").forEach(btn => btn.onclick = async () => {
+    const label = btn.innerHTML; btn.disabled = true; btn.textContent = "Checking…";
+    try {
+      const rs = await Promise.all(btn.dataset.backends.split(",").map(b => api("/api/workspaces/" + wid + "/probe-limit", { backend: b })));
+      if (rs.some(r => !r.ok)) { btn.textContent = "Still limited"; setTimeout(() => { btn.disabled = false; btn.innerHTML = label; }, 3000); }
+    } catch (err) { alert(err.message); btn.disabled = false; btn.innerHTML = label; }
+  });
 }
+const SHORT_BACKEND = { api: "API", "claude-code": "Claude", codex: "Codex", kimi: "Kimi", deepseek: "DeepSeek", ollama: "Ollama", vllm: "vLLM", llamacpp: "llama.cpp" };
+const fmtDurShort = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? h + "h " + m + "m" : m ? m + "m" : s + "s"; };
 const fmtDur = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? h + "h " : "") + (h || m ? m + "m " : "") + sec + "s"; };
 
 // goal page: the master restates the goal and proposes a definition of done; the human confirms or replies
@@ -754,7 +800,7 @@ let approvalKey = "";
 function drawApproval(id) {
   const box = $("#approval");
   if (!box) return;
-  const key = state.workspace.state + ":" + state.agents.map(a => a.name + a.model + a.effort).join(",");
+  const key = state.workspace.state + ":" + state.max_agents + ":" + state.agents.map(a => a.name + a.model + a.effort).join(",");
   if (key === approvalKey) return;
   approvalKey = key;
   if (state.workspace.state === "planning" || state.workspace.state === "clarifying") { if (!updateWait(state.workspace, "Master is revising the plan")) { box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card">' + waitPanel(state.workspace, "Master is revising the plan") + '</div>'; const lg = $("#livelog"); if (lg) lg.scrollTop = lg.scrollHeight; } return; }
@@ -770,6 +816,12 @@ function drawApproval(id) {
   const e = state.estimate;
   const estFor = (n) => { const p = e && e.per_agent ? e.per_agent.find(x => x.name === n) : null; return p ? ' = ~' + fmtNum(p.tokens) + (p.cost_usd ? ' (' + money(p.cost_usd) + ')' : '') : ''; };
   const estBox = e ? '<div class="card"><h3>Estimate to finish</h3><p><b>' + fmtNum(e.tokens) + ' tokens</b>' + (e.cost_usd ? ' · about <b>' + money(e.cost_usd) + '</b> at list prices' : ' · cost not tracked on this backend') + ' · ' + e.cycles + ' agent cycles</p>' + (e.notes ? '<p class="hint">' + esc(e.notes) + '</p>' : '') + '<p class="hint">Removing agents or changing models below updates the estimate when you approve. The header shows actual spend against it while the team works.</p></div>' : '';
+  const master = state.agents.find(a => a.role === "master");
+  const masterCard = master ? '<div class="plan-agent master-seat" data-name="' + esc(master.name) + '">' + avatar(master.name, "lg") +
+      '<div><div class="who"><b>@' + esc(master.name) + '</b><span class="pill">' + esc(master.title) + '</span></div><div class="brief">Plans and steers the team and answers you. Its model runs the goal check, the planning and every master cycle.</div></div>' +
+      '<div class="ctl"><label>Model</label><select class="mdl">' + modelOptions(master.model || "", MODELS, "backend default") + '</select>' + (master.backend ? '<span class="hint">runs via ' + esc(BLABEL[master.backend] || master.backend) + '</span>' : '') +
+      '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (master.effort || "xhigh") ? " selected" : "") + '>' + e + '</option>').join("") + '</select></div></div>' : '';
+  const limitSelect = (cur, id) => '<select id="' + id + '" class="inline">' + limitOptions(cur) + '</select>';
   const cards = state.agents.filter(a => a.role !== "master").map(a => {
     const brief = a.brief.split("\n\nModel choice:")[0], why = (a.brief.split("\n\nModel choice:")[1] || "").trim();
     return '<div class="plan-agent" data-name="' + esc(a.name) + '">' + avatar(a.name, "lg") +
@@ -780,21 +832,22 @@ function drawApproval(id) {
       '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (a.effort || "high") ? " selected" : "") + '>' + e + '</option>').join("") + '</select>' +
       '<button type="button" class="small danger rm">Remove</button></div></div>';
   }).join("");
-  box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + (state.max_agents ? '<p class="hint">Team size limit: ' + state.max_agents + ' agents besides the master.</p>' : '') + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
-    estBox + '<h2>Team</h2>' + cards +
+  box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + ('<p class="hint">Team size limit (besides the master): ' + limitSelect(state.max_agents || 0, "planlimit") + '</p>') + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
+    estBox + '<h2>Team</h2>' + masterCard + cards +
     '<div class="plan-actions"><button class="ok" id="approvebtn">Approve plan</button><span class="hint">Agents load paused; press Start all afterwards.</span></div>' +
     '<form class="card" id="replanform"><label>Ask the master to revise</label><textarea id="feedback" style="min-height:56px" placeholder="e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA">' + esc(loadDraft(id, "feedback", "")) + '</textarea><div class="row"><button class="secondary">Request changes</button></div></form>' +
     '<h2>Discussion</h2>';
-  box.querySelectorAll(".plan-agent").forEach(card => {
+  box.querySelectorAll(".plan-agent:not(.master-seat)").forEach(card => {
     const sel = $(".pers", card), ta = $(".perstext", card);
     sel.onchange = () => { const pp = PERSONAS.find(x => x.id === sel.value); if (pp) ta.value = pp.text; };
     ta.oninput = () => { const pp = PERSONAS.find(x => x.id === sel.value); if (pp && ta.value.trim() !== pp.text) sel.value = "custom"; };
   });
   box.querySelectorAll(".rm").forEach(b => b.onclick = () => { const card = b.closest(".plan-agent"); card.dataset.remove = card.dataset.remove ? "" : "1"; card.classList.toggle("removed", !!card.dataset.remove); b.textContent = card.dataset.remove ? "Undo" : "Remove"; });
   $("#approvebtn").onclick = async () => {
-    const agents = [...box.querySelectorAll(".plan-agent")].map(c => ({ name: c.dataset.name, model: $(".mdl", c).value, effort: $(".eff", c).value, remove: !!c.dataset.remove, personality_preset: $(".pers", c).value, personality: $(".perstext", c).value }));
+    const agents = [...box.querySelectorAll(".plan-agent")].map(c => c.classList.contains("master-seat") ? { name: c.dataset.name, model: $(".mdl", c).value, effort: $(".eff", c).value }
+      : { name: c.dataset.name, model: $(".mdl", c).value, effort: $(".eff", c).value, remove: !!c.dataset.remove, personality_preset: $(".pers", c).value, personality: $(".perstext", c).value });
     $("#approvebtn").disabled = true;
-    try { await api("/api/workspaces/" + id + "/approve", { agents }); approvalKey = ""; state = null; route(); } catch (err) { alert(err.message); $("#approvebtn").disabled = false; }
+    try { await api("/api/workspaces/" + id + "/approve", { agents, max_agents: Number($("#planlimit").value || 0) }); approvalKey = ""; state = null; route(); } catch (err) { alert(err.message); $("#approvebtn").disabled = false; }
   };
   bindDraft($("#feedback"), id, "feedback");
   $("#replanform").onsubmit = async (e) => { e.preventDefault(); const feedback = $("#feedback").value.trim(); if (!feedback) return; try { await api("/api/workspaces/" + id + "/replan", { feedback }); clearDrafts(id, ["feedback"]); approvalKey = ""; } catch (err) { alert(err.message); } };
@@ -921,11 +974,18 @@ async function openAgent(id, name) {
     '<div class="meta" style="margin-top:6px">' + (isWorking(st) ? '<span class="dots"></span> ' : '') + '<span id="dlgtask">' + esc(live.task || "") + '</span></div>' +
     (spec.personality && spec.role !== "master" ? '<p style="margin:8px 0 0"><i>' + esc(spec.personality) + '</i></p>' : '') + '</div></div>' +
     '<div class="tiles" id="tiles"></div>' +
-    '<div class="cols"><div><h2>Role</h2><p><b>' + esc(spec.title) + '</b> <span class="meta">(' + esc(spec.role) + ')</span></p><p>' + esc(brief) + '</p>' + (why ? '<p class="meta"><i>Model choice: ' + esc(why) + '</i></p>' : '') + (spec.estimated_cycles ? '<p class="meta">Estimated ~' + spec.estimated_cycles + ' cycles × ~' + fmtNum(spec.tokens_per_cycle) + ' tokens</p>' : '') + '</div>' +
+    '<div class="cols"><div><h2>Role</h2><p><b>' + esc(spec.title) + '</b> <span class="meta">(' + esc(spec.role) + ')</span></p><p>' + esc(brief) + '</p>' + (why ? '<p class="meta"><i>Model choice: ' + esc(why) + '</i></p>' : '') + (spec.estimated_cycles ? '<p class="meta">Estimated ~' + spec.estimated_cycles + ' cycles × ~' + fmtNum(spec.tokens_per_cycle) + ' tokens</p>' : '') +
+    (state.approved && spec.status !== "retired" ? '<h2>Model</h2><div class="row modelctl"><select id="dlgmodel">' + modelOptions(spec.model || "", MODELS, "backend default") + '</select><select id="dlgeffort" class="inline">' + EFFORTS.map(e => '<option' + (e === (spec.effort || (spec.role === "master" || spec.role === "team-lead" ? "xhigh" : "high")) ? " selected" : "") + '>' + e + '</option>').join("") + '</select><button class="small" id="dlgapply">Apply</button></div><p class="hint" id="dlgmodelhint">Takes effect from its next cycle.</p>' : '') + '</div>' +
     '<div><h2>Current task</h2><p id="dlgcur">—</p><h2>Last cycle</h2><p id="dlglast" class="meta">—</p><h2>Uncommitted files</h2><p id="dlgfiles" class="meta">—</p></div></div>' +
     '<div class="tabs"><h2 style="margin:0">Live</h2><span class="hint" id="livehint">what the model is doing right now: its thinking, what it says, and the tools it runs (newest at the bottom)</span></div><div class="live" id="dlglive"><p class="hint">Loading…</p></div>' +
     '<div class="notes" id="dlgcycles"><h2>Recent cycles</h2><p class="hint">Loading…</p></div></div>';
   $("#dlgclose", dlg).onclick = () => dlg.close();
+  if ($("#dlgapply", dlg)) $("#dlgapply", dlg).onclick = async () => {
+    const btn = $("#dlgapply", dlg); btn.disabled = true;
+    try { await api("/api/w/" + id + "/agents/" + name + "/model", { model: $("#dlgmodel", dlg).value || "default", effort: $("#dlgeffort", dlg).value }); $("#dlgmodelhint", dlg).textContent = "Saved. Takes effect from its next cycle."; if (boardRefresh) boardRefresh(); }
+    catch (err) { alert(err.message); }
+    btn.disabled = false;
+  };
   const pull = async () => {
     let d; try { d = await api("/api/w/" + id + "/agents/" + name + "/activity?after=" + Math.max(0, liveCursor - 60)); } catch (err) { $("#dlgcycles", dlg).innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
     const live = $("#dlglive", dlg), liveBottom = live.scrollHeight - live.scrollTop - live.clientHeight < 40 || !live.querySelector(".l");

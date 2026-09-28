@@ -30,9 +30,12 @@ class FakeBackend:
 
     goal_prompts: list[str] = []
     cwds: list[Any] = []
+    models: list[str] = []                                                          # the model each master call asked for
+    made: list[str] = []                                                            # the backend each make_backend call named
 
     async def structured(self, **kw: Any) -> dict[str, Any]:
         FakeBackend.cwds.append(kw.get("cwd"))
+        FakeBackend.models.append(kw.get("model"))
         if kw["tool_name"] == "propose_goal":
             FakeBackend.goal_prompts.append(kw["prompt"])
             revised = "Human's reply" in kw["prompt"]
@@ -101,6 +104,7 @@ class HubTests(unittest.TestCase):
         self.fake = None
 
         def fake_make_backend(name: str, config: Any) -> FakeBackend:
+            FakeBackend.made.append(name)
             self.fake = FakeBackend(config)
             return self.fake
 
@@ -312,6 +316,68 @@ class HubTests(unittest.TestCase):
         self.assertEqual([a["role"] for a in st["agents"]], ["master", "fullstack", "tech-writer"])   # the proposed lead was dropped
         w = self.srv.call(f"/api/workspaces/{wid}/approve", {"agents": []})
         self.assertEqual((w["state"], w["approved"]), ("ready", True))
+
+    def test_the_human_picks_the_masters_model_and_the_team_limit_at_any_time(self) -> None:
+        from huntun.config import load_config
+
+        models = self.srv.call("/api/models")
+        self.assertIn("claude-opus-5", [m["id"] for m in models["models"]])
+        self.assertIn("api", models["backends"])
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "master_model": "no-such-model"})
+        self.assertEqual(cm.exception.code, 400)
+
+        # The master's model runs the goal check and the planning, and the master's seat
+        FakeBackend.models.clear()
+        self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI to myapp", "master_model": "claude-sonnet-5"})
+        self.assertEqual(self.wait_state(wid, ("goal_proposed", "error"))["state"], "goal_proposed")
+        self.srv.call(f"/api/workspaces/{wid}/confirm-goal", {"goal": "Add a CLI to myapp", "definition_of_done": "CLI runs"})
+        self.assertEqual(self.wait_state(wid, ("proposed", "error"))["state"], "proposed")
+        self.assertEqual(FakeBackend.models, ["claude-sonnet-5", "claude-sonnet-5"])
+        st = self.srv.call(f"/api/w/{wid}/state")
+        master = st["agents"][0]
+        self.assertEqual((master["role"], master["model"]), ("master", "claude-sonnet-5"))
+        self.assertEqual(load_config(self.project).master_model, "claude-sonnet-5")
+
+        # On the plan: a limit below the proposed team is refused; the master's model and effort can be changed
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(f"/api/workspaces/{wid}/approve", {"agents": [], "max_agents": 2})
+        self.assertEqual(cm.exception.code, 409)
+        self.assertIn("remove agents or raise the limit", json.loads(cm.exception.read())["error"])
+        w = self.srv.call(f"/api/workspaces/{wid}/approve", {"max_agents": 2, "agents": [{"name": "docs-1", "remove": True},
+                                                                                       {"name": "master", "model": "claude-opus-5", "effort": "max", "remove": True}]})
+        self.assertTrue(w["approved"])
+        st = self.srv.call(f"/api/w/{wid}/state")
+        master = st["agents"][0]
+        self.assertEqual((master["name"], master["model"], master["effort"], master["info"]["model"]), ("master", "claude-opus-5", "max", "claude-opus-5"))
+        self.assertEqual((st["max_agents"], load_config(self.project).master_model), (2, "claude-opus-5"))
+        self.assertIn("@master model -> claude-opus-5", self.srv.call(f"/api/w/{wid}/threads/{st['plan_thread_id']}")["comments"][-1]["body"])
+
+        # While the team runs: change any agent's model (back to the default too) and the team limit
+        self.srv.call(f"/api/w/{wid}/agents/master/model", {"model": "claude-sonnet-5", "effort": "xhigh"})
+        self.srv.call(f"/api/w/{wid}/agents/dev-1/model", {"model": "default", "effort": "low"})
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(f"/api/w/{wid}/agents/dev-1/model", {"model": "no-such-model"})
+        self.assertEqual(cm.exception.code, 409)
+        by_name = {a["name"]: a for a in self.srv.call(f"/api/w/{wid}/state")["agents"]}
+        self.assertEqual((by_name["master"]["model"], by_name["master"]["effort"]), ("claude-sonnet-5", "xhigh"))
+        self.assertEqual((by_name["dev-1"]["model"], by_name["dev-1"]["effort"]), (None, "low"))
+        self.assertEqual(load_config(self.project).master_model, "claude-sonnet-5")
+
+        self.assertEqual(self.srv.call(f"/api/workspaces/{wid}/max-agents", {"max_agents": 1})["max_agents"], 1)
+        st = self.srv.call(f"/api/w/{wid}/state")
+        self.assertEqual((st["max_agents"], load_config(self.project).max_agents), (1, 1))
+        note = self.srv.call(f"/api/w/{wid}/threads/{st['plan_thread_id']}")["comments"][-1]
+        self.assertEqual(note["author"], "human")
+        self.assertIn("@master The team size limit is now 1 agent besides the master (was 2); the team has 2.", note["body"])
+        self.assertIn("nobody is retired automatically", note["body"])
+        self.assertEqual(len([a for a in st["agents"] if a["status"] != "retired"]), 3, "lowering the limit retires nobody")
+        orch = self.srv.hub.get(wid).orchestrator
+        refused = self.srv.hub.call(orch.hire({"name": "qa-1", "role": "qa", "brief": "test it"}))
+        self.assertIn("capped the team at 1 agents", refused)
+        self.srv.call(f"/api/workspaces/{wid}/max-agents", {"max_agents": 0})
+        self.assertIn("no limit (was 1)", self.srv.call(f"/api/w/{wid}/threads/{st['plan_thread_id']}")["comments"][-1]["body"])
 
     def test_init_requires_goal_and_reports_errors(self) -> None:
         w = self.srv.call("/api/workspaces", {"path": str(self.project)})

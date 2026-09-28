@@ -188,7 +188,7 @@ async def draft_goal(backend: Backend, config: HuntunConfig, existing: str, conv
         tool_name="propose_goal",
         description="Submit the restated goal, definition of done, assumptions, and questions for the human to confirm.",
         schema=GOAL_SCHEMA,
-        model=config.model,
+        model=config.master_model or config.model,
         effort=config.lead_effort,
     )
     dod = [str(x) for x in (draft.get("definition_of_done") or []) if str(x).strip()]
@@ -276,7 +276,7 @@ async def plan_team(backend: Backend, config: HuntunConfig, extra_context: str =
         tool_name="propose_team",
         description="Submit the team composition for this project.",
         schema=plan_schema(),
-        model=config.model,
+        model=config.master_model or config.model,
         effort=config.lead_effort,
     )
     raw = plan.get("agents") or []
@@ -332,10 +332,17 @@ def plan_thread_body(config: HuntunConfig, rationale: str, specs: list[AgentSpec
             "or ask for changes and I will revise the plan. Nothing starts until you approve.")
 
 
-def master_spec() -> AgentSpec:
+def master_backend(config: HuntunConfig) -> str:
+    """The backend the master's own calls go to: the one serving the model the human chose for it, else the project's."""
+    return backend_for_model(config.master_model, default=config.backend) if config.master_model else config.backend
+
+
+def master_spec(config: HuntunConfig | None = None) -> AgentSpec:
+    model = (config.master_model if config else "") or None
     return AgentSpec(
         name="master", role="master", title=ROLE_CATALOG["master"].title,
         brief="Own the team and the delivery. Staff and steer the team, keep every task owned and moving, keep the Delivery status thread current, review progress periodically, raise the bar, and answer the human. Manage, never develop.",
+        model=model, backend=backend_for_model(model, default="") if model else "",
         estimated_cycles=8, tokens_per_cycle=120_000,
         created_at=now_iso(),
     )
