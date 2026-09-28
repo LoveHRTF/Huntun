@@ -65,6 +65,17 @@ def looks_like_limit(text: str | None) -> bool:
     return bool(text) and bool(LIMIT_RE.search(text or ""))
 
 
+# The conversation no longer fits: the request itself (llama.cpp, Anthropic, OpenAI-style servers), or a KV pool that
+# several sessions share and that just filled up (llama.cpp: "Context size has been exceeded.").
+OVERFLOW_RE = __import__("re").compile(r"context size has been exceeded|exceeds the available context size|larger than the max context size|"
+                                       r"exceed_context_size|prompt is too long|maximum context length|context_length_exceeded", __import__("re").IGNORECASE)
+POOL_FULL_RE = __import__("re").compile(r"context size has been exceeded", __import__("re").IGNORECASE)
+
+
+def looks_like_overflow(text: str | None) -> bool:
+    return bool(text) and bool(OVERFLOW_RE.search(text or ""))
+
+
 def make_backend(name: str, config: Any) -> Backend:
     if name == "api":
         from .api import ApiBackend

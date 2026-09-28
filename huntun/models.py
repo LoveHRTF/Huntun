@@ -105,6 +105,7 @@ _CONTEXT_ENV = {"llamacpp": "HUNTUN_LLAMACPP_CONTEXT", "ollama": "HUNTUN_OLLAMA_
 LOCAL_CATALOGS = {"llamacpp": LLAMACPP_CATALOG, "ollama": OLLAMA_CATALOG, "vllm": VLLM_CATALOG}
 ROUTES: dict[str, dict[str, str]] = {}                                           # model id -> {"server", "type", "url", "key", "model" (the name the server knows)}
 SERVER_STATUS: dict[str, dict[str, Any]] = {}                                    # server id -> what it answered on the last refresh
+SHARED_POOLS: set[str] = set()                                                   # llama.cpp servers whose sessions were seen to share one KV pool
 _local_checked = 0.0
 _saved_cache: tuple[Any, dict] = (None, {})
 
@@ -279,8 +280,9 @@ def _get_json(url: str, key: str, timeout: float) -> Any:
 def probe_server(kind: str, url: str, key: str = "", timeout: float = 1.5, context: int = 0) -> dict[str, Any]:
     """Asks a server what it serves: {"ok", "models", "contexts" (per model), "context", "slots", "error"}.
 
-    llama.cpp: the alias from GET /v1/models, then from GET /props the context of one slot (the whole pool when the server
-    shares its KV cache) and how many sessions it runs at once. A llama-server running as a router (several models behind
+    llama.cpp: the alias from GET /v1/models, then from GET /props the context of one slot and how many sessions it runs
+    at once. /props gives every session the whole pool when they share one (--kv-unified) without saying so: once a server
+    shows it does (note_shared_pool), each session counts on its share ("pool" is then the whole). A llama-server running as a router (several models behind
     one address, loaded on demand) answers per model instead: see _router_status. Ollama: GET /api/tags; it does not say
     what context it serves, so that is the server's own setting here, else HUNTUN_OLLAMA_CONTEXT (32768). vLLM:
     GET /v1/models, where each model carries its max_model_len.
@@ -302,7 +304,7 @@ def probe_server(kind: str, url: str, key: str = "", timeout: float = 1.5, conte
     except Exception as e:
         return {**empty, "error": f"cannot reach {url}: {getattr(e, 'reason', None) or e}"}
     contexts: dict[str, int] = {}
-    reported = slots = 0
+    reported = slots = pool = 0
     try:
         if kind == "ollama":
             for m in data.get("models") or []:
@@ -328,11 +330,13 @@ def probe_server(kind: str, url: str, key: str = "", timeout: float = 1.5, conte
             slots = int(props.get("total_slots") or 0)
         except (AttributeError, TypeError, ValueError):
             pass
+        if reported and slots > 1 and url in SHARED_POOLS:                         # /props gives each session the whole shared pool
+            pool, reported = reported, reported // slots
         if reported:
             contexts = {n: reported for n in contexts}
     if not contexts:
         return {**empty, "context": reported, "slots": slots, "error": "the server lists no model"}
-    return {"ok": True, "models": list(contexts), "contexts": contexts, "context": reported, "slots": slots, "error": ""}
+    return {"ok": True, "models": list(contexts), "contexts": contexts, "context": reported, "slots": slots, "error": "", **({"pool": pool} if pool else {})}
 
 
 def _router_status(url: str, key: str, timeout: float, listing: dict[str, Any], props: dict[str, Any], default_ctx: int) -> dict[str, Any]:
@@ -349,6 +353,7 @@ def _router_status(url: str, key: str, timeout: float, listing: dict[str, Any], 
         st = m.get("status") if isinstance(m.get("status"), dict) else {}
         state = "failed" if st.get("failed") else str(st.get("value") or "")
         ctx = slots = 0
+        pool = 0
         if state == "loaded":
             try:
                 p = _get_json(f"{url}/props?model={urllib.parse.quote(m['id'], safe='')}&autoload=false", key, timeout)
@@ -356,9 +361,13 @@ def _router_status(url: str, key: str, timeout: float, listing: dict[str, Any], 
                 slots = int(p.get("total_slots") or 0)
             except Exception:
                 pass
+            if ctx and slots > 1 and (_preset_pool(str(st.get("preset") or ""), st.get("args"))[2] or url in SHARED_POOLS):
+                pool, ctx = ctx, ctx // slots                                          # /props gives each session the whole shared pool
         if not ctx:
             ctx, slots = _preset_capacity(str(st.get("preset") or ""), st.get("args"))
-        details[m["id"]] = {"context": ctx or default_ctx, "slots": slots, "state": state}
+            total, _, shared = _preset_pool(str(st.get("preset") or ""), st.get("args"))
+            pool = total if shared and slots > 1 else 0
+        details[m["id"]] = {"context": ctx or default_ctx, "slots": slots, "state": state, **({"pool": pool} if pool else {})}
     try:
         max_loaded = max(0, int(props.get("max_instances") or 0))
     except (TypeError, ValueError):
@@ -368,8 +377,20 @@ def _router_status(url: str, key: str, timeout: float, listing: dict[str, Any], 
 
 
 def _preset_capacity(preset: str, args: Any) -> tuple[int, int]:
-    """(context of one session, sessions at once) from a router model's preset ("ctx-size = 131072" lines) or, failing
-    that, its command line; zeros for what neither says."""
+    """(context one session can count on, sessions at once) from a router model's preset ("ctx-size = 131072" lines) or,
+    failing that, its command line; zeros for what neither says. Sessions sharing one pool (kv-unified) count on their
+    share of it: any one may grow past it, but when they all do at once the pool overflows and llama-server aborts every
+    request in flight."""
+    total, sessions, _ = _preset_pool(preset, args)
+    if total <= 0:
+        return 0, max(sessions, 0)
+    if sessions <= 0:                                   # "auto": llama-server picks the slots and shares one pool among them
+        return total, 0
+    return total // sessions, sessions
+
+
+def _preset_pool(preset: str, args: Any) -> tuple[int, int, bool]:
+    """(ctx-size, parallel, whether the sessions share one pool) from a preset or command line."""
     def is_flag(s: Any) -> bool:
         return isinstance(s, str) and s.startswith("-") and not s[1:2].isdigit()
 
@@ -392,14 +413,9 @@ def _preset_capacity(preset: str, args: Any) -> tuple[int, int]:
                 continue
         return 0
 
-    total = num("ctx-size", "c")
     sessions = num("parallel", "np")
-    shared = next((opts[n].lower() in ("true", "1", "on") for n in ("kv-unified", "kvu") if n in opts), False)
-    if total <= 0:
-        return 0, max(sessions, 0)
-    if sessions <= 0:                                   # "auto": llama-server picks the slots and shares one pool among them
-        return total, 0
-    return (total if shared or sessions == 1 else total // sessions), sessions
+    shared = next((opts[n].lower() in ("true", "1", "on") for n in ("kv-unified", "kvu") if n in opts), sessions <= 0)
+    return num("ctx-size", "c"), sessions, shared
 
 
 def probe_llamacpp(url: str, key: str = "", timeout: float = 1.5) -> dict[str, Any]:
@@ -528,6 +544,18 @@ def default_route(kind: str) -> dict[str, str]:
                 return r
     e = entries[0] if entries else {"id": "", "url": _DEFAULT_URL[kind], "key": ""}
     return {"server": e["id"], "type": kind, "url": e["url"], "key": e["key"], "model": ""}
+
+
+def note_shared_pool(url: str) -> bool:
+    """A llama.cpp server said its KV cache is full ("Context size has been exceeded."): its sessions share one pool
+    (--kv-unified), which /props does not say. From now on each of its sessions counts on its share of the pool, so
+    agents compact before they crowd each other out. True when this is news."""
+    url = normalize_server_url(url)
+    if not url or url in SHARED_POOLS:
+        return False
+    SHARED_POOLS.add(url)
+    refresh_local(force=True)
+    return True
 
 
 def model_ids() -> list[str]:

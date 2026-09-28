@@ -263,15 +263,15 @@ class ProviderTests(unittest.TestCase):
         os.environ["HUNTUN_LLAMACPP_KEY"] = "secret"
         cat = {m.id: m for m in models.refresh_llamacpp(force=True)}
         self.assertEqual({i: m.context for i, m in cat.items()},
-                         {"qwen3.8-flash-next-uncensored": 262144,                               # loaded: from its own /props
-                          "qwen3.8-27b-uncensored": 131072})                                     # not loaded: from its preset (shared pool)
+                         {"qwen3.8-flash-next-uncensored": 131072,                               # loaded: its /props gives each session the whole shared pool
+                          "qwen3.8-27b-uncensored": 65536})                                      # not loaded: from its preset; a shared pool is split
         self.assertEqual(_FakeLlamaRouter.loads, [], "discovery must never make the router load a model")
         for mid, other in (("qwen3.8-27b-uncensored", "qwen3.8-flash-next-uncensored"), ("qwen3.8-flash-next-uncensored", "qwen3.8-27b-uncensored")):
             self.assertIn("give it at most 2 seats", cat[mid].use_for)
             self.assertIn(f"also serves {other} but holds only one model at a time", cat[mid].use_for)
         st = models.probe_server("llamacpp", os.environ["HUNTUN_LLAMACPP_URL"], "secret")
         self.assertEqual((st["max_loaded"], st["details"]["qwen3.8-27b-uncensored"], st["details"]["qwen3.8-flash-next-uncensored"]["state"]),
-                         (1, {"context": 131072, "slots": 2, "state": "unloaded"}, "loaded"))
+                         (1, {"context": 65536, "slots": 2, "state": "unloaded", "pool": 131072}, "loaded"))
         b = make_backend("llamacpp", self.config)                                        # each call names its model, which is what the router routes on
         asyncio.run(b.client.messages.create(model=models.local_route("qwen3.8-27b-uncensored")["model"], max_tokens=5,
                                              messages=[{"role": "user", "content": "ping"}]))
@@ -280,7 +280,7 @@ class ProviderTests(unittest.TestCase):
     def test_router_preset_capacity(self) -> None:
         cap = models._preset_capacity
         self.assertEqual(cap("[m]\nctx-size = 131072\nparallel = 2\n", None), (65536, 2))           # separate slots split the pool
-        self.assertEqual(cap("[m]\nctx-size = 131072\nparallel = 2\nkv-unified = true\n", None), (131072, 2))
+        self.assertEqual(cap("[m]\nctx-size = 131072\nparallel = 2\nkv-unified = true\n", None), (65536, 2))   # a shared pool: each counts on its share
         self.assertEqual(cap("[m]\nc = 8192\n", None), (8192, 0))                                   # slots "auto": one shared pool
         self.assertEqual(cap("", ["llama-server", "--ctx-size", "32768", "--parallel", "1", "--jinja"]), (32768, 1))
         self.assertEqual(cap("[m]\njinja = true\n", ["llama-server", "--reasoning-budget", "-1"]), (0, 0))

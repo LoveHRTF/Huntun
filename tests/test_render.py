@@ -74,12 +74,12 @@ class RenderTests(HubTests):
                "status": {"ok": False, "models": [], "context": 0, "slots": 0, "error": "cannot reach http://127.0.0.1:11434: refused"}}
         router = {**box, "id": "a2", "name": "4090 router", "label": "4090 router", "url": "http://10.0.0.73:8080", "models": ["qwen3.8-27b-uncensored", "qwen3.8-flash-next-uncensored"],
                   "status": {"ok": True, "models": ["qwen3.8-27b-uncensored", "qwen3.8-flash-next-uncensored"], "context": 0, "slots": 0, "error": "", "max_loaded": 1,
-                             "details": {"qwen3.8-27b-uncensored": {"context": 131072, "slots": 2, "state": "unloaded"},
+                             "details": {"qwen3.8-27b-uncensored": {"context": 65536, "slots": 3, "state": "unloaded", "pool": 196608},
                                          "qwen3.8-flash-next-uncensored": {"context": 262144, "slots": 2, "state": "loaded"}}}}
         out = self.render("#/providers", {**home, "/api/providers": {"servers": [box, router, env], "types": types, "backends": {"llamacpp": "llama.cpp server with a model"}}})
         dlg = out["dialog"]
         for text in ("4090 box", "qwen3.8-flash-next-uncensored", "256K context", "2 sessions at once", "API key *****", "Edit ›", "found locally", "cannot reach", "+ Add a server",
-                     "qwen3.8-27b-uncensored", "128K context", "loaded now", "One model loaded at a time"):
+                     "qwen3.8-27b-uncensored", "64K context", "3 sessions at once", "192K pool shared", "loaded now", "One model loaded at a time"):
             self.assertIn(text, dlg)
         out = self.render("#/providers", {**home, "/api/providers": {"servers": [], "types": types, "backends": {}}})
         self.assertIn("No model servers yet", out["dialog"])

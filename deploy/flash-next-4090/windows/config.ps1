@@ -24,7 +24,7 @@ $ALLOW_FROM = "LocalSubnet"             # who the firewall lets in: LocalSubnet,
 # Two parallel slots, as in the reference plan. -c is split evenly across slots.
 $PARALLEL = 2
 $CTX_PER_SLOT = 65536
-$KV_UNIFIED = $false                    # $true = the slots share one pool of PARALLEL*CTX_PER_SLOT; any slot may use all of it
+$KV_UNIFIED = $false                    # $true = the slots share one pool of PARALLEL*CTX_PER_SLOT; any slot may use all of it (Huntun still plans each at CTX_PER_SLOT)
 $KV_TYPE = "q8_0"
 
 $THREADS = "auto"                       # auto = physical cores (12 on a Ryzen 9 5900X)
@@ -51,7 +51,7 @@ $Q27_MODEL_SET = "Q4_K_M"               # Q5_K_M (19.5 GB) is closer to Q8 but l
 $Q27_ALIAS = "qwen3.8-27b-uncensored"
 $Q27_PARALLEL = 3                       # dense and all in VRAM: a session costs little speed (2 measured 43.5 tok/s each)
 $Q27_CTX_PER_SLOT = 65536
-$Q27_KV_UNIFIED = $true                 # the three share 192K (about what VRAM holds next to the weights); any may use all of it
+$Q27_KV_UNIFIED = $true                 # the three share 192K (about what VRAM holds next to the weights); any may use all of it, Huntun plans each at 64K
 $Q27_KV_TYPE = "q4_0"                   # ~18 KB per token (16 of 64 layers keep one); q8_0 doubles it
 $Q27_BATCH = ""                         # empty = llama.cpp's defaults (2048 / 512)
 $Q27_UBATCH = ""

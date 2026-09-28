@@ -18,13 +18,23 @@ from typing import Any
 
 import anthropic
 
-from ..models import DEFAULT_API_MODEL, catalog_for, context_limit, cost_usd
+from ..models import DEFAULT_API_MODEL, catalog_for, context_limit, cost_usd, note_shared_pool
 from ..tools import ToolContext, available_tools, execute
 from ..types import CycleResult, HuntunConfig
-from . import looks_like_limit
+from . import POOL_FULL_RE, looks_like_limit, looks_like_overflow
 
 RETRYABLE_ATTEMPTS = 6
 COMPACT_AT = 0.6  # compact the working context when a call reports more than this fraction of the window
+OVERFLOW_RECOVERIES = 4  # context overflows one cycle recovers from (compacting, or waiting out a full shared pool) before it gives up
+
+
+class ContextOverflow(Exception):
+    """The server could not fit the conversation: the request was too long, or (pool_full) the KV pool the server's
+    sessions share filled up and it aborted every request in flight, possibly someone else's fault."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.pool_full = bool(POOL_FULL_RE.search(message))
 
 
 PROVIDERS: dict[str, dict[str, Any]] = {
@@ -161,10 +171,16 @@ class ApiBackend:
                     return await stream.get_final_message()
             except anthropic.BadRequestError as e:
                 msg = str(getattr(e, "message", e)).lower()
+                if looks_like_overflow(msg):
+                    raise ContextOverflow(str(getattr(e, "message", e))) from None
                 culprit = next((f for f in OPTIONAL_FIELDS if f not in self.dropped and f.replace("_", "") in msg.replace("_", "")), None)
                 if culprit is None:
                     raise
                 self.dropped.add(culprit)
+            except anthropic.APIError as e:                                         # llama.cpp reports a full pool inside the stream
+                if looks_like_overflow(str(getattr(e, "message", e))):
+                    raise ContextOverflow(str(getattr(e, "message", e))) from None
+                raise
 
     async def _call(self, params: dict[str, Any], use_fallbacks: bool) -> Any:
         p = dict(params)
@@ -218,6 +234,38 @@ class ApiBackend:
         except Exception:
             return False
 
+    async def _compact_safely(self, params: dict[str, Any], messages: list[dict[str, Any]], prompt: str, log: Callable[[str], None],
+                              memory: Any, trimmed_first: bool = False) -> list[dict[str, Any]]:
+        """Compacts the transcript even when the server cannot take it any more: the summary is asked of the whole
+        conversation, then of copies with old tool output cut shorter and shorter; when not even those fit, a mechanical
+        handoff (the task, the tools called, the last words) replaces it. Returns the transcript unchanged when the
+        server is unreachable."""
+        memory.state.compacting = True
+        memory.save_state()
+        try:
+            attempts = ([] if trimmed_first else [messages]) + [_trimmed(messages, keep=2, limit=1500), _trimmed(messages, keep=0, limit=200)]
+            new: list[dict[str, Any]] | None = None
+            for candidate in attempts:
+                try:
+                    new = await self._compact(params, candidate, prompt, log)
+                    break
+                except ContextOverflow:
+                    continue
+            if new is None:
+                log("even a trimmed summary request did not fit: compacting mechanically")
+                new = _handoff(messages, prompt)
+            memory.state.compactions += 1
+            memory.state.context_tokens = 0
+            memory.save_transcript(new)
+            memory.activity("cycle", f"Context compacted (#{memory.state.compactions})")
+            return new
+        except anthropic.APIError as e:
+            log(f"compaction failed: {e}")
+            return messages
+        finally:
+            memory.state.compacting = False
+            memory.save_state()
+
     async def _compact(self, params: dict[str, Any], messages: list[dict[str, Any]], prompt: str, log: Callable[[str], None]) -> list[dict[str, Any]]:
         """Client-side compaction: ask the model for a handoff summary, then restart the transcript from it."""
         ask = {**params, "messages": messages + [{"role": "user", "content": "Your context is nearly full. Write a compact handoff summary for yourself: what the task is, what you have done (files, commits, decisions), what remains, and any open questions or board threads to follow up. Do not call tools."}],
@@ -245,6 +293,7 @@ class ApiBackend:
         pause_continuations = 0
         nudged = False
         attempts = 0
+        overflows = 0
 
         while True:
             if should_stop():
@@ -261,6 +310,27 @@ class ApiBackend:
             try:
                 message = await self._call(params, use_fallbacks)
                 attempts = 0
+            except ContextOverflow as e:
+                overflows += 1
+                if overflows > OVERFLOW_RECOVERIES:
+                    return result("error", f"the context kept overflowing: {e}")
+                if e.pool_full and self.provider == "llamacpp":
+                    url = self._endpoint(effective_model)[0]
+                    if await asyncio.to_thread(note_shared_pool, url):
+                        log(f"{url} shares one KV pool among its sessions: each now counts on {context_limit(effective_model)} tokens")
+                    memory.state.context_limit = context_limit(effective_model)
+                    memory.save_state()
+                own_share_exceeded = memory.state.context_tokens > COMPACT_AT * context_limit(effective_model)
+                if len(messages) > 1 and (not e.pool_full or own_share_exceeded or not memory.state.context_tokens):
+                    log(f"context overflow ({e}); compacting")
+                    messages = await self._compact_safely(params, messages, prompt, log, memory, trimmed_first=True)
+                    continue
+                if e.pool_full:                                                 # another session filled the shared pool; it compacts too
+                    wait = 15 * overflows
+                    log(f"the server's shared context pool was full ({e}); retrying in {wait}s")
+                    await asyncio.sleep(wait)
+                    continue
+                return result("error", f"the task prompt alone does not fit the model's context: {e}")
             except anthropic.BadRequestError as e:
                 if use_fallbacks:
                     log(f"fallbacks rejected by API ({e.message}); retrying without")
@@ -385,19 +455,7 @@ class ApiBackend:
                 memory.clear_transcript()
                 return result("finished")
             if needs_compaction:
-                memory.state.compacting = True
-                memory.save_state()
-                try:
-                    messages = await self._compact(params, messages, prompt, log)
-                    memory.state.compactions += 1
-                    memory.state.context_tokens = 0
-                    memory.save_transcript(messages)
-                    memory.activity("cycle", f"Context compacted (#{memory.state.compactions})")
-                except anthropic.APIError as e:
-                    log(f"compaction failed: {e}")
-                finally:
-                    memory.state.compacting = False
-                    memory.save_state()
+                messages = await self._compact_safely(params, messages, prompt, log, memory)
             if cycle.tool_calls >= self.config.max_tool_calls_per_cycle + 6:
                 cycle.finished = True
                 cycle.summary = "Cycle force-ended after exceeding the tool-call budget."
@@ -412,3 +470,59 @@ def _short(data: Any, n: int = 100) -> str:
     except Exception:
         return ""
     return s if len(s) <= n else s[:n] + "…"
+
+
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else f"{text[:limit]}\n[... {len(text) - limit} characters cut to save context]"
+
+
+def _trimmed(messages: list[dict[str, Any]], keep: int, limit: int) -> list[dict[str, Any]]:
+    """A copy of the transcript for a summary request that must fit: all but the last `keep` messages lose their
+    thinking, and their tool outputs and long tool inputs are cut to `limit` characters."""
+    out: list[dict[str, Any]] = []
+    for i, m in enumerate(messages):
+        content = m.get("content")
+        if i == 0 or i >= len(messages) - keep or not isinstance(content, (str, list)):   # the task prompt stays whole
+            out.append(m)
+            continue
+        if isinstance(content, str):
+            out.append({**m, "content": _cut(content, limit * 2)})
+            continue
+        blocks: list[Any] = []
+        for b in content:
+            if not isinstance(b, dict):
+                blocks.append(b)
+            elif b.get("type") in ("thinking", "redacted_thinking"):
+                continue
+            elif b.get("type") == "tool_result":
+                c = b.get("content")
+                text = c if isinstance(c, str) else "\n".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
+                blocks.append({**b, "content": _cut(text, limit)})
+            elif b.get("type") == "tool_use" and isinstance(b.get("input"), dict):
+                blocks.append({**b, "input": {k: _cut(v, limit) if isinstance(v, str) else v for k, v in b["input"].items()}})
+            elif b.get("type") == "text":
+                blocks.append({**b, "text": _cut(b.get("text", ""), limit * 2)})
+            else:
+                blocks.append(b)
+        out.append({**m, "content": blocks or [{"type": "text", "text": "(trimmed)"}]})
+    return out
+
+
+def _handoff(messages: list[dict[str, Any]], prompt: str) -> list[dict[str, Any]]:
+    """A handoff written without the model, for when not even a trimmed summary request fits: the task, every tool
+    called in this cycle, and the last thing the agent said."""
+    first = messages[0]["content"] if messages and messages[0]["role"] == "user" and isinstance(messages[0]["content"], str) else prompt
+    calls: list[str] = []
+    last = ""
+    for m in messages[1:]:
+        if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+            continue
+        for b in m["content"]:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                calls.append(f"- {b.get('name')} {_short(b.get('input'), 160)}")
+            elif isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").strip():
+                last = b["text"].strip()
+    done = "\n".join(calls[-60:]) or "(none)"
+    return [{"role": "user", "content": f"{first}\n\n[Context compacted: the conversation of this cycle no longer fitted the model's context, so it was replaced "
+                                        f"by this record. Tools you called, oldest first:]\n{done}\n\n[The last thing you said:]\n{_cut(last, 2000) or '(nothing)'}\n\n"
+                                        "Check git_status, your notes and the board for what you already did, then continue from here."}]
