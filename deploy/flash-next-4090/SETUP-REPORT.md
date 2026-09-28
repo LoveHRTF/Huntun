@@ -396,9 +396,18 @@ Section 1 of its output must show a `tool_use: get_time(...)` line.
 
 ### 11. Optional: a second, faster model (Qwen3.8-27B)
 
-Added after the setup above. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in VRAM: others measured ~40 tok/s
-and ~2,400 t/s prefill on a 4090, about 2.5× and 4× Flash-Next here, at a lower level of capability (Artificial Analysis
-index 34 vs 40). Not yet measured on this box.
+Added after the setup above. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in VRAM, so it is much faster, at a
+lower level of capability (Artificial Analysis index 34 vs 40). Measured on this box with `bench.py` (no MTP):
+
+| | Qwen3.8-27B | Flash-Next | Ratio |
+|---|---|---|---|
+| Decode, 1 session | 43.9 tok/s | ~17 tok/s | ~2.6× |
+| Decode, 2 sessions total | 83.3 tok/s (43.5 each) | ~20 tok/s | ~4× |
+| Decode at 32K depth | 43.0 tok/s | 15-19 tok/s | |
+| Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | ~400 / ~600 / ~600 t/s | ~4.5× |
+
+The `/v1/messages` tool check passes (the model thinks, then calls the tool). A 30,000-token prompt takes ~11 s instead
+of ~50 s.
 
 1. `.\setup.ps1 download 27b` (~17 GB from `orcarouter/Qwen3.8-27B-Uncensored-GGUF`).
 2. `.\setup.ps1 restart` **[admin]**. With both models downloaded, the server starts as a llama.cpp **router**: same

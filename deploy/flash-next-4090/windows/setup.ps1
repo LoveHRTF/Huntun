@@ -275,7 +275,7 @@ function Invoke-Connect {
     Write-Host "  export HUNTUN_LLAMACPP_URL=http://$($ips[0]):$PORT"
     if ($API_KEY) { Write-Host "  export HUNTUN_LLAMACPP_KEY=$API_KEY" }
     if ((Test-Path (Join-Path $Q27_MODEL_DIR "model.path")) -and (Test-Path (Join-Path $MODEL_DIR "model.path"))) {
-        Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"uncensored models on an RTX 4090. ${ALIAS}: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. ${Q27_ALIAS}: less capable but ~40 tok/s and prefill ~2,400 t/s, for well-specified tasks. Both good for tasks cloud models refuse`""
+        Write-Host "  export HUNTUN_LLAMACPP_NOTE=`"uncensored models on an RTX 4090. ${ALIAS}: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. ${Q27_ALIAS}: less capable but ~44 tok/s for one session, ~83 total for two, prefill ~2,800 t/s, for well-specified tasks. Both good for tasks cloud models refuse`""
         Write-Host ""
         Write-Host "The server offers two models, $ALIAS and $Q27_ALIAS, and holds one at a time; Huntun reads each one's"
         Write-Host "context and sessions from the server and tells the master to keep this machine's seats on one of them."

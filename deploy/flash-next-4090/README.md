@@ -145,9 +145,17 @@ FIT_TARGET_MIB=1536   # if a desktop session shares the GPU
 ## A second model: Qwen3.8-27B
 
 Flash-Next is the stronger model but runs at ~17 tok/s with ~600 t/s prefill, because most of it lives in RAM and on the
-NVMe drive. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in the 4090's VRAM: others measured ~40 tok/s and
-~2,400 t/s prefill on a 4090 (~60 tok/s with MTP), at a lower level of capability (Artificial Analysis index 34 vs 40,
-Terminal-Bench 2.1 73.0 vs 84.3). It suits well-specified tasks where turnaround matters; Flash-Next suits the harder ones.
+NVMe drive. Qwen3.8-27B (uncensored, Q4_K_M, ~17 GB) fits entirely in the 4090's VRAM and is much faster, at a lower
+level of capability (Artificial Analysis index 34 vs 40, Terminal-Bench 2.1 73.0 vs 84.3). It suits well-specified tasks
+where turnaround matters; Flash-Next suits the harder ones. Measured on this box (Windows 11, `bench.py`, no MTP):
+
+| | Qwen3.8-27B Q4_K_M | Flash-Next (for comparison) |
+|---|---|---|
+| Decode, 1 session | 43.9 tok/s | ~17 tok/s |
+| Decode, 2 sessions total | 83.3 tok/s (43.5 each) | ~20 tok/s |
+| Decode at 32K depth | 43.0 tok/s | 15-19 tok/s |
+| Prefill, 4K / 16K / 32K | 2,763 / 2,804 / 2,632 t/s | ~400 / ~600 / ~600 t/s |
+| `/v1/messages` tool call | passes (thinking + tool_use) | passes |
 
 ```powershell
 .\setup.ps1 download 27b      # ~17 GB into %USERPROFILE%\flash-next\models\Qwen3.8-27B-Uncensored
@@ -178,8 +186,8 @@ Defaults for the 27B (`Q27_*` in `config.ps1` / `flash-next.env`):
 | `Q27_MTP` | off | on drafts with the model's built-in multi-token-prediction head (`--spec-type draft-mtp`), reported +30-40% decode for one session; measure it with `bench.py --model qwen3.8-27b-uncensored` before keeping it |
 
 If the server log shows layers placed on the CPU when the 27B loads, VRAM is short: lower `Q27_CTX_PER_SLOT`.
-`bench.py --model qwen3.8-27b-uncensored` measures it (the router loads it for the run) and compares against the numbers
-above.
+`bench.py --model qwen3.8-27b-uncensored` measures it (the router loads it for the run, and it stays loaded until a
+request names Flash-Next) and compares against the numbers above.
 
 ## Connecting Huntun
 

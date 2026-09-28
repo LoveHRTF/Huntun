@@ -183,7 +183,7 @@ cmd_connect() {
   echo "  export HUNTUN_LLAMACPP_URL=http://$ip:$PORT"
   [[ -n "$API_KEY" ]] && echo "  export HUNTUN_LLAMACPP_KEY=$API_KEY"
   if [[ -f "$Q27_MODEL_DIR/model.path" && -f "$MODEL_DIR/model.path" ]]; then
-    echo "  export HUNTUN_LLAMACPP_NOTE=\"uncensored models on an RTX 4090. $ALIAS: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. $Q27_ALIAS: less capable but ~40 tok/s and prefill ~2,400 t/s, for well-specified tasks. Both good for tasks cloud models refuse\""
+    echo "  export HUNTUN_LLAMACPP_NOTE=\"uncensored models on an RTX 4090. $ALIAS: the stronger one, ~17 tok/s for one session, ~20 total for two, prefill ~500 t/s. $Q27_ALIAS: less capable but ~44 tok/s for one session, ~83 total for two, prefill ~2,800 t/s, for well-specified tasks. Both good for tasks cloud models refuse\""
     echo
     echo "The server offers two models, $ALIAS and $Q27_ALIAS, and holds one at a time; Huntun reads each one's"
     echo "context and sessions from the server and tells the master to keep this machine's seats on one of them."

@@ -29,9 +29,9 @@ WORDS = ("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo li
 # the N-gram table on NVMe (16.4-16.9 / 20.2-20.6 tok/s decode, 629-632 t/s prefill); a few percent either way is noise.
 PLAN = {"decode_total_2": 60.0, "prefill": 4000.0}
 EXPECT = {"decode_1": (15, 20), "decode_total_2": (18, 25), "prefill": (550, 800)}
-# Qwen3.8-27B Q4_K_M sits entirely in VRAM: others measured ~40 tok/s and ~2,400 t/s prefill on a 4090 (Linux, no MTP);
-# two streams of a dense model nearly double the total. Estimates, not yet measured on this box.
-EXPECT_27B = {"decode_1": (32, 48), "decode_total_2": (55, 90), "prefill": (1800, 2800)}
+# Qwen3.8-27B Q4_K_M sits entirely in VRAM. Measured on this box (Windows 11, no MTP): 43.9 tok/s for one stream,
+# 83.3 total for two (a dense model nearly doubles), 2,632-2,804 t/s prefill, 43.0 tok/s at 32K depth.
+EXPECT_27B = {"decode_1": (40, 50), "decode_total_2": (75, 95), "prefill": (2400, 3100)}
 MODEL = ""  # every request names it: a router serving several models routes on it, a single-model server ignores it
 
 
@@ -182,7 +182,7 @@ def main() -> int:
 
     best_prefill = max(prefill.values())
     if dense:
-        print("\nSummary vs this box's expectation for Qwen3.8-27B (from other 4090s; the Flash-Next plan does not apply)")
+        print("\nSummary vs this box's expectation for Qwen3.8-27B (the Flash-Next plan does not apply)")
     else:
         print("\nSummary vs the reference plan (5090 + 128 GB) and this box's expectation (4090 + 64 GB DDR4)")
     plan_prefill = "  n/a " if dense else f">{PLAN['prefill']:.0f}"

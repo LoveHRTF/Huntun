@@ -378,9 +378,17 @@ Get-Content "$env:USERPROFILE\flash-next\server.log" -Tail 30 -Wait
 
 ### 11. 可选：再加一个更快的模型（Qwen3.8-27B）
 
-这是在上面的部署完成之后加的。Qwen3.8-27B（去审查版，Q4_K_M，约 17 GB）可以整个放进显存：别人在 4090 上测到约 40 tok/s、
-prefill 约 2400 t/s，分别是这里 Flash-Next 的约 2.5 倍和 4 倍，但能力低一档（Artificial Analysis 指数 34 对 40）。
-还没有在这台机器上实测。
+这是在上面的部署完成之后加的。Qwen3.8-27B（去审查版，Q4_K_M，约 17 GB）可以整个放进显存，所以快得多，但能力低一档
+（Artificial Analysis 指数 34 对 40）。在这台机器上用 `bench.py` 实测（未开 MTP）：
+
+| | Qwen3.8-27B | Flash-Next | 倍数 |
+|---|---|---|---|
+| 生成，单会话 | 43.9 tok/s | 约 17 tok/s | 约 2.6 倍 |
+| 生成，双会话合计 | 83.3 tok/s（各 43.5） | 约 20 tok/s | 约 4 倍 |
+| 32K 深度生成 | 43.0 tok/s | 15–19 tok/s | |
+| prefill，4K / 16K / 32K | 2763 / 2804 / 2632 t/s | 约 400 / 600 / 600 t/s | 约 4.5 倍 |
+
+`/v1/messages` 工具调用检查通过（模型先思考，再调用工具）。读 3 万 token 的提示词约 11 秒，Flash-Next 要约 50 秒。
 
 1. `.\setup.ps1 download 27b`（从 `orcarouter/Qwen3.8-27B-Uncensored-GGUF` 下载约 17 GB）。
 2. `.\setup.ps1 restart` **[管理员]**。两个模型都下载好后，服务器会以 llama.cpp 的 **router 模式** 启动：地址、端口、
