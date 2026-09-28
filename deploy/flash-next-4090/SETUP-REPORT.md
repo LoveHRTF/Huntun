@@ -139,7 +139,8 @@ following section 5 today avoids them.
 All figures come from the kit's `bench.py` on this box, in Windows with the desktop running. Decode is in tok/s;
 "deep" means one request with that much context already in place. Found afterwards: the RAM was running at
 2133 MT/s, DDR4's default, because XMP/DOCP was off in the BIOS. Every row but the last was measured like that; the last
-is with the RAM raised to 3200 MT/s (still at 1.2 V with the board's automatic timings).
+is with the RAM raised to 3200 MT/s with the board's automatic timings (XMP/DOCP itself did not boot with these four
+mixed dual-rank modules).
 
 | Configuration | Prefill 4K / 16K / 32K (t/s) | Decode, 1 session | Decode, 2 sessions total | Decode deep |
 |---|---|---|---|---|
