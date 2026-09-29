@@ -314,7 +314,7 @@ class CodexBackend:
             return result("error", f"{type(e).__name__}: {e}")
         if state.session_id:
             state.session_cycles = state.session_cycles + 1 if state.session_id == thread_before else 1
-        if continuing and not resuming and code not in (0, None) and not cycle.finished and any("thread" in e.lower() and ("not found" in e.lower() or "no such" in e.lower()) for e in errors):
+        if continuing and code not in (0, None) and not cycle.finished and any("thread" in e.lower() and ("not found" in e.lower() or "no such" in e.lower()) for e in errors):
             log("the saved thread is gone; starting fresh next cycle")
             state.session_id, state.session_cycles = None, 0
 

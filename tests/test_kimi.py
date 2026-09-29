@@ -28,6 +28,8 @@ prompt = args[args.index("-p") + 1]
 resumed = "--session" in args
 def emit(ev): print(json.dumps(ev), flush=True)
 emit({"role": "meta", "type": "system.version", "version": "2.1.0"})
+if resumed and args[args.index("--session") + 1] in os.environ.get("FAKE_KIMI_GONE", "").split(","):   # another machine's session
+    sys.stderr.write(f"error: session not found: {args[args.index('--session') + 1]}\n"); sys.exit(1)
 if os.environ.get("FAKE_KIMI_LIMIT"):
     sys.stderr.write("error: failed to run prompt: You've hit your usage limit. Try again at 6pm.\n"); sys.exit(1)
 if "JSON schema" in prompt:
@@ -75,6 +77,7 @@ class KimiBackendTests(unittest.TestCase):
         os.environ["HUNTUN_KIMI_MODELS"] = "kimi-k3,kimi-k2.7-code"
         os.environ.pop("FAKE_KIMI_LIMIT", None)
         os.environ.pop("FAKE_KIMI_PAUSE", None)
+        os.environ.pop("FAKE_KIMI_GONE", None)
         self.config = default_config("Mock goal")
         self.config.backend = "kimi"
         self.team = [master_spec(), AgentSpec("dev-1", "backend", "Dev", "dev")]
@@ -86,7 +89,7 @@ class KimiBackendTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.store.close()
-        for k in ("HUNTUN_KIMI_BIN", "HUNTUN_KIMI_MODELS", "FAKE_KIMI_LIMIT", "FAKE_KIMI_PAUSE"):
+        for k in ("HUNTUN_KIMI_BIN", "HUNTUN_KIMI_MODELS", "FAKE_KIMI_LIMIT", "FAKE_KIMI_PAUSE", "FAKE_KIMI_GONE"):
             os.environ.pop(k, None)
         self.tmp.cleanup()
 
@@ -122,6 +125,19 @@ class KimiBackendTests(unittest.TestCase):
         res = self.run_cycle(self.ctx(ctx.memory))
         self.assertEqual((res.outcome, res.summary), ("finished", "done via resume"), res.error)
         self.assertFalse(ctx.memory.state.resume_pending)
+
+    def test_a_gone_session_is_dropped_even_mid_cycle(self) -> None:
+        """A session from another machine fails once, then the agent starts a fresh one."""
+        os.environ["FAKE_KIMI_GONE"] = "sess-old"
+        for pending in (False, True):
+            ctx = self.ctx()
+            ctx.memory.state.session_id, ctx.memory.state.session_cycles, ctx.memory.state.resume_pending = "sess-old", 3, pending
+            res = self.run_cycle(ctx)
+            self.assertEqual(res.outcome, "error")
+            self.assertIn("session not found", res.error)
+            self.assertEqual((ctx.memory.state.session_id, ctx.memory.state.resume_pending), (None, False))
+            res = self.run_cycle(self.ctx(ctx.memory))
+            self.assertEqual((res.outcome, res.summary, ctx.memory.state.session_id), ("finished", "done via print", "sess-123"), res.error)
 
     def test_limit_is_reported(self) -> None:
         os.environ["FAKE_KIMI_LIMIT"] = "1"

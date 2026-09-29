@@ -29,6 +29,8 @@ for i, a in enumerate(args):
         k, v = args[i + 1].split("=", 1); cfg[k] = v.strip('"')
 prompt = args[-1]
 def emit(ev): print(json.dumps(ev), flush=True)
+if mode == "resume" and args[2] in os.environ.get("FAKE_CODEX_GONE", "").split(","):   # another machine's thread
+    emit({"type": "error", "message": f"thread not found: {args[2]}"}); sys.exit(1)
 emit({"type": "thread.started", "thread_id": "thread-123"})
 emit({"type": "turn.started"})
 if "--output-schema" in args:
@@ -78,6 +80,7 @@ class CodexBackendTests(unittest.TestCase):
         os.environ["HUNTUN_CODEX_BIN"] = str(fake)
         os.environ.pop("FAKE_CODEX_LIMIT", None)
         os.environ.pop("FAKE_CODEX_PAUSE", None)
+        os.environ.pop("FAKE_CODEX_GONE", None)
         self.config = default_config("Mock goal")
         self.config.backend = "codex"
         self.team = [master_spec(), AgentSpec("dev-1", "backend", "Dev", "dev")]
@@ -92,6 +95,7 @@ class CodexBackendTests(unittest.TestCase):
         os.environ.pop("HUNTUN_CODEX_BIN", None)
         os.environ.pop("FAKE_CODEX_LIMIT", None)
         os.environ.pop("FAKE_CODEX_PAUSE", None)
+        os.environ.pop("FAKE_CODEX_GONE", None)
         self.tmp.cleanup()
 
     def ctx(self) -> ToolContext:
@@ -143,6 +147,19 @@ class CodexBackendTests(unittest.TestCase):
         ctx3 = ToolContext(agent=self.team[1], team=lambda: self.team, workspace=self.ws, store=self.store, memory=ctx.memory, config=self.config, cycle=CycleState())
         res = self.run_cycle(ctx3)  # the cap reached: fresh thread, counter restarts
         self.assertEqual((res.outcome, res.summary, ctx.memory.state.session_cycles), ("finished", "done via exec", 1), res.error)
+
+    def test_a_gone_thread_is_dropped_even_mid_cycle(self) -> None:
+        """A thread from another machine (or a wiped ~/.codex) fails once, then the agent starts a fresh one."""
+        os.environ["FAKE_CODEX_GONE"] = "thread-old"
+        for pending in (False, True):
+            ctx = self.ctx()
+            ctx.memory.state.session_id, ctx.memory.state.session_cycles, ctx.memory.state.resume_pending = "thread-old", 3, pending
+            res = self.run_cycle(ctx)
+            self.assertEqual(res.outcome, "error")
+            self.assertIn("thread not found", res.error)
+            self.assertEqual((ctx.memory.state.session_id, ctx.memory.state.resume_pending), (None, False))
+            res = self.run_cycle(ToolContext(agent=self.team[1], team=lambda: self.team, workspace=self.ws, store=self.store, memory=ctx.memory, config=self.config, cycle=CycleState()))
+            self.assertEqual((res.outcome, res.summary, ctx.memory.state.session_id), ("finished", "done via exec", "thread-123"), res.error)
 
     def test_limit_is_reported(self) -> None:
         os.environ["FAKE_CODEX_LIMIT"] = "1"

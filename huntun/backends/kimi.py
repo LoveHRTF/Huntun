@@ -268,7 +268,7 @@ class KimiBackend:
         state.context_tokens = min(state.context_limit, int(state.context_tokens + chars / 4))
         if state.session_id:
             state.session_cycles = state.session_cycles + 1 if state.session_id == session_before else 1
-        if continuing and not resuming and code not in (0, None) and not cycle.finished and any(SESSION_GONE.search(e) for e in errors):
+        if continuing and code not in (0, None) and not cycle.finished and any(SESSION_GONE.search(e) for e in errors):
             log("the saved session is gone; starting fresh next cycle")
             state.session_id, state.session_cycles = None, 0
 

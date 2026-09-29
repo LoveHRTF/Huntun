@@ -79,6 +79,10 @@ RESUME_PROMPT = (
     "continue exactly where you left off, and finish the cycle with finish_cycle."
 )
 CONTINUE_NOTE = "(New cycle in the same conversation. Your earlier cycles above are context only; the board, the repository and your notes are the truth now.)\n\n"
+SESSION_LOST_NOTE = (
+    "(Your earlier conversation is gone: Claude Code on this machine no longer has it, for example after Huntun moved to another "
+    "computer. This is a fresh one. Pick up from your notes, the board and the repository; git status and git log show where the work stands.)\n\n"
+)
 
 
 def _session_gone(text: str) -> bool:
@@ -264,6 +268,7 @@ class ClaudeCodeBackend:
         text_parts: list[str] = []
         interrupted = False
         session_id: str | None = None
+        session_lost = False                                                             # the resumed session no longer exists here
 
         async def watch_stop(client: ClaudeSDKClient) -> None:
             nonlocal interrupted
@@ -339,18 +344,28 @@ class ClaudeCodeBackend:
                                 memory.save_state()
                                 return result("limit", limit_hit["reason"])
                             if msg.is_error and not interrupted:
-                                if continuing and not resuming and _session_gone(msg.result or msg.subtype or ""):
-                                    log("the saved session is gone; starting fresh next cycle")
-                                    state.session_id, state.session_cycles = None, 0
-                                else:
-                                    state.session_id = session_id
+                                if continuing and _session_gone(msg.result or msg.subtype or ""):
+                                    session_lost = True
+                                    break
+                                state.session_id = session_id
                                 state.resume_pending = False
                                 memory.save_state()
                                 return result("error", f"Claude Code session error: {msg.result or msg.subtype}")
                 finally:
                     watcher.cancel()
         except Exception as e:
-            return result("error", f"{type(e).__name__}: {e}")
+            # A refused resume can arrive as the SDK's ResultError before any message ("No conversation found with session ID").
+            if not (session_lost or (continuing and _session_gone(str(e)))):
+                return result("error", f"{type(e).__name__}: {e}")
+            session_lost = True
+        if session_lost:
+            # Claude Code keeps conversations on the machine that ran them (~/.claude/projects), so they do not move with the
+            # project. Retrying the same id fails forever: drop it and run this cycle again in a fresh session.
+            log(f"session {state.session_id} is gone from this machine; running the cycle in a fresh session")
+            memory.activity("cycle", "Claude Code no longer has this agent's conversation (moved to another machine?); continuing in a fresh one from its notes, the board and the repository")
+            state.session_id, state.session_cycles, state.resume_pending = None, 0, False
+            memory.save_state()
+            return await self.run_cycle(ctx=ctx, system=system, prompt=SESSION_LOST_NOTE + prompt, model=model, effort=effort, should_stop=should_stop, log=log)
 
         if session_id:
             state.session_cycles = state.session_cycles + 1 if session_id == state.session_id else 1
