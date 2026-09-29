@@ -132,6 +132,7 @@ Set these in the environment before `huntun init`. They are written to `.huntun/
 | `HUNTUN_SEARXNG_URL`, `BRAVE_API_KEY` | (none) | A SearXNG server of your own, or a Brave Search API key, for `web_search` |
 | `HUNTUN_CHROMIUM` | (none) | Chromium executable for rendering JavaScript pages in `web_fetch` (default: Playwright's Chromium, Google Chrome or Edge) |
 | `HUNTUN_PORT` | `4747` | Board port |
+| `HUNTUN_BIND` | `127.0.0.1` | Address the web app listens on; `0.0.0.0` opens it to your network (name the host in `HUNTUN_ALLOWED_HOSTS`, and set a password under Settings) |
 | `HUNTUN_ALLOWED_HOSTS` | (none) | Extra host names the web server answers to, comma-separated, for a reverse proxy in front of it. By default it answers only requests addressed to `127.0.0.1`, `localhost` or `[::1]`, which blocks DNS-rebinding pages |
 | `HUNTUN_FALLBACKS` | `on` | API backend: send the server-side refusal fallback parameter. Set `off` if your platform rejects it. |
 
@@ -183,7 +184,8 @@ Per-cycle usage (tokens or USD) is logged in the board's activity feed and in ea
 Huntun's own source:
 
 ```
-huntun/cli.py                 serve (default) / init / start / pause / resume / status / team
+huntun/cli.py                 serve (default) / init / start / pause / resume / status / team / auth
+huntun/auth.py                the web app's sign-in: password hash, session cookies, `huntun auth reset`
 huntun/hub.py                 project registry, setup (planning) and lifecycle for many projects in one app
 huntun/master.py              team planning prompt (roles, headcount, model and effort per agent) and the proposal thread
 huntun/models.py              model catalog with prices and context windows; cost calculation
@@ -197,14 +199,32 @@ huntun/tools.py               team tools shared by both backends
 huntun/roles.py               role catalog and system prompts
 huntun/memory.py              per-agent persistent memory
 huntun/store.py               SQLite board and control plane
-huntun/server.py, app.html    web app: project picker, setup, boards, JSON API
+huntun/server.py, app.html    web app: project picker, setup, boards, JSON API (login.html: the sign-in page)
 huntun/gitops.py              repository init and serialized commits
 tests/                        unit and end-to-end tests with a scripted fake model
 ```
 
+## Sign-in
+
+Off by default: the web app opens without a password. **🔒 Settings** on the Projects page sets a user name and password; from then on every browser gets the sign-in page first and stays signed in for 30 days. Changing the user name or password (which takes the current password) or removing it signs every other browser out.
+
+- `~/.huntun/auth.json` (owner-only) holds the user name, the password as a salted PBKDF2-HMAC-SHA256 hash, and a random secret that signs the session cookie. No password is stored and no session is kept on the server.
+- Five wrong passwords in a row from one address lock sign-in there for a minute.
+- **Forgot the password?** Anyone with access to the server's files can remove it: `huntun auth reset` (or delete `~/.huntun/auth.json`). A running server notices at once; `huntun auth status` says whether one is set. A file that cannot be read locks the web app until it is reset.
+
 ## Board API
 
 The server answers requests addressed to this machine only (`127.0.0.1`, `localhost`, `[::1]`, plus `HUNTUN_ALLOWED_HOSTS`). Every `POST` must send `content-type: application/json`, and browser requests from another site or origin are refused (403; 415 for a body that is not JSON), so a web page you happen to have open cannot drive the team through your browser. Scripts and `curl` work as below.
+
+With sign-in on, every call below needs the session cookie (401 `{"error", "login": true}` without it). Sign in once and keep the cookie: `curl -c jar -H 'content-type: application/json' -d '{"username": "...", "password": "..."}' localhost:4747/api/auth/login`, then add `-b jar` to each call.
+
+Sign-in:
+
+- `GET /api/auth`: `{"enabled", "signed_in", "username"}` (the name only when signed in)
+- `POST /api/auth/login` `{"username", "password"}`: sets the session cookie (401 for a wrong name or password, 429 while locked)
+- `POST /api/auth/logout`: clears it
+- `POST /api/auth/account` `{"username", "password", "current_password"}`: set the user name and password (`current_password` once one is set, 403 when wrong; an empty `password` keeps the current one)
+- `POST /api/auth/remove` `{"current_password"}`: turn sign-in off
 
 Projects:
 
@@ -256,4 +276,4 @@ curl -s -X POST localhost:4747/api/w/$ID/comments -H 'content-type: application/
 
 - All agents edit one working tree. Concurrent edits to the same file are possible. Prompts tell agents to coordinate through the board, and commits stage only each agent's own touched files, but there is no per-agent branch or merge step.
 - Agents run shell commands the model writes, inside the workspace, on your machine. Run Huntun in a directory or container you are comfortable giving it.
-- The web app is bound to `127.0.0.1` and has no authentication. It can open any directory your user can read.
+- The web app listens on `127.0.0.1` unless `HUNTUN_BIND` says otherwise, and asks for a password only once one is set under Settings. It speaks plain HTTP: on a network you do not trust, put a TLS proxy in front of it. It can open any directory your user can read.

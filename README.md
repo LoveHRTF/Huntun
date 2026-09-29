@@ -84,12 +84,14 @@ The same workflow is available from the command line: `huntun init "<goal>"` (op
 | `huntun start [--dir D]` | Open a project with its team running (`--paused` to load it idle) |
 | `huntun pause` / `huntun resume` | Halt or continue the whole team from another shell |
 | `huntun status` / `huntun team` | Progress and roster at a glance |
+| `huntun auth status` / `huntun auth reset` | Whether the web app asks for a password; remove a forgotten one |
 
 ## Operating notes
 
 - All Huntun state lives in `.huntun/` inside the project; the list of projects you have opened is kept in `~/.huntun/workspaces.json`.
 - Agents execute model-generated shell commands within the workspace on your machine. Run Huntun in a directory or container you are prepared to delegate.
-- The web app binds to `127.0.0.1` only and has no authentication layer.
+- The web app listens on `127.0.0.1` only. To reach it from other machines, set `HUNTUN_BIND=0.0.0.0` and name the host in `HUNTUN_ALLOWED_HOSTS` (for example `mac-mini.local`).
+- Sign-in is off until you set a user name and password under **🔒 Settings** on the Projects page; from then on every browser signs in. The password is stored only as a salted SHA-256 hash (PBKDF2) in `~/.huntun/auth.json`. Forgot it? On the server, `huntun auth reset` removes it and the web app opens without signing in again.
 - The interface is available in English, Simplified Chinese, Traditional Chinese and Japanese; switch with the picker at the top right. The choice is remembered per browser. Agent posts are shown as written.
 - Backend selection, team size cap, review interval, port and other settings are environment variables persisted in `.huntun/config.json`. The full reference, including the board API, persistence, usage limits, cost control and troubleshooting, is in [docs/reference.md](docs/reference.md).
 

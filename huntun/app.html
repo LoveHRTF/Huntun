@@ -142,7 +142,7 @@
   .dlg .log .e .k { color:var(--muted); font-size:10.5px; margin-right:8px; }
   .notes { flex:1 0 auto; padding:10px 18px; }
   /* model providers */
-  #provdlg, #postdlg { height:fit-content; max-height:min(86vh, 860px); width:min(760px, 94vw); }
+  #provdlg, #postdlg, #setdlg { height:fit-content; max-height:min(86vh, 860px); width:min(760px, 94vw); }
   #postdlg form textarea { min-height:140px; }
   .provbody { padding:14px 18px; } .provbody form.card { margin:0; }
   .prov { border:2px solid var(--line); background:var(--panel2); padding:10px 12px; margin-bottom:10px; box-shadow:3px 3px 0 var(--ink); cursor:pointer; display:flex; flex-direction:column; gap:3px; }
@@ -194,12 +194,14 @@
 <dialog id="attdlg"></dialog>
 <dialog id="provdlg"></dialog>
 <dialog id="postdlg"></dialog>
+<dialog id="setdlg"></dialog>
 <script>
 const $ = (s, el) => (el || document).querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 const api = async (path, body, method) => {
   const r = await fetch(path, body === undefined ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.login) location.reload();                      // signed out (or the password changed elsewhere): the server sends the sign-in page
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 };
@@ -272,6 +274,7 @@ const I18N = {
     "limit pauses": "限额暂停", "times the team was paused by a usage limit / resumed by the watchdog": "团队因用量限制被暂停 / 由看门狗恢复的次数", "master resuming first…": "主管先行恢复…", "Check {x}": "检查 {x}", "Check now": "立即检查", "total tokens (input + output + cached) and list-price cost across all agents, and the master's estimate for the whole job": "所有成员的总 token（输入 + 输出 + 缓存）与标价费用，以及主管对整项工作的估算",
     "Loading…": "加载中…", "loading…": "加载中…", "commit": "提交", "theme": "主题", "▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details": "▶ 在工位 = 工作中 · 在床上 = 空闲或暂停 · 帖子以对话气泡说出 · 点击角色查看详情",
     "Regular office": "普通办公室", "Microsoft campus": "微软园区", "Goldman Sachs": "高盛", "Factory": "工厂", "Basketball court": "篮球场", "Tennis court": "网球场", "Parking lot": "停车场", "Garage": "修车库", "Chinese tech": "中式互联网公司", "Language": "语言",
+    "🔒 Settings": "🔒 设置", "Sign-in: a user name and password for this web app": "登录：这个网页应用的用户名和密码", "Settings": "设置", "Sign-in": "登录", "Signed in as {x}.": "当前登录用户：{x}。", "Opening Huntun takes this user name and password.": "打开 Huntun 需要输入这个用户名和密码。", "No password set: anyone who can open this page can use Huntun. Set a user name and password to require signing in.": "尚未设置密码：任何能打开这个页面的人都能使用 Huntun。设置用户名和密码后，需要登录才能使用。", "User name": "用户名", "Current password": "当前密码", "New password (leave empty to keep the current one)": "新密码（留空则保持不变）", "Password": "密码", "Confirm the password": "确认密码", "Turn on sign-in": "启用登录", "Sign out": "退出登录", "Remove password": "删除密码", "Forgot the password? Anyone with access to the server's files can remove it there:": "忘记密码？能访问服务器文件的人可以在服务器上运行以下命令删除密码：", "Enter a user name.": "请输入用户名。", "Enter a password.": "请输入密码。", "The two passwords do not match.": "两次输入的密码不一致。", "Enter the current password.": "请输入当前密码。", "Saved. Other browsers have to sign in again.": "已保存。其他浏览器需要重新登录。", "Sign-in is on. Other browsers now have to sign in with this user name and password.": "已启用登录。其他浏览器现在需要用这个用户名和密码登录。", "Remove the password? Anyone who can open this page can then use Huntun.": "删除密码？删除后，任何能打开这个页面的人都能使用 Huntun。", "Password removed: Huntun opens without signing in.": "密码已删除：打开 Huntun 不再需要登录。", "the current password is wrong": "当前密码不正确", "too many wrong passwords; try again in {n}s": "密码错误次数过多，请 {n} 秒后再试", "a user name is required": "需要填写用户名", "the user name must be at most 64 characters, with no control characters": "用户名最多 64 个字符，且不能包含控制字符",
   },
   "zh-TW": {
     "+ New thread": "+ 新討論串", "Start a thread on the board without leaving the office": "不離開辦公室，直接在看板上發起討論串", "A title and a message, please.": "請填寫標題與內容。", "Who leads the team": "團隊由誰領導", "A team lead and the master: the team lead owns the technical side": "團隊負責人加主管：技術由團隊負責人負責", "The master leads directly, no team lead (cheaper)": "主管直接領導，不設團隊負責人（更省錢）",
@@ -302,6 +305,7 @@ const I18N = {
     "limit pauses": "限額暫停", "times the team was paused by a usage limit / resumed by the watchdog": "團隊因用量限制被暫停 / 由看門狗恢復的次數", "master resuming first…": "主管先行恢復…", "Check {x}": "檢查 {x}", "Check now": "立即檢查", "total tokens (input + output + cached) and list-price cost across all agents, and the master's estimate for the whole job": "所有成員的總 token（輸入 + 輸出 + 快取）與牌價費用，以及主管對整項工作的估算",
     "Loading…": "載入中…", "loading…": "載入中…", "commit": "提交", "theme": "主題", "▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details": "▶ 在座位 = 工作中 · 在床上 = 閒置或暫停 · 貼文以對話泡泡說出 · 點擊角色查看詳情",
     "Regular office": "一般辦公室", "Microsoft campus": "微軟園區", "Goldman Sachs": "高盛", "Factory": "工廠", "Basketball court": "籃球場", "Tennis court": "網球場", "Parking lot": "停車場", "Garage": "修車廠", "Chinese tech": "中式網路公司", "Language": "語言",
+    "🔒 Settings": "🔒 設定", "Sign-in: a user name and password for this web app": "登入：這個網頁應用程式的使用者名稱和密碼", "Settings": "設定", "Sign-in": "登入", "Signed in as {x}.": "目前登入的使用者：{x}。", "Opening Huntun takes this user name and password.": "開啟 Huntun 需要輸入這組使用者名稱和密碼。", "No password set: anyone who can open this page can use Huntun. Set a user name and password to require signing in.": "尚未設定密碼：任何能開啟這個頁面的人都能使用 Huntun。設定使用者名稱和密碼後，需要登入才能使用。", "User name": "使用者名稱", "Current password": "目前密碼", "New password (leave empty to keep the current one)": "新密碼（留空則維持不變）", "Password": "密碼", "Confirm the password": "確認密碼", "Turn on sign-in": "啟用登入", "Sign out": "登出", "Remove password": "移除密碼", "Forgot the password? Anyone with access to the server's files can remove it there:": "忘記密碼？能存取伺服器檔案的人可以在伺服器上執行以下指令移除密碼：", "Enter a user name.": "請輸入使用者名稱。", "Enter a password.": "請輸入密碼。", "The two passwords do not match.": "兩次輸入的密碼不一致。", "Enter the current password.": "請輸入目前密碼。", "Saved. Other browsers have to sign in again.": "已儲存。其他瀏覽器需要重新登入。", "Sign-in is on. Other browsers now have to sign in with this user name and password.": "已啟用登入。其他瀏覽器現在需要用這組使用者名稱和密碼登入。", "Remove the password? Anyone who can open this page can then use Huntun.": "移除密碼？移除後，任何能開啟這個頁面的人都能使用 Huntun。", "Password removed: Huntun opens without signing in.": "密碼已移除：開啟 Huntun 不再需要登入。", "the current password is wrong": "目前密碼不正確", "too many wrong passwords; try again in {n}s": "密碼錯誤次數過多，請 {n} 秒後再試", "a user name is required": "需要填寫使用者名稱", "the user name must be at most 64 characters, with no control characters": "使用者名稱最多 64 個字元，且不能包含控制字元",
   },
   "ja": {
     "+ New thread": "+ 新しいスレッド", "Start a thread on the board without leaving the office": "オフィスを離れずにボードでスレッドを始める", "A title and a message, please.": "タイトルと本文を入力してください。", "Who leads the team": "チームを率いるのは", "A team lead and the master: the team lead owns the technical side": "チームリードとマスター：技術面はチームリードが担当", "The master leads directly, no team lead (cheaper)": "マスターが直接率いる、チームリードなし（低コスト）",
@@ -332,6 +336,7 @@ const I18N = {
     "limit pauses": "上限による停止", "times the team was paused by a usage limit / resumed by the watchdog": "使用上限でチームが停止した回数 / ウォッチドッグが再開した回数", "master resuming first…": "マスターが先に再開中…", "Check {x}": "{x} を確認", "Check now": "今すぐ確認", "total tokens (input + output + cached) and list-price cost across all agents, and the master's estimate for the whole job": "全メンバーの合計トークン（入力 + 出力 + キャッシュ）と定価コスト、およびマスターによる全体の見積もり",
     "Loading…": "読み込み中…", "loading…": "読み込み中…", "commit": "コミット", "theme": "テーマ", "▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details": "▶ 机 = 作業中 · ベッド = 待機または一時停止 · 投稿は吹き出しで話されます · キャラクターをクリックで詳細",
     "Regular office": "普通のオフィス", "Microsoft campus": "マイクロソフトのキャンパス", "Goldman Sachs": "ゴールドマン・サックス", "Factory": "工場", "Basketball court": "バスケットコート", "Tennis court": "テニスコート", "Parking lot": "駐車場", "Garage": "ガレージ", "Chinese tech": "中国の IT 企業", "Language": "言語",
+    "🔒 Settings": "🔒 設定", "Sign-in: a user name and password for this web app": "サインイン：この Web アプリのユーザー名とパスワード", "Settings": "設定", "Sign-in": "サインイン", "Signed in as {x}.": "{x} としてサインイン中です。", "Opening Huntun takes this user name and password.": "Huntun を開くにはこのユーザー名とパスワードが必要です。", "No password set: anyone who can open this page can use Huntun. Set a user name and password to require signing in.": "パスワードが未設定です：このページを開ける人は誰でも Huntun を使えます。ユーザー名とパスワードを設定すると、サインインが必要になります。", "User name": "ユーザー名", "Current password": "現在のパスワード", "New password (leave empty to keep the current one)": "新しいパスワード（空欄なら変更しません）", "Password": "パスワード", "Confirm the password": "パスワードの確認", "Turn on sign-in": "サインインを有効にする", "Sign out": "サインアウト", "Remove password": "パスワードを削除", "Forgot the password? Anyone with access to the server's files can remove it there:": "パスワードを忘れた場合：サーバーのファイルにアクセスできる人は、サーバーで次のコマンドを実行して削除できます：", "Enter a user name.": "ユーザー名を入力してください。", "Enter a password.": "パスワードを入力してください。", "The two passwords do not match.": "2 つのパスワードが一致しません。", "Enter the current password.": "現在のパスワードを入力してください。", "Saved. Other browsers have to sign in again.": "保存しました。ほかのブラウザーでは再度サインインが必要です。", "Sign-in is on. Other browsers now have to sign in with this user name and password.": "サインインを有効にしました。ほかのブラウザーではこのユーザー名とパスワードでのサインインが必要です。", "Remove the password? Anyone who can open this page can then use Huntun.": "パスワードを削除しますか？削除すると、このページを開ける人は誰でも Huntun を使えます。", "Password removed: Huntun opens without signing in.": "パスワードを削除しました：Huntun はサインインなしで開きます。", "the current password is wrong": "現在のパスワードが違います", "too many wrong passwords; try again in {n}s": "パスワードの間違いが多すぎます。{n} 秒後にもう一度お試しください", "a user name is required": "ユーザー名が必要です", "the user name must be at most 64 characters, with no control characters": "ユーザー名は 64 文字以内で、制御文字は使えません",
   },
 };
 const LANGS = [["en", "English"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"], ["ja", "日本語"]];
@@ -428,6 +433,7 @@ function route() {
   if ((m = h.match(/^#\/w\/([0-9a-f]{10})(?:\/t\/(\d+))?$/))) return boardView(m[1], m[2] ? Number(m[2]) : null);
   if (h === "#/offices") return gridView();
   if (h === "#/providers") return homeView().then(() => openProviders(() => { if (location.hash === "#/providers") location.hash = "#/"; }));   // a link straight to the dialog
+  if (h === "#/settings") return homeView().then(() => openSettings(() => { if (location.hash === "#/settings") location.hash = "#/"; }));
   return homeView();
 }
 window.addEventListener("hashchange", () => { const m = location.hash.match(/^#\/w\/([0-9a-f]{10})(?:\/t\/(\d+))?$/); if (m && boardId === m[1]) { openThread = m[2] ? Number(m[2]) : null; drawThreads(true); } else route(); });
@@ -437,7 +443,7 @@ let browserPath = null;
 async function homeView() {
   boardId = null;
   $("#main").className = ""; $("#main").innerHTML = '<section id="view"></section>';
-  $("#hgoal").textContent = ""; $("#hstatus").style.display = "none"; $("#hactions").innerHTML = providersButton(); bindProvidersButton();
+  $("#hgoal").textContent = ""; $("#hstatus").style.display = "none"; $("#hactions").innerHTML = providersButton() + settingsButton(); bindProvidersButton(); bindSettingsButton();
   const { workspaces, home } = await api("/api/workspaces");
   if (browserPath === null) browserPath = home;
   $("#view").innerHTML = '<div class="grid"><div><div class="hrow"><h2>Projects</h2><button type="button" class="small secondary" id="gridbtn" title="Every project\'s office at once, live">▦ All offices</button></div><div id="projects"></div></div>' +
@@ -577,6 +583,54 @@ function drawProviderForm(s) {
   $("#pv-test").onclick = async () => { say("testing…"); try { say(serverStatus(await api("/api/providers/servers/test", values())) + ' <span class="hint">(not saved yet)</span>'); } catch (err) { say('<span class="error">' + esc(err.message) + '</span>'); } };
   if (s) $("#pv-del").onclick = async () => { if (!confirm("Delete " + s.label + "? Seats on its models get no answers until another server serves them.")) return; try { drawProviderList(await api("/api/providers/servers/delete", { id: s.id })); } catch (err) { say('<span class="error">' + esc(err.message) + '</span>'); } };
   $("#pv-url").focus();
+}
+// ---------------------------------------------------------------- settings: sign-in (one user name and password for the web app), a dialog off the Projects page's header
+const settingsButton = () => '<button class="secondary" id="setbtn" title="Sign-in: a user name and password for this web app">🔒 Settings</button>';
+function bindSettingsButton() { const b = $("#setbtn"); if (b) b.onclick = () => openSettings(); }
+async function openSettings(onClose) {
+  const dlg = $("#setdlg");
+  dlg.onclose = () => { if (onClose) onClose(); };
+  dlg.innerHTML = '<div class="dlg"><div class="top"><div class="body"><div class="title"><h3>Settings</h3><span style="flex:1"></span><button class="small secondary" id="setclose">Close</button></div></div></div>' +
+    '<div class="provbody" id="setbody"><p class="hint">loading…</p></div></div>';
+  $("#setclose").onclick = () => dlg.close();
+  if (!dlg.open) dlg.showModal();
+  try { drawSignIn(await api("/api/auth")); } catch (err) { $("#setbody").innerHTML = '<p class="error">' + esc(err.message) + '</p>'; }
+}
+function drawSignIn(a, note) {
+  const on = a.enabled;
+  $("#setbody").innerHTML = '<form class="card" id="authform"><h3>Sign-in</h3>' +
+    '<p class="hint" style="margin:0">' + (on ? '<span>Signed in as ' + esc(a.username) + '.</span> <span>Opening Huntun takes this user name and password.</span>'
+      : 'No password set: anyone who can open this page can use Huntun. Set a user name and password to require signing in.') + '</p>' +
+    '<label>User name</label><input id="au-name" autocomplete="username" spellcheck="false" autocapitalize="off" value="' + esc(on ? a.username : "") + '">' +
+    (on ? '<label>Current password</label><input id="au-cur" type="password" autocomplete="current-password">' : '') +
+    '<label>' + (on ? "New password (leave empty to keep the current one)" : "Password") + '</label><input id="au-pw" type="password" autocomplete="new-password">' +
+    '<label>Confirm the password</label><input id="au-pw2" type="password" autocomplete="new-password">' +
+    '<div class="row"><button>' + (on ? "Save" : "Turn on sign-in") + '</button>' +
+    (on ? '<button type="button" class="secondary" id="au-out">Sign out</button><span style="flex:1"></span><button type="button" class="danger" id="au-rm">Remove password</button>' : '') + '</div>' +
+    '<div id="au-status" class="meta">' + (note ? esc(note) : '') + '</div>' +
+    '<p class="hint" style="margin:0"><span>Forgot the password? Anyone with access to the server\'s files can remove it there:</span> <code>' + esc(a.reset_command || "huntun auth reset") + '</code></p></form>';
+  const say = (html) => { $("#au-status").innerHTML = html; }, fail = (msg) => say('<span class="error">' + esc(msg) + '</span>');
+  const current = () => (on ? $("#au-cur").value : "");
+  $("#authform").onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $("#au-name").value.trim(), pw = $("#au-pw").value;
+    if (!name) return fail("Enter a user name.");
+    if (!on && !pw) return fail("Enter a password.");
+    if (pw !== $("#au-pw2").value) return fail("The two passwords do not match.");
+    if (on && !current()) return fail("Enter the current password.");
+    say("saving…");
+    try { drawSignIn(await api("/api/auth/account", { username: name, password: pw, current_password: current() }),
+                     on ? "Saved. Other browsers have to sign in again." : "Sign-in is on. Other browsers now have to sign in with this user name and password."); }
+    catch (err) { fail(err.message); }
+  };
+  if (!on) return;
+  $("#au-out").onclick = async () => { try { await api("/api/auth/logout", {}); } catch (err) { /* reloading shows the sign-in page either way */ } location.reload(); };
+  $("#au-rm").onclick = async () => {
+    if (!current()) return fail("Enter the current password.");
+    const ask = "Remove the password? Anyone who can open this page can then use Huntun.";
+    if (!confirm(tr(ask) || ask)) return;
+    try { drawSignIn(await api("/api/auth/remove", { current_password: current() }), "Password removed: Huntun opens without signing in."); } catch (err) { fail(err.message); }
+  };
 }
 function drawProjects(workspaces) {
   $("#projects").innerHTML = workspaces.length ? workspaces.map(w =>

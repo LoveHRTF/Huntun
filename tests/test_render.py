@@ -121,6 +121,51 @@ class RenderTests(HubTests):
         out = self.render("#/", {"/api/workspaces": self.srv.call("/api/workspaces"), "/api/fs": {"path": "/", "exists": True, "parent": None, "dirs": [], "files": 0, "initialized": False, "git": False, "home": "/"}})
         self.assertIn("All offices", out["text"], "the Projects page links to the grid")
 
+    def test_settings_sign_in(self) -> None:
+        """Settings off the Projects page's header: turning sign-in on, or changing and removing the password once it is on."""
+        home = {"/api/workspaces": {"workspaces": [], "home": "/"}, "/api/fs": {"path": "/", "exists": True, "parent": None, "dirs": [], "files": 0, "initialized": False, "git": False, "home": "/"}}
+        off = {"enabled": False, "signed_in": True, "username": None, "reset_command": "huntun auth reset"}
+        self.assertIn("🔒 Settings", self.render("#/", {**home, "/api/auth": off})["header"])
+        dlg = self.render("#/settings", {**home, "/api/auth": off})["dialog"]
+        for text in ("No password set", "User name", "Confirm the password", "Turn on sign-in", "huntun auth reset"):
+            self.assertIn(text, dlg)
+        self.assertNotIn("Current password", dlg)
+        on = {**off, "enabled": True, "username": "ziwei"}
+        dlg = self.render("#/settings", {**home, "/api/auth": on})["dialog"]
+        for text in ("Signed in as ziwei.", "Current password", "New password (leave empty to keep the current one)", "Sign out", "Remove password", "huntun auth reset"):
+            self.assertIn(text, dlg)
+        out = self.render("#/settings", {**home, "/api/auth": on}, lang="zh-CN")
+        self.assertIn("🔒 设置", out["header"])
+        for text in ("当前登录用户：ziwei。", "当前密码", "新密码（留空则保持不变）", "退出登录", "删除密码", "忘记密码？", "huntun auth reset"):
+            self.assertIn(text, out["dialog"])
+
+    def login_page(self, lang: str, status: int, answer: dict) -> dict:
+        proc = subprocess.run(["node", str(HARNESS.parent / "login_check.mjs"), lang, str(status), json.dumps(answer)], capture_output=True, text=True, timeout=60,
+                              env={**os.environ, "NODE_PATH": jsdom_path() or ""})
+        try:
+            out = json.loads(proc.stdout.strip().splitlines()[-1])
+        except Exception:
+            self.fail(f"login harness produced no result: {proc.stdout[-500:]} {proc.stderr[-800:]}")
+        self.assertEqual(out["errors"], [])
+        self.assertEqual(out["sent"][0]["url"], "/api/auth/login")
+        self.assertEqual(out["sent"][0]["headers"], {"content-type": "application/json"})
+        self.assertEqual(out["sent"][0]["body"], {"username": "ziwei", "password": "pw"})
+        return out
+
+    def test_sign_in_page(self) -> None:
+        out = self.login_page("en", 200, {"enabled": True, "signed_in": True})
+        self.assertIn("Sign in", out["text"])
+        self.assertIn("huntun auth reset", out["text"])
+        self.assertTrue(out["reloaded"], "signed in: the page reloads into the web app")
+        out = self.login_page("en", 401, {"error": "wrong user name or password", "login": True})
+        self.assertEqual((out["error"], out["reloaded"], out["buttonEnabled"]), ("wrong user name or password", False, True))
+        out = self.login_page("zh-CN", 401, {"error": "wrong user name or password", "login": True})
+        self.assertEqual(out["lang"], "zh-CN")
+        self.assertIn("忘记密码？", out["text"])
+        self.assertEqual(out["error"], "用户名或密码错误")
+        out = self.login_page("ja", 429, {"error": "too many wrong passwords; try again in 42s"})
+        self.assertEqual(out["error"], "パスワードの間違いが多すぎます。42 秒後にもう一度お試しください")
+
     # the inherited hub tests already run in test_hub; skip them here
     def test_interface_language_switch(self) -> None:
         """The page chrome renders in the chosen language; agent content is untouched."""

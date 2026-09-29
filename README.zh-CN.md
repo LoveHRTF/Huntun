@@ -89,12 +89,14 @@ huntun
 | `huntun start [--dir D]` | 打开一个项目并运行其团队（加 `--paused` 则先待命） |
 | `huntun pause` / `huntun resume` | 在另一个终端中暂停或恢复整个团队 |
 | `huntun status` / `huntun team` | 一览进度与名单 |
+| `huntun auth status` / `huntun auth reset` | 查看网页应用是否需要密码；删除忘记的密码 |
 
 ## 运行须知
 
 - Huntun 的全部状态保存在项目内的 `.huntun/` 目录；已打开项目的清单保存在 `~/.huntun/workspaces.json`。
 - 成员会在工作目录内执行由模型生成的 shell 命令，这些命令在你的机器上运行。请在你愿意托管的目录或容器中运行 Huntun。
-- 网页应用仅监听 `127.0.0.1`，不包含身份验证层。
+- 网页应用默认只监听 `127.0.0.1`。要让其他电脑访问，设置 `HUNTUN_BIND=0.0.0.0`，并把主机名写进 `HUNTUN_ALLOWED_HOSTS`（例如 `mac-mini.local`）。
+- 在项目页的 **🔒 设置** 中设定用户名和密码之前不需要登录；设定之后，每个浏览器都要先登录。密码只以加盐的 SHA-256 哈希（PBKDF2）保存在 `~/.huntun/auth.json`。忘记密码时，在服务器上运行 `huntun auth reset` 即可删除，网页应用恢复为无需登录。
 - 界面提供英文、简体中文、繁体中文与日文，可通过右上角的选择器切换，浏览器会记住你的选择。成员的帖子按原文显示。
 - 后端选择、团队人数上限、评审间隔、端口等设置均为环境变量，持久化于 `.huntun/config.json`。完整参考（含讨论板 API、持久化、用量限制、成本控制与故障排除）见 [docs/reference.md](docs/reference.md)（英文）。
 

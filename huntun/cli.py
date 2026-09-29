@@ -43,6 +43,7 @@ EPILOG = """environment:
   HUNTUN_MODEL (claude-opus-5-5)   HUNTUN_LEAD_EFFORT (xhigh)  HUNTUN_WORKER_EFFORT (high)
   HUNTUN_REVIEW_INTERVAL_MIN (20)  HUNTUN_IDLE_INTERVAL_SEC (90)  HUNTUN_LEAD_IDLE_INTERVAL_SEC (600)
   HUNTUN_MAX_TOOL_CALLS (60)  HUNTUN_MAX_CYCLES (0=unlimited)  HUNTUN_PORT (4747)  HUNTUN_FALLBACKS (on|off)
+  HUNTUN_BIND (127.0.0.1; 0.0.0.0 to open the web app to the network)  HUNTUN_ALLOWED_HOSTS  host names it answers to besides 127.0.0.1
 """
 
 
@@ -74,6 +75,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, help="board port (default from config, 4747)")
     s.add_argument("--paused", action="store_true", help="start with agents paused")
 
+    s = sub.add_parser("auth", help="the web app's sign-in: show whether a password is set, or remove it (reset)")
+    s.add_argument("action", choices=["status", "reset"], help="status: is a password set; reset: remove the user name and password, so the web app opens without signing in")
+
     for name, help_ in (("approve", "approve the proposed plan as-is (the web app lets you edit it first)"), ("pause", "pause every agent"), ("resume", "resume every agent"),
                         ("status", "show team, progress, and board summary"), ("team", "print the roster and briefs")):
         add_dir(sub.add_parser(name, help=help_))
@@ -84,7 +88,7 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if not args.cmd:
         args.cmd, args.port, args.dir, args.no_open = "serve", int(os.environ.get("HUNTUN_PORT", "4747")), None, False
-    workspace = Path(args.dir).resolve() if args.dir else Path.cwd()
+    workspace = Path(args.dir).resolve() if getattr(args, "dir", None) else Path.cwd()
     try:
         if args.cmd == "serve":
             asyncio.run(cmd_serve(args.port, Path(args.dir).resolve() if args.dir else None, running=None, open_browser=not args.no_open))
@@ -101,6 +105,8 @@ def main(argv: list[str] | None = None) -> None:
             cmd_status(workspace)
         elif args.cmd == "team":
             cmd_team(workspace)
+        elif args.cmd == "auth":
+            cmd_auth(args.action)
     except KeyboardInterrupt:
         pass
     except Exception as e:
@@ -185,14 +191,19 @@ async def cmd_init(workspace: Path, goal: str, backend: str | None, context: str
 
 async def cmd_serve(port: int, preopen: Path | None, running: bool | None, open_browser: bool) -> None:
     """Runs the hub web app. With `preopen`, that project is registered and loaded immediately."""
+    from . import auth
     from .hub import Hub
-    from .server import start_server
+    from .server import LOCAL_HOSTS, bind_address, start_server
 
     hub = Hub()
     hub.loop = asyncio.get_running_loop()
     server = start_server(hub, port)
     url = f"http://127.0.0.1:{port}"
     print(f"Huntun web app: {url}")
+    bind = bind_address()
+    if bind not in LOCAL_HOSTS | {"::1"}:
+        print(f"Listening on {bind}:{port}: other machines can reach it (at a name in HUNTUN_ALLOWED_HOSTS)."
+              + ("" if auth.enabled() else " No password is set: set one under Settings on the Projects page."))
     if preopen is not None:
         entry = hub.add(str(preopen))
         if entry.state in ("proposed", "goal_proposed"):
@@ -277,6 +288,24 @@ def cmd_status(workspace: Path) -> None:
     for t in store.list_threads(8):
         print(f"  #{t['id']} {t['title']} (@{t['author']}, {t['comment_count']} comments)")
     store.close()
+
+
+def cmd_auth(action: str) -> None:
+    from . import auth
+
+    acct = auth.account()
+    if action == "reset":
+        if auth.reset():
+            print(f"Password removed ({auth.auth_file()}). The web app opens without signing in; set a new one under Settings on the Projects page.")
+        else:
+            print("No password was set; the web app already opens without signing in.")
+        return
+    if acct is None:
+        print("No password set: the web app opens without signing in. Set one under Settings on the Projects page.")
+    elif not acct:
+        print(f"{auth.auth_file()} cannot be read, so nobody can sign in. Run: huntun auth reset")
+    else:
+        print(f"Sign-in is on for user {acct['username']!r} ({auth.auth_file()}). Forgot the password? Run: huntun auth reset")
 
 
 def cmd_team(workspace: Path) -> None:

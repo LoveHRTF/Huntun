@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Huntun · Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0b0e17; --panel:#131828; --panel2:#1a2036; --line:#2a3352; --ink:#05070d; --text:#e9ecf5; --muted:#8f98b8; --accent:#ffd23f; --cyan:#4fe3f0; --err:#ff5c7a;
+         --px:"Press Start 2P", monospace; --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; }
+  body { margin:0; font: 14px/1.5 var(--sans); background:var(--bg); color:var(--text); display:flex; align-items:center; justify-content:center; padding:16px; }
+  main { width:min(380px, 100%); }
+  h1 { font: 18px/1 var(--px); color:var(--accent); text-shadow: 2px 2px 0 var(--ink); text-align:center; margin:0 0 22px; }
+  form { display:flex; flex-direction:column; gap:8px; border:3px solid var(--line); background:var(--panel); padding:18px 20px; box-shadow: 8px 8px 0 var(--ink); }
+  h2 { font: 9px/1.4 var(--px); letter-spacing:.08em; color:var(--muted); margin:0 0 6px; text-transform:uppercase; }
+  input { width:100%; background:#070a12; color:var(--text); border:2px solid var(--line); padding:8px 10px; font: 14px/1.4 var(--sans); }
+  input:focus { outline:none; border-color:var(--accent); }
+  button { margin-top:8px; background:var(--accent); color:var(--ink); border:2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); padding:9px 12px; font: 600 13px/1 var(--sans); cursor:pointer; }
+  button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); } button:disabled { opacity:.5; cursor:default; }
+  .error { color:var(--err); margin:0; } .error:empty { display:none; }
+  .hint { color:var(--muted); font-size:12px; margin:14px 2px 0; }
+  code { font-family:var(--mono); font-size:12px; color:var(--cyan); background:#070a12; padding:1px 5px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HUNTUN</h1>
+  <form id="login">
+    <h2 data-t="Sign in">Sign in</h2>
+    <label for="username" data-t="User name">User name</label>
+    <input id="username" name="username" autocomplete="username" spellcheck="false" autocapitalize="off" required autofocus>
+    <label for="password" data-t="Password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button id="submit" data-t="Sign in">Sign in</button>
+    <p class="error" id="error" role="alert"></p>
+  </form>
+  <p class="hint"><span data-t="forgot">Forgot the password? Anyone with access to the server's files can remove it there:</span> <code>huntun auth reset</code></p>
+</main>
+<script>
+// The web app's language (its menu saves it as huntun.lang); this page carries its own few strings.
+const STRINGS = {
+  "zh-CN": { "Sign in": "登录", "User name": "用户名", "Password": "密码", "forgot": "忘记密码？能访问服务器文件的人可以在服务器上运行以下命令删除密码：",
+             "wrong user name or password": "用户名或密码错误", "too many": "密码错误次数过多，请 {n} 秒后再试", "offline": "无法连接服务器" },
+  "zh-TW": { "Sign in": "登入", "User name": "使用者名稱", "Password": "密碼", "forgot": "忘記密碼？能存取伺服器檔案的人可以在伺服器上執行以下指令移除密碼：",
+             "wrong user name or password": "使用者名稱或密碼錯誤", "too many": "密碼錯誤次數過多，請 {n} 秒後再試", "offline": "無法連線到伺服器" },
+  "ja": { "Sign in": "サインイン", "User name": "ユーザー名", "Password": "パスワード", "forgot": "パスワードを忘れた場合：サーバーのファイルにアクセスできる人は、サーバーで次のコマンドを実行して削除できます：",
+          "wrong user name or password": "ユーザー名またはパスワードが違います", "too many": "パスワードの間違いが多すぎます。{n} 秒後にもう一度お試しください", "offline": "サーバーに接続できません" },
+};
+let lang = "en"; try { lang = localStorage.getItem("huntun.lang") || "en"; } catch (e) { /* no storage */ }
+const T = STRINGS[lang] || {};
+if (STRINGS[lang]) document.documentElement.lang = lang;
+document.querySelectorAll("[data-t]").forEach(el => { if (T[el.dataset.t]) el.textContent = T[el.dataset.t]; });
+const say = (msg) => {
+  const m = /^too many wrong passwords; try again in (\d+)s$/.exec(msg);
+  document.getElementById("error").textContent = m ? (T["too many"] || msg).replace("{n}", m[1]) : (T[msg] || msg);
+};
+document.getElementById("login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = document.getElementById("submit"), password = document.getElementById("password");
+  button.disabled = true; say("");
+  try {
+    const r = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: document.getElementById("username").value, password: password.value }) });
+    if (r.ok) { location.reload(); return; }                                  // the server now sends the web app
+    const data = await r.json().catch(() => ({}));
+    say(data.error || r.statusText);
+  } catch (err) {
+    say(T.offline || "cannot reach the server");
+  }
+  button.disabled = false; password.select();
+});
+</script>
+</body>
+</html>

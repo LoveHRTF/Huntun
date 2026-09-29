@@ -8,17 +8,20 @@ import json
 import os
 import re
 import threading
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from . import auth
 from .hub import Hub, browse
 from .models import (BACKEND_LABEL, ROUTES, SERVER_STATUS, SERVER_TYPES, available_backends, catalog_available, catalog_for, delete_server,
                      probe_server, refresh_local, save_server, saved_servers, server_label, servers)
 from .personalities import PERSONALITIES
 
 PAGE = (Path(__file__).parent / "app.html").read_text()
+LOGIN_PAGE = (Path(__file__).parent / "login.html").read_text()
 WS_ROUTE = re.compile(r"^/api/w/([0-9a-f]{10})(/.*)?$")
 WORKSPACE_ROUTE = re.compile(r"^/api/workspaces/([0-9a-f]{10})(/.*)?$")
 
@@ -77,10 +80,19 @@ def _hostname(host: str) -> str:
     return host.rsplit(":", 1)[0] if ":" in host else host
 
 
+def bind_address() -> str:
+    """The address the web app listens on: loopback unless HUNTUN_BIND says otherwise (0.0.0.0 for the whole network)."""
+    return os.environ.get("HUNTUN_BIND", "").strip() or "127.0.0.1"
+
+
 class HttpError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
         self.status = status
+
+
+def _error_body(e: HttpError) -> dict[str, Any]:
+    return {"error": str(e), "login": True} if e.status == 401 else {"error": str(e)}   # the page shows the sign-in page again
 
 
 def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
@@ -88,10 +100,59 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
         def log_message(self, *_args: Any) -> None:  # keep the console for agent logs
             pass
 
-        def _json(self, status: int, body: Any) -> None:
+        def _json(self, status: int, body: Any, cookie: str = "") -> None:
             data = json.dumps(body).encode()
             self.send_response(status)
             self.send_header("content-type", "application/json; charset=utf-8")
+            self.send_header("cache-control", "no-store")
+            self.send_header("content-length", str(len(data)))
+            if cookie:
+                self.send_header("set-cookie", cookie)
+            self.end_headers()
+            self.wfile.write(data)
+
+        # ---- sign-in: nothing below is asked for until a password is set in Settings (see auth.py)
+        cookie_name = "huntun_session"                                           # made per port below: two servers on one host keep their own
+
+        def _session_cookie(self, token: str) -> str:
+            age = auth.SESSION_SEC if token else 0
+            return f"{self.cookie_name}={token}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax"
+
+        def _signed_in(self) -> bool:
+            acct = auth.account()
+            if acct is None:
+                return True
+            try:
+                jar = SimpleCookie(self.headers.get("cookie") or "")
+            except CookieError:
+                return False
+            morsel = jar.get(self.cookie_name)
+            return auth.valid_session(acct, morsel.value if morsel else "")
+
+        def _auth_view(self, signed_in: bool | None = None) -> dict[str, Any]:
+            acct = auth.account()
+            signed_in = self._signed_in() if signed_in is None else signed_in
+            return {"enabled": acct is not None, "signed_in": signed_in, "username": acct.get("username") if acct and signed_in else None,
+                    "reset_command": "huntun auth reset"}
+
+        def _check_password(self, username: str, password: str, status: int) -> None:
+            """Refuses a wrong user name or password (with this status), and any try from an address that just made too many."""
+            client = self.client_address[0]
+            wait = auth.locked_for(client)
+            if wait:
+                raise HttpError(429, f"too many wrong passwords; try again in {wait}s")
+            ok = auth.check_login(username, password)
+            auth.note_attempt(client, ok)
+            if not ok:
+                wait = auth.locked_for(client)
+                if wait:
+                    raise HttpError(429, f"too many wrong passwords; try again in {wait}s")
+                raise HttpError(status, "wrong user name or password" if status == 401 else "the current password is wrong")
+
+        def _page(self, html: str) -> None:
+            data = html.encode()
+            self.send_response(200)
+            self.send_header("content-type", "text/html; charset=utf-8")
             self.send_header("cache-control", "no-store")
             self.send_header("content-length", str(len(data)))
             self.end_headers()
@@ -157,13 +218,11 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 if path.startswith("/api/"):
                     self._guard(write=False)                                      # some reads load a project's agents
                 if path == "/":
-                    data = PAGE.encode()
-                    self.send_response(200)
-                    self.send_header("content-type", "text/html; charset=utf-8")
-                    self.send_header("content-length", str(len(data)))
-                    self.end_headers()
-                    self.wfile.write(data)
-                    return
+                    return self._page(PAGE if self._signed_in() else LOGIN_PAGE)
+                if path == "/api/auth":
+                    return self._json(200, self._auth_view())
+                if path.startswith("/api/") and not self._signed_in():
+                    raise HttpError(401, "sign in first")
                 if path == "/api/workspaces":
                     return self._json(200, {"workspaces": hub.list(), "home": str(Path.home()), "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/providers":
@@ -182,7 +241,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     return self._board_get(m.group(1), m.group(2) or "")
                 self._json(404, {"error": "not found"})
             except HttpError as e:
-                self._json(e.status, {"error": str(e)})
+                self._json(e.status, _error_body(e))
             except Exception as e:
                 self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
@@ -244,6 +303,10 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             try:
                 self._guard(write=True)
                 body = self._body()
+                if path.startswith("/api/auth/"):
+                    return self._auth_post(path[len("/api/auth"):], body)
+                if not self._signed_in():
+                    raise HttpError(401, "sign in first")
                 if path == "/api/providers/servers":                                # add a server, or change one ("id")
                     save_server(body)
                     return self._json(200, _providers_view())
@@ -272,11 +335,35 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     return self._board_post(m.group(1), m.group(2) or "", body)
                 self._json(404, {"error": "not found"})
             except HttpError as e:
-                self._json(e.status, {"error": str(e)})
+                self._json(e.status, _error_body(e))
             except ValueError as e:
                 self._json(400, {"error": str(e)})
             except Exception as e:
                 self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+        def _auth_post(self, sub: str, body: dict[str, Any]) -> None:
+            """/login and /logout for anyone; /account (set the user name and password) and /remove once signed in.
+            Changing the password while one is set takes the current one, so a browser left signed in cannot lock its owner out."""
+            if sub == "/login":
+                acct = auth.account()
+                if acct is None:
+                    return self._json(200, self._auth_view())                    # no password set: nothing to sign in to
+                self._check_password(str(body.get("username") or ""), str(body.get("password") or ""), 401)
+                return self._json(200, self._auth_view(signed_in=True), cookie=self._session_cookie(auth.new_session(acct)))
+            if sub == "/logout":
+                return self._json(200, self._auth_view(signed_in=False), cookie=self._session_cookie(""))
+            if not self._signed_in():
+                raise HttpError(401, "sign in first")
+            if sub not in ("/account", "/remove"):
+                raise HttpError(404, "not found")
+            current = auth.account()
+            if current:                                                          # 403, not 401: a typo here must not sign the page out
+                self._check_password(current["username"], str(body.get("current_password") or ""), 403)
+            if sub == "/account":
+                acct = auth.save(str(body.get("username") or ""), str(body.get("password") or "") or None)
+                return self._json(200, self._auth_view(signed_in=True), cookie=self._session_cookie(auth.new_session(acct)))
+            auth.reset()                                                          # /remove
+            return self._json(200, self._auth_view(signed_in=True), cookie=self._session_cookie(""))
 
         def _workspace_post(self, wid: str, sub: str, body: dict[str, Any]) -> None:
             e = self._entry(wid)
@@ -386,7 +473,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 return self._json(201, store.add_comment(tid, "human", text))
             raise HttpError(404, "not found")
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer((bind_address(), port), Handler)
+    Handler.cookie_name = f"huntun_session_{server.server_port}"
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, name="huntun-web", daemon=True).start()
     return server

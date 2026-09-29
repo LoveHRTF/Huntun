@@ -21,4 +21,4 @@ huntun = "huntun.cli:main"
 packages = ["huntun", "huntun.backends"]
 
 [tool.setuptools.package-data]
-huntun = ["board.html"]
+huntun = ["*.html"]
