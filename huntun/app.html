@@ -190,6 +190,7 @@
   <select id="lang" class="lang" title="Language"></select>
 </header>
 <main id="main"><section id="view"></section></main>
+<dialog id="watchdogdlg"></dialog>
 <dialog id="agentdlg"></dialog>
 <dialog id="attdlg"></dialog>
 <dialog id="provdlg"></dialog>
@@ -237,10 +238,20 @@ let MODELS = [{ id: "claude-opus-5", backend: "claude-code", vendor: "anthropic"
 const LOCAL_VENDORS = ["ollama", "vllm", "llamacpp"];                          // their models show as "name · server"
 const LIMIT_CHOICES = [0, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20];                   // team size limits the human can pick (agents besides the master; 0 = none)
 const limitOptions = (cur) => (LIMIT_CHOICES.includes(cur) ? LIMIT_CHOICES : [...LIMIT_CHOICES, cur].sort((a, b) => a - b)).map(n => '<option value="' + n + '"' + (n === cur ? " selected" : "") + '>' + (n ? "up to " + n + " agents" : "no limit") + '</option>').join("");
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"], BLABEL = { api: "Anthropic API", "claude-code": "Claude Code", codex: "OpenAI Codex", kimi: "Kimi Code", deepseek: "DeepSeek", ollama: "Ollama (local)", vllm: "vLLM (local)", llamacpp: "llama.cpp server (local)" };
+const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], BLABEL = { api: "Anthropic API", "claude-code": "Claude Code", codex: "OpenAI Codex", kimi: "Kimi Code", deepseek: "DeepSeek", ollama: "Ollama (local)", vllm: "vLLM (local)", llamacpp: "llama.cpp server (local)" };
+const effortOptions = (model, selected) => {
+  const info = MODELS.find(m => m.id === model);
+  const levels = info?.efforts?.length ? info.efforts : EFFORTS.filter(e => !["none", "minimal", "ultra"].includes(e));
+  const choice = levels.includes(selected) ? selected : (levels.includes("high") ? "high" : levels[0]);
+  return levels.map(e => '<option' + (e === choice ? " selected" : "") + '>' + esc(e) + '</option>').join("");
+};
+const bindEfforts = (modelSelect, effortSelect) => {
+  if (!modelSelect || !effortSelect) return;
+  modelSelect.onchange = () => { effortSelect.innerHTML = effortOptions(modelSelect.value, effortSelect.value); };
+};
 // <option>s for a model picker, grouped by the backend that runs each; defaultLabel adds a first "" choice (the backend's default model)
 const modelOptions = (selected, list = MODELS, defaultLabel = "") => { const groups = {}; for (const m of list) (groups[m.backend] = groups[m.backend] || []).push(m); const known = !selected || list.some(m => m.id === selected);
-  return (defaultLabel ? '<option value=""' + (selected ? '' : ' selected') + '>' + esc(defaultLabel) + '</option>' : '') + Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(LOCAL_VENDORS.includes(m.vendor) && m.label ? m.label : m.id) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
+  return (defaultLabel ? '<option value=""' + (selected ? '' : ' selected') + '>' + esc(defaultLabel) + '</option>' : '') + Object.entries(groups).map(([b, ms]) => '<optgroup label="' + esc(BLABEL[b] || b) + '">' + ms.map(m => '<option value="' + esc(m.id) + '"' + (m.id === selected ? " selected" : "") + '>' + esc(LOCAL_VENDORS.includes(m.vendor) && m.label ? m.label : (m.label || m.id)) + '</option>').join("") + '</optgroup>').join("") + (selected && !known ? '<option selected>' + esc(selected) + '</option>' : ''); };
 
 // ---------------------------------------------------------------- interface language: the page chrome is written in English and translated in place
 // Keys are the English strings as rendered; {n}/{x} mark a dynamic part that is carried over. Agent posts and names are never translated.
@@ -774,7 +785,7 @@ let officeOn = (() => { try { return localStorage.getItem("huntun.office") === "
 let state = null, composing = false, boardId = null, openThread = null, sortBy = localStorage.getItem("huntun.sort") || "activity", filterBy = localStorage.getItem("huntun.filter") || "all";
 let threadKey = "", chatKey = "", chatData = null, boardRefresh = null;
 async function boardView(id, threadId) {
-  boardId = id; openThread = threadId; threadKey = ""; chatKey = ""; approvalKey = "";
+  boardId = id; openThread = threadId; threadKey = ""; chatKey = ""; chatData = null; approvalKey = "";
   const base = "/api/w/" + id;
   let layout = "";
   const refresh = async () => {
@@ -802,7 +813,8 @@ async function boardView(id, threadId) {
     $("#hstatus").className = "pill " + (!state.approved ? "busy" : lim.paused ? "off" : state.running ? "on" : "off");
     drawCounters(lim, state.totals);
     const n = state.attention_count || 0;
-    $("#hactions").innerHTML = '<button id="needs" class="needs' + (n ? "" : " zero") + '" title="items that need your decision, approval, or input">Needs you (' + n + ')</button>' + (state.approved ? '<button id="toggle" class="' + (state.running ? "secondary" : "ok") + '">' + (state.running ? "Pause all" : "Start all") + '</button>' : '') + '<a class="hint" href="#/">Projects</a>';
+    $("#hactions").innerHTML = '<button id="needs" class="needs' + (n ? "" : " zero") + '" title="items that need your decision, approval, or input">Needs you (' + n + ')</button>' + (state.approved ? '<button id="toggle" class="' + (state.running ? "secondary" : "ok") + '">' + (state.running ? "Pause all" : "Start all") + '</button>' : '') + (state.approved ? '<button class="secondary" id="watchdogbtn" title="Talk directly to the local recovery agent">Watchdog</button>' : '') + '<a class="hint" href="#/">Projects</a>';
+    if ($("#watchdogbtn")) $("#watchdogbtn").onclick = () => openWatchdog(id);
     if ($("#toggle")) $("#toggle").onclick = async () => { try { await api("/api/workspaces/" + id + "/control", { action: state.running ? "pause" : "start" }); } catch (err) { alert(err.message); } refresh(); };
     $("#needs").onclick = () => openAttention(id);
     if ($("#attdlg").open) drawAttention(id);
@@ -931,7 +943,7 @@ function drawApproval(id) {
   const masterCard = master ? '<div class="plan-agent master-seat" data-name="' + esc(master.name) + '">' + avatar(master.name, "lg") +
       '<div><div class="who"><b>@' + esc(master.name) + '</b><span class="pill">' + esc(master.title) + '</span></div><div class="brief">Plans and steers the team and answers you. Its model runs the goal check, the planning and every master cycle.</div></div>' +
       '<div class="ctl"><label>Model</label><select class="mdl">' + modelOptions(master.model || "", MODELS, "backend default") + '</select>' + (master.backend ? '<span class="hint">runs via ' + esc(BLABEL[master.backend] || master.backend) + '</span>' : '') +
-      '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (master.effort || "xhigh") ? " selected" : "") + '>' + e + '</option>').join("") + '</select></div></div>' : '';
+      '<label>Effort</label><select class="eff">' + effortOptions(master.model, master.effort || "xhigh") + '</select></div></div>' : '';
   const limitSelect = (cur, id) => '<select id="' + id + '" class="inline">' + limitOptions(cur) + '</select>';
   const cards = state.agents.filter(a => a.role !== "master").map(a => {
     const brief = a.brief.split("\n\nModel choice:")[0], why = (a.brief.split("\n\nModel choice:")[1] || "").trim();
@@ -940,7 +952,7 @@ function drawApproval(id) {
       '<div class="why" style="margin-top:8px"><label>Personality</label><select class="pers">' + ["human", "work"].map(g => '<optgroup label="' + (g === "human" ? "People" : "Working styles") + '">' + PERSONAS.filter(pp => (pp.group || "work") === g).map(pp => '<option value="' + esc(pp.id) + '"' + (pp.id === (a.personality_preset || "") ? " selected" : "") + '>' + esc(pp.name) + '</option>').join("") + '</optgroup>').join("") + '<option value="custom"' + (!PERSONAS.some(pp => pp.id === a.personality_preset) ? " selected" : "") + '>Custom…</option></select>' +
       '<textarea class="perstext" style="min-height:56px;margin-top:6px" placeholder="Describe temperament, board voice, and working style">' + esc(a.personality) + '</textarea></div></div>' +
       '<div class="ctl"><label>Model</label><select class="mdl">' + modelOptions(a.model) + '</select>' + (a.backend ? '<span class="hint">runs via ' + esc(BLABEL[a.backend] || a.backend) + '</span>' : '') +
-      '<label>Effort</label><select class="eff">' + EFFORTS.map(e => '<option' + (e === (a.effort || "high") ? " selected" : "") + '>' + e + '</option>').join("") + '</select>' +
+      '<label>Effort</label><select class="eff">' + effortOptions(a.model, a.effort || "high") + '</select>' +
       '<button type="button" class="small danger rm">Remove</button></div></div>';
   }).join("");
   box.innerHTML = '<p><a href="#/">← Projects</a></p><div class="card"><h3>Plan awaiting your approval</h3><p class="hint">The master proposed this team, with a model and effort per agent chosen for the role and the difficulty of its work. Adjust anything below, then approve. Or tell the master what to change and it will revise. Nothing runs until you approve.</p><p><b>Goal</b> — ' + esc(state.goal) + '</p>' + ('<p class="hint">Team size limit (besides the master): ' + limitSelect(state.max_agents || 0, "planlimit") + '</p>') + (state.definition_of_done ? '<p><b>Definition of done</b></p><ul>' + state.definition_of_done.split("\n").filter(Boolean).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '') + '</div>' +
@@ -948,6 +960,7 @@ function drawApproval(id) {
     '<div class="plan-actions"><button class="ok" id="approvebtn">Approve plan</button><span class="hint">Agents load paused; press Start all afterwards.</span></div>' +
     '<form class="card" id="replanform"><label>Ask the master to revise</label><textarea id="feedback" style="min-height:56px" placeholder="e.g. Drop the UX researcher, use Sonnet for the backend engineer, add a second QA">' + esc(loadDraft(id, "feedback", "")) + '</textarea><div class="row"><button class="secondary">Request changes</button></div></form>' +
     '<h2>Discussion</h2>';
+  box.querySelectorAll(".plan-agent").forEach(card => bindEfforts($(".mdl", card), $(".eff", card)));
   box.querySelectorAll(".plan-agent:not(.master-seat)").forEach(card => {
     const sel = $(".pers", card), ta = $(".perstext", card);
     sel.onchange = () => { const pp = PERSONAS.find(x => x.id === sel.value); if (pp) ta.value = pp.text; };
@@ -999,6 +1012,8 @@ async function drawThreads(force) {
     if (!force && threadKey && (listScroll() > 24 || readingChat())) { showPending(); if (openThread) drawChat(); return; }   // held back: see the banner
     hidePending(); threadKey = key; shownThreads = new Map(state.threads.map(t => [t.id, t.comment_count]));
     const msgs = $("#messages"); chatRestore = msgs && msgs.querySelector(".msg") && msgs.dataset.thread === String(openThread) ? { thread: msgs.dataset.thread, top: msgs.scrollTop, atBottom: msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60 } : null;
+    const preservedMessages = chatRestore ? msgs : null;
+    if (preservedMessages) preservedMessages.remove();
     const draftT = $("#ntitle") ? $("#ntitle").value : "", draftB = $("#nbody") ? $("#nbody").value : "", draftC = $("#cbody") ? $("#cbody").value : "";
     const list = sortedThreads().map(t => {
       const open = t.id === openThread;
@@ -1011,6 +1026,7 @@ async function drawThreads(force) {
     $("#threadsbox").innerHTML = '<div class="toolbar"><h2 style="margin:0">Threads</h2><button class="small" id="newbtn">' + (composing ? "Cancel" : "+ New thread") + '</button><div class="sort"><label>show</label><select id="filtersel"><option value="all"' + (filterBy === "all" ? " selected" : "") + '>everything</option><option value="discussions"' + (filterBy === "discussions" ? " selected" : "") + '>discussions</option><option value="commits"' + (filterBy === "commits" ? " selected" : "") + '>commit updates</option></select><label>sort</label><select id="sortsel"><option value="activity"' + (sortBy === "activity" ? " selected" : "") + '>last response</option><option value="posted"' + (sortBy === "posted" ? " selected" : "") + '>time posted</option></select></div></div>' +
       (composing ? '<form class="card composer top" id="newform"><input id="ntitle" placeholder="Title" autocomplete="off"><div class="compose-wrap"><textarea id="nbody" placeholder="Ask a question or add a requirement. Type @ to tag an agent."></textarea></div><div class="row"><button>Post thread</button><span class="hint">Tagged agents are woken up and decide whether to act.</span></div></form>' : '') +
       '<div id="threads">' + list + '</div>';
+    if (preservedMessages && $("#messages")) $("#messages").replaceWith(preservedMessages);
     $("#newbtn").onclick = () => { composing = !composing; drawThreads(true); if (composing) setTimeout(() => $("#ntitle") && $("#ntitle").focus(), 0); };
     $("#sortsel").onchange = (e) => { sortBy = e.target.value; localStorage.setItem("huntun.sort", sortBy); drawThreads(true); };
     $("#filtersel").onchange = (e) => { filterBy = e.target.value; localStorage.setItem("huntun.filter", filterBy); drawThreads(true); };
@@ -1020,30 +1036,80 @@ async function drawThreads(force) {
       attachMentions($("#nbody"), names);
       $("#newform").onsubmit = async (e) => { e.preventDefault(); const title = $("#ntitle").value.trim(), body = $("#nbody").value.trim(); if (!title || !body) return; const t = await api(base + "/threads", { title, body }); composing = false; openThread = t.id; sortBy = sortBy; chatKey = ""; state.threads.unshift({ id: t.id, title, author: "human", created_at: t.created_at, last_activity: t.created_at, comment_count: 0, snippet: body, last_comments: [], commit_sha: null }); drawThreads(true); };
     }
-    $("#threadsbox").addEventListener("focusout", () => { setTimeout(() => { if (threadsDirty && !typingInThreads()) drawThreads(true); }, 250); });
+    $("#threadsbox").onfocusout = () => { setTimeout(() => { if (threadsDirty && !typingInThreads()) drawThreads(true); }, 250); };
     if (openThread && $("#cbody")) {
       $("#cbody").value = draftC;
       attachMentions($("#cbody"), names);
       $("#cbody").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); $("#cform").requestSubmit(); } });
-      $("#cform").onsubmit = async (e) => { e.preventDefault(); const body = $("#cbody").value.trim(); if (!body) return; await api(base + "/comments", { thread_id: openThread, body }); $("#cbody").value = ""; chatKey = ""; drawChat(); };
-      chatKey = "";
+      $("#cform").onsubmit = async (e) => { e.preventDefault(); const body = $("#cbody").value.trim(); if (!body) return; await api(base + "/comments", { thread_id: openThread, body }); $("#cbody").value = ""; drawChat(); };
+      if (!preservedMessages) chatKey = "";
     }
   }
   if (openThread) drawChat();
 }
-async function drawChat() {
-  const box = $("#messages"); if (!box) return;
-  let data; try { data = await api("/api/w/" + boardId + "/threads/" + openThread); } catch (err) { box.innerHTML = '<span class="error">' + esc(err.message) + '</span>'; return; }
-  const key = openThread + ":" + data.comments.length + ":" + (data.comments.at(-1)?.id || 0);
-  if (key === chatKey) return;
-  chatKey = key;
-  const active = document.activeElement, keepFocus = active && active.id === "cbody" ? { s: active.selectionStart, e: active.selectionEnd } : null;
-  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60 || !box.querySelector(".msg");
-  const bubble = (m, first) => '<div class="msg' + (m.author === "human" ? " me" : "") + (first ? " first" : "") + '">' + avatar(m.author) + '<div class="bubble"><div class="bhead"><b>@' + esc(m.author) + '</b><span class="meta">' + when(m.created_at) + '</span></div><div class="md">' + md(m.body) + '</div></div></div>';
-  box.innerHTML = bubble(data.thread, true) + data.comments.map(c => bubble(c, false)).join(""); box.dataset.thread = String(openThread);
-  const keep = chatRestore && chatRestore.thread === String(openThread) ? chatRestore : null; chatRestore = null;
-  if (keep ? keep.atBottom : atBottom) box.scrollTop = box.scrollHeight; else if (keep) box.scrollTop = keep.top;
-  if (keepFocus && $("#cbody")) { const ta = $("#cbody"); ta.focus({ preventScroll: true }); try { ta.setSelectionRange(keepFocus.s, keepFocus.e); } catch (e) {} }
+const chatRequests = new Set();
+const messageBubble = (m, first) => '<div class="msg' + (m.author === "human" ? " me" : "") + (first ? " first" : "") + '" data-comment="' + (first ? 0 : m.id) + '">' + avatar(m.author) + '<div class="bubble"><div class="bhead"><b>@' + esc(m.author) + '</b><span class="meta">' + when(m.created_at) + '</span></div><div class="md">' + md(m.body) + '</div></div></div>';
+async function drawChat(older = false) {
+  const box = $("#messages"), wid = boardId, tid = openThread, requestKey = wid + ":" + tid;
+  if (!box || !tid || chatRequests.has(requestKey)) return;
+  if (!chatData || chatData.key !== requestKey) chatData = { key: requestKey, thread: null, comments: [], cursor: 0, hasOlder: false };
+  const cache = chatData;
+  const before = older && cache.comments.length ? cache.comments[0].id : 0;
+  const after = !older && cache.thread ? cache.cursor : 0;
+  const query = before ? "?before=" + before + "&include_thread=0" : after ? "?after=" + after + "&include_thread=0" : "";
+  chatRequests.add(requestKey);
+  let data;
+  try { data = await api("/api/w/" + wid + "/threads/" + tid + query); }
+  catch (err) { if (boardId === wid && openThread === tid && $("#messages") === box) box.insertAdjacentHTML("beforeend", '<span class="error">' + esc(err.message) + '</span>'); return; }
+  finally { chatRequests.delete(requestKey); }
+  // Navigation and list redraws can replace this box while fetch is in flight.
+  if (boardId !== wid || openThread !== tid || $("#messages") !== box || cache !== chatData) return;
+  const wasRendered = box.dataset.thread === String(tid) && !!box.querySelector(".msg");
+  const atBottom = !wasRendered || box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const oldHeight = box.scrollHeight, oldTop = box.scrollTop;
+  cache.thread = data.thread || cache.thread;
+  const known = new Set(cache.comments.map(c => c.id));
+  const added = data.comments.filter(c => !known.has(c.id));
+  if (before) {
+    cache.comments = [...added, ...cache.comments];
+    cache.hasOlder = !!data.has_more;
+  } else if (after) {
+    cache.comments.push(...added);
+  } else {
+    cache.comments = data.comments;
+    cache.hasOlder = !!data.has_more;
+  }
+  if (!before) cache.cursor = data.last_id || cache.comments.at(-1)?.id || cache.cursor;
+  const rebuild = !wasRendered || !chatKey;
+  if (rebuild) {
+    box.innerHTML = messageBubble(cache.thread, true) + cache.comments.map(c => messageBubble(c, false)).join("");
+    box.dataset.thread = String(tid);
+  } else if (before && added.length) {
+    box.querySelector(".msg.first").insertAdjacentHTML("afterend", added.map(c => messageBubble(c, false)).join(""));
+  } else if (added.length) {
+    box.insertAdjacentHTML("beforeend", added.map(c => messageBubble(c, false)).join(""));
+  }
+  // Bound the live tail while following it; older history stays available on demand.
+  if (!before && atBottom && cache.comments.length > 500) {
+    const removed = cache.comments.splice(0, cache.comments.length - 500);
+    const ids = new Set(removed.map(c => String(c.id)));
+    for (const node of box.querySelectorAll("[data-comment]")) if (ids.has(node.dataset.comment)) node.remove();
+    cache.hasOlder = true;
+  }
+  const previousButton = box.querySelector(".older-comments");
+  if (previousButton) previousButton.remove();
+  if (cache.hasOlder) {
+    box.insertAdjacentHTML("afterbegin", '<button class="small secondary older-comments">Load older replies</button>');
+    box.querySelector(".older-comments").onclick = () => drawChat(true);
+  }
+  chatKey = requestKey + ":" + cache.cursor;
+  const keep = chatRestore && chatRestore.thread === String(tid) ? chatRestore : null;
+  chatRestore = null;
+  if (before && !rebuild) box.scrollTop = oldTop + box.scrollHeight - oldHeight;
+  else if (keep ? keep.atBottom : atBottom) box.scrollTop = box.scrollHeight;
+  else if (keep) box.scrollTop = keep.top;
+  // More than one bounded page may have arrived between polls.
+  if (after && data.has_more) queueMicrotask(() => drawChat());
 }
 
 // ---------------------------------------------------------------- a new thread from the office view, without switching to the threads
@@ -1072,6 +1138,75 @@ async function drawAttention(id) {
   $("#attlist").querySelectorAll(".attdone").forEach(b => b.onclick = async () => { await api("/api/w/" + id + "/attention/" + b.dataset.id + "/resolve", {}); drawAttention(id); });
 }
 
+// ---------------------------------------------------------------- local watchdog dialog
+let watchdogGeneration = 0;
+async function openWatchdog(id) {
+  const dlg = $("#watchdogdlg"), generation = ++watchdogGeneration;
+  let timer = null, busy = false, sending = false, loading = false;
+  const messages = new Map();
+  dlg.innerHTML = '<div class="dlg"><div class="top">' + avatar("watchdog", "lg") + '<div class="body"><div class="title"><h3>Local watchdog</h3><button class="small secondary" id="wdclose" style="margin-left:auto">Close</button></div><p class="hint">Ask to wake the master, swap its model, or resume an agent’s session. Available while the team is paused.</p></div></div><div class="notes"><div class="row"><label for="wdmodel">Watchdog model</label><select id="wdmodel"></select><label for="wdeffort">Effort</label><select id="wdeffort"></select><label for="wdtarget">Teammate to help</label><select id="wdtarget"></select></div><p class="hint">Changing selections keeps this project’s conversation history.</p><button class="small secondary" id="wdolder">Earlier messages</button><div id="wdmessages" aria-live="polite" style="max-height:45vh;overflow:auto;margin:12px 0"></div><form id="wdform"><label for="wdinput">Message to watchdog</label><textarea id="wdinput" maxlength="16000" rows="3" style="width:100%" placeholder="Wake the master and check its session…" required></textarea><div class="row"><button id="wdsend" type="submit">Send</button><span class="hint" id="wdstatus">Loading…</span></div></form></div></div>';
+  const active = () => generation === watchdogGeneration && dlg.open;
+  const status = text => { if (active()) $("#wdstatus", dlg).textContent = text; };
+  $("#wdclose", dlg).onclick = () => dlg.close();
+  dlg.onclose = () => { clearTimeout(timer); ++watchdogGeneration; };
+  dlg.showModal();
+  function render(data, earlier = false) {
+    busy = data.busy;
+    const box = $("#wdmessages", dlg), oldHeight = box.scrollHeight;
+    const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    let changed = false;
+    for (const m of data.messages) if (!messages.has(m.id)) { messages.set(m.id, m); changed = true; }
+    if (changed) {
+      box.innerHTML = [...messages.values()].sort((a,b) => a.id - b.id).map(m => '<article style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="meta"><b>' + esc(m.role === "human" ? "You" : m.role === "tool" ? "Recovery action" : "Watchdog") + '</b> · ' + esc(m.target) + ' · ' + esc(m.model) + ' · ' + when(m.created_at) + '</div><div class="t">' + md(m.body) + '</div></article>').join("");
+      if (earlier) box.scrollTop += box.scrollHeight - oldHeight;
+      else if (bottom) box.scrollTop = box.scrollHeight;
+    }
+    if (!messages.size) box.innerHTML = '<p class="hint">Your conversation with the watchdog will appear here.</p>';
+    $("#wdolder", dlg).disabled = !messages.size || Math.min(...messages.keys()) <= 1 || (earlier && data.messages.length < 100);
+    $("#wdsend", dlg).disabled = busy || sending || !$("#wdmodel", dlg).value;
+    status(busy ? "Watchdog is working…" : "Ready");
+  }
+  async function poll() {
+    if (!active()) return;
+    try { const data = await api("/api/w/" + id + "/watchdog"); if (active()) render(data); }
+    catch (err) { status(err.message); }
+    if (active()) timer = setTimeout(poll, 2000);
+  }
+  try {
+    const [data, catalog] = await Promise.all([api("/api/w/" + id + "/watchdog"), api("/api/models")]);
+    if (!active()) return;
+    MODELS = catalog.models;
+    const selection = data.selection || {};
+    const model = MODELS.some(m => m.id === selection.model) ? selection.model : MODELS[0]?.id || "";
+    $("#wdmodel", dlg).innerHTML = modelOptions(model, MODELS);
+    $("#wdeffort", dlg).innerHTML = effortOptions(model, selection.effort || "high");
+    bindEfforts($("#wdmodel", dlg), $("#wdeffort", dlg));
+    $("#wdtarget", dlg).innerHTML = data.agents.map(a => '<option value="' + esc(a.name) + '"' + (a.name === (selection.target || "master") ? ' selected' : '') + '>' + esc(a.name + " · " + a.title) + '</option>').join("");
+    render(data);
+    if (!model) status("Configure a model provider to use the watchdog.");
+    timer = setTimeout(poll, 2000);
+  } catch (err) { status(err.message); $("#wdsend", dlg).disabled = true; }
+  $("#wdolder", dlg).onclick = async () => {
+    if (loading || !messages.size) return;
+    loading = true;
+    try { const data = await api("/api/w/" + id + "/watchdog?before=" + Math.min(...messages.keys())); if (active()) render(data, true); }
+    catch (err) { status(err.message); }
+    finally { loading = false; }
+  };
+  $("#wdform", dlg).onsubmit = async event => {
+    event.preventDefault();
+    if (busy || sending) return;
+    const input = $("#wdinput", dlg), message = input.value.trim();
+    if (!message) return;
+    sending = true; $("#wdsend", dlg).disabled = true;
+    try {
+      const data = await api("/api/workspaces/" + id + "/watchdog", {message, model: $("#wdmodel", dlg).value, effort: $("#wdeffort", dlg).value, target: $("#wdtarget", dlg).value});
+      if (active()) { input.value = ""; render(data); }
+    } catch (err) { status(err.message); }
+    finally { sending = false; if (active()) $("#wdsend", dlg).disabled = busy || !$("#wdmodel", dlg).value; }
+  };
+}
+
 // ---------------------------------------------------------------- agent dialog
 let dlgTimer = null;
 let liveCursor = 0;
@@ -1086,11 +1221,12 @@ async function openAgent(id, name) {
     (spec.personality && spec.role !== "master" ? '<p style="margin:8px 0 0"><i>' + esc(spec.personality) + '</i></p>' : '') + '</div></div>' +
     '<div class="tiles" id="tiles"></div>' +
     '<div class="cols"><div><h2>Role</h2><p><b>' + esc(spec.title) + '</b> <span class="meta">(' + esc(spec.role) + ')</span></p><p>' + esc(brief) + '</p>' + (why ? '<p class="meta"><i>Model choice: ' + esc(why) + '</i></p>' : '') + (spec.estimated_cycles ? '<p class="meta">Estimated ~' + spec.estimated_cycles + ' cycles × ~' + fmtNum(spec.tokens_per_cycle) + ' tokens</p>' : '') +
-    (state.approved && spec.status !== "retired" ? '<h2>Model</h2><div class="row modelctl"><select id="dlgmodel">' + modelOptions(spec.model || "", MODELS, "backend default") + '</select><select id="dlgeffort" class="inline">' + EFFORTS.map(e => '<option' + (e === (spec.effort || (spec.role === "master" || spec.role === "team-lead" ? "xhigh" : "high")) ? " selected" : "") + '>' + e + '</option>').join("") + '</select><button class="small" id="dlgapply">Apply</button></div><p class="hint" id="dlgmodelhint">Takes effect from its next cycle.</p>' : '') + '</div>' +
+    (state.approved && spec.status !== "retired" ? '<h2>Model</h2><div class="row modelctl"><select id="dlgmodel">' + modelOptions(spec.model || "", MODELS, "backend default") + '</select><select id="dlgeffort" class="inline">' + effortOptions(spec.model, spec.effort || (spec.role === "master" || spec.role === "team-lead" ? "xhigh" : "high")) + '</select><button class="small" id="dlgapply">Apply</button></div><p class="hint" id="dlgmodelhint">Takes effect from its next cycle.</p>' : '') + '</div>' +
     '<div><h2>Current task</h2><p id="dlgcur">—</p><h2>Last cycle</h2><p id="dlglast" class="meta">—</p><h2>Uncommitted files</h2><p id="dlgfiles" class="meta">—</p></div></div>' +
     '<div class="tabs"><h2 style="margin:0">Live</h2><span class="hint" id="livehint">what the model is doing right now: its thinking, what it says, and the tools it runs (newest at the bottom)</span></div><div class="live" id="dlglive"><p class="hint">Loading…</p></div>' +
     '<div class="notes" id="dlgcycles"><h2>Recent cycles</h2><p class="hint">Loading…</p></div></div>';
   $("#dlgclose", dlg).onclick = () => dlg.close();
+  bindEfforts($("#dlgmodel", dlg), $("#dlgeffort", dlg));
   if ($("#dlgapply", dlg)) $("#dlgapply", dlg).onclick = async () => {
     const btn = $("#dlgapply", dlg); btn.disabled = true;
     try { await api("/api/w/" + id + "/agents/" + name + "/model", { model: $("#dlgmodel", dlg).value || "default", effort: $("#dlgeffort", dlg).value }); $("#dlgmodelhint", dlg).textContent = "Saved. Takes effect from its next cycle."; if (boardRefresh) boardRefresh(); }
@@ -2511,6 +2647,7 @@ function makeOffice(wid) {
       const d = e.detail || "";
       if (e.kind === "limit" && /^Usage limit reached/.test(d)) guardQueue.push({ k: "limit", backend: backendIn(d, /on (\S+) \(by/) });
       else if (e.kind === "limit" && /^Checked/.test(d)) guardQueue.push({ k: "still", backend: backendIn(d, /^Checked (\S+):/) });
+      else if (e.kind === "recovery") guardQueue.push({ k: "recovery", text: d.slice(0, 120) });
       else if (e.kind === "resume") {
         const master = /master resumes first/.test(d), m = master && masterChar();
         if (m) { m.hold = { until: Date.now() + 60000 }; m.steps = []; }          // the master stays where it is until the guard has got it up
@@ -2616,6 +2753,7 @@ function makeOffice(wid) {
   function guardScript(q) {
     const post = () => guardPost(), ahead = () => { const [x, y] = guardPost(); for (const dy of [2, 1]) if (y + dy < MH - 1 && !solid[y + dy][x] && !isEntry(x, y + dy)) return [x, y + dy]; return [x, y]; };
     const home = [{ k: "goto", spot: post }, { k: "face", dir: "down" }];
+    if (q.k === "recovery") return [{ k: "gear", gear: "radio", ms: 5000, text: q.text, keepDir: true }].concat(home);
     if (q.k === "limit") return [{ k: "goto", spot: ahead }, { k: "gear", gear: "stop", ms: 5200, text: guardSay("limit", q.backend) }].concat(home);
     if (q.k === "probe") return [{ k: "gear", gear: "radio", ms: 6000, text: guardSay("radio", q.backend), whileProbing: true, keepDir: true }];
     if (q.k === "still") return [{ k: "gear", gear: "radio", ms: 3200, text: guardSay("radio", q.backend), keepDir: true }, { k: "gear", gear: null, ms: 4000, text: guardSay("still", q.backend) }];
@@ -3131,7 +3269,7 @@ function makeOffice(wid) {
   const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !isDoor(nx, ny) && !isEntry(nx, ny) && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
   function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming)/.test(s) ? "work" : "sleep"; }
   const fainted = (a) => /^(error|crashed)/.test((a.live && a.live.status) || a.status || "");
-  const pausedByHuman = (a, st) => { const s = (a.live && a.live.status) || a.status || ""; return st.running === false || (/^paused/.test(s) && !/usage limit/.test(s)); };   // the human hit pause: a holiday, not a strike
+  const pausedByHuman = (a, st) => { const s = (a.live && a.live.status) || a.status || ""; return (!/^(working|resuming)/.test(s) && st.running === false) || (/^paused/.test(s) && !/usage limit/.test(s)); };   // the human hit pause: a holiday, not a strike
   const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
   // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
   // switching at random with an average of about two minutes per action
@@ -3595,10 +3733,10 @@ function makeOffice(wid) {
   // generating (thinking); while a tool runs, or just after text or a result landed, the agent is working; a long silence is reading.
   function actKind(c) {
     const a = c.act; if (!a || !a.at) return "read";
-    const age = Date.now() - new Date(a.at).getTime(); if (age > 90000) return "read";
-    if (a.kind === "thinking" || a.kind === "prompt") return "think";
+    const age = Date.now() - new Date(a.at).getTime(); if (age > 90000 && !a.active) return "read";
+    if (a.kind === "thinking" || a.kind === "waiting" || a.kind === "prompt") return "think";
     if (a.kind === "result") return age < 2000 ? "type" : "think";
-    if (a.kind === "text") return age < 6000 ? "type" : "think";
+    if (a.kind === "text") return a.active || age < 6000 ? "type" : "think";
     if (a.kind === "tool") return "type";
     return "read";
   }
@@ -3870,7 +4008,7 @@ function makeOffice(wid) {
   function onClick(ev) {
     const r = canvas.getBoundingClientRect(); const mx = (ev.clientX - r.left) * (canvas.width / (r.width || 1)), my = (ev.clientY - r.top) * (canvas.height / (r.height || 1));
     const gx = (mx - ox) / scale, gy = (my - oy) / scale;
-    for (const c of Object.values(chars)) if (!c.medic && !c.guard && !c.boss && !c.hidden && gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (wid) openAgent(wid, c.name); return; }
+    for (const c of Object.values(chars)) if (!c.medic && !c.boss && !c.hidden && gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (wid) { if (c.guard) openWatchdog(wid); else openAgent(wid, c.name); } return; }
   }
   function frame(now) {
     raf = null; if (!canvas || !vctx) return;
@@ -3930,7 +4068,7 @@ function makeOffice(wid) {
     vctx.setTransform(1, 0, 0, 1, 0, 0);
     raf = requestAnimationFrame(frame);
   }
-  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, guardQueue: () => guardQueue, THEME: () => THEME, view: () => ({ scale, ox, oy, width: canvas ? canvas.width : 0 }), DESKS, BEDS, FRONT, DOOR, PRINTER, PANTRY_SPOTS, TOILETS, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+  return { start, stop, update, headshot, setTheme, _debug: () => ({ chars, actKind, modeFor, guardQueue: () => guardQueue, THEME: () => THEME, view: () => ({ scale, ox, oy, width: canvas ? canvas.width : 0 }), DESKS, BEDS, FRONT, DOOR, PRINTER, PANTRY_SPOTS, TOILETS, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
 }
 const offices = {}, avatarOffice = makeOffice(null);                         // the board's avatars come from an office of their own
 const office = {

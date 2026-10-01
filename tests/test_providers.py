@@ -381,6 +381,15 @@ class ServerSettingsTests(unittest.TestCase):
         self.addCleanup(lambda: [os.environ.pop(k, None) for k in env])
         self.addCleanup(lambda: models.refresh_local(force=True))
         self.home = isolate_huntun_home(self)
+        # Real local model servers must not join the fake server catalog.
+        for fn, replacement in (
+            ("ollama_host", lambda: os.environ.get("OLLAMA_HOST") or f"http://{CLOSED}"),
+            ("vllm_base_url", lambda: (os.environ.get("VLLM_BASE_URL") or f"http://{CLOSED}").rstrip("/").removesuffix("/v1") + "/v1"),
+        ):
+            patcher = mock.patch.object(models, fn, replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        models.refresh_local(force=True)
 
     def _llama_server(self, key: str = "secret", alias: str = "qwen3.8-flash-next-uncensored") -> tuple[str, type]:
         handler = type("Llama", (_FakeLlamaServer,), {"key": key, "alias": alias, "seen_keys": []})

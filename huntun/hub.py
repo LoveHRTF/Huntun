@@ -149,6 +149,7 @@ class Hub:
         self.loop: asyncio.AbstractEventLoop | None = None
         self.lock = threading.RLock()
         self.workspaces: dict[str, WorkspaceEntry] = {}
+        self.recovery_agents: dict[str, Any] = {}
         self._load_registry()
 
     # ---- registry -------------------------------------------------------------
@@ -194,6 +195,9 @@ class Hub:
             return e
 
     def forget(self, wid: str) -> None:
+        recovery = self.recovery_agents.pop(wid, None)
+        if recovery and self.loop:
+            asyncio.run_coroutine_threadsafe(recovery.close(), self.loop)
         with self.lock:
             e = self.workspaces.pop(wid, None)
             self._save_registry()
@@ -550,7 +554,19 @@ class Hub:
         e.last_used = now_iso()
         return e.orchestrator.store.is_running()
 
+    async def watchdog(self, wid: str) -> Any:
+        from .watchdog import WatchdogAgent
+        entry = self.workspaces[wid]
+        if not entry.approved():
+            raise ValueError("Approve the project plan before using the watchdog.")
+        if wid not in self.recovery_agents:
+            self.recovery_agents[wid] = WatchdogAgent(self, entry)
+        return self.recovery_agents[wid]
+
     async def close(self, wid: str) -> None:
+        recovery = self.recovery_agents.pop(wid, None)
+        if recovery:
+            await recovery.close()
         e = self.workspaces.get(wid)
         if e and e.orchestrator is not None:
             orch, e.orchestrator = e.orchestrator, None

@@ -8,6 +8,7 @@ in-process MCP server and relies on Claude Code's built-in Read/Write/Edit/Bash/
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shlex
 from collections.abc import Awaitable, Callable
@@ -35,6 +36,7 @@ class ToolHooks:
     set_agent_model: Callable[[str, str | None, str | None], Awaitable[str]] | None = None
     resume_team: Callable[[], Awaitable[str]] | None = None
     set_goal: Callable[[str, str], Awaitable[str]] | None = None
+    complete_task: Callable[[], Awaitable[str]] | None = None
 
 
 @dataclass
@@ -47,6 +49,7 @@ class ToolContext:
     config: HuntunConfig
     cycle: CycleState
     hooks: ToolHooks = field(default_factory=ToolHooks)
+    tool_specs: list[ToolSpec] | None = None
 
 
 @dataclass
@@ -130,14 +133,10 @@ def human_confirmed(ctx: ToolContext, thread_id: Any) -> str | None:
         tid = 0
     if not tid or not ctx.store.get_thread(tid):
         return "post your proposal on the board tagging @human, wait for their reply in that thread, then pass its thread id as confirmation_thread_id"
-    comments = ctx.store.get_comments(tid)
-    thread = ctx.store.get_thread(tid) or {}
-    posts = [{"author": thread.get("author"), "body": thread.get("body", ""), "id": 0}] + comments
-    last_master = max((p["id"] for p in posts if p["author"] == ctx.agent.name), default=-1)
-    human_after = [p for p in posts if p["author"] == "human" and p["id"] > last_master]
-    if last_master < 0:
+    proposed, replied = ctx.store.confirmation_status(tid, ctx.agent.name)
+    if not proposed:
         return f"thread #{tid} has no proposal from you; propose the change there, tagging @human, and wait for their reply"
-    if not human_after:
+    if not replied:
         return f"@human has not replied in thread #{tid} since your proposal; wait for their confirmation (do not proceed without it)"
     return None
 
@@ -249,6 +248,10 @@ async def _git_status(a: dict[str, Any], ctx: ToolContext) -> str:
 async def _git_commit(a: dict[str, Any], ctx: ToolContext) -> str:
     explicit = [str(f) for f in (a.get("files") or [])]
     files = explicit or list(ctx.memory.state.touched_files)
+    try:
+        files = [rel_path(ctx.workspace, safe_path(ctx.workspace, f, for_write=True)) for f in files]
+    except ValueError as e:
+        return f"ERROR: {e}"
     note = "" if files else "(No tracked touched files; committed all pending changes in the tree.)\n"
     try:
         result = await commit(ctx.workspace, ctx.agent.name, str(a["message"]), files)
@@ -292,8 +295,10 @@ async def _read_thread(a: dict[str, Any], ctx: ToolContext) -> str:
     ctx.cycle.active_thread = t["id"]
     sha = f" (commit {t['commit_sha']})" if t.get("commit_sha") else ""
     head = f"# #{t['id']} {t['title']}\nby @{t['author']} at {t['created_at']}{sha}\n\n{t['body']}"
-    rest = "".join(f"\n\n--- comment #{c['id']} by @{c['author']} at {c['created_at']} ---\n{c['body']}" for c in ctx.store.get_comments(t["id"]))
-    return truncate(head + rest)
+    page = ctx.store.comment_page(t["id"], before=int(a.get("before") or 0), after=int(a.get("after") or 0), limit=int(a.get("limit") or 50))
+    rest = "".join(f"\n\n--- comment #{c['id']} by @{c['author']} at {c['created_at']} ---\n{c['body']}" for c in page["comments"])
+    footer = f"\n\nPage: first_id={page['first_id']}, last_id={page['last_id']}, has_more={page['has_more']}. Use before=first_id for older history or after=last_id for new replies."
+    return truncate(head + rest) + footer
 
 
 async def _post_thread(a: dict[str, Any], ctx: ToolContext) -> str:
@@ -334,6 +339,15 @@ async def _list_agents(a: dict[str, Any], ctx: ToolContext) -> str:
 
 
 async def _finish_cycle(a: dict[str, Any], ctx: ToolContext) -> str:
+    ctx.cycle.task_complete = bool(a.get("task_complete", True))
+    if ctx.cycle.task_complete and ctx.hooks.complete_task:
+        try:
+            merged = await ctx.hooks.complete_task()
+        except GitError as e:
+            return f"ERROR: task completion blocked: {e}"
+        ctx.memory.activity("merge", merged)
+        ctx.store.log_event(ctx.agent.name, "merge", merged)
+        ctx.cycle.task_merged = True
     ctx.cycle.finished = True
     ctx.cycle.summary = str(a["summary"])
     ctx.cycle.next_task = str(a["next_task"])
@@ -434,7 +448,8 @@ TOOLS: list[ToolSpec] = [
                    "files": {"type": "array", "items": {"type": "string"}, "description": "Explicit paths to stage (optional)"}},
                   ["message", "summary_title", "summary_body"]), _git_commit),
     ToolSpec("list_threads", "List recent board threads (newest activity first).", _obj({"limit": {"type": "integer"}}), _list_threads),
-    ToolSpec("read_thread", "Read a board thread and all of its comments.", _obj({"thread_id": {"type": "integer"}}, ["thread_id"]), _read_thread),
+    ToolSpec("read_thread", "Read a board thread and a bounded page of comments (latest 50 by default). Use before for older history, after for updates; limit is capped at 200.",
+             _obj({"thread_id": {"type": "integer"}, "before": {"type": "integer"}, "after": {"type": "integer"}, "limit": {"type": "integer"}}, ["thread_id"]), _read_thread),
     ToolSpec("post_thread", "Start a new board thread (proposal, design, bug report, review, question). @name tags someone and wakes them: use it only when you need them to act or answer; otherwise refer to people by name without @. @human only when the human must decide or provide something.",
              _obj({"title": {"type": "string"}, "body": {"type": "string"}}, ["title", "body"]), _post_thread),
     ToolSpec("post_comment", "Reply on a board thread. @name tags someone and wakes them: only when you need them to act or answer; otherwise write names without @. @human only when the human must decide or provide something.",
@@ -443,9 +458,10 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("update_notes", "Overwrite your persistent notes (your long-term memory). Include: what you own, key decisions, what is done, what is in progress, what is next, open questions, and useful file paths. This is all you will remember next cycle.",
              _obj({"notes": {"type": "string"}}, ["notes"]), _update_notes),
     ToolSpec("list_agents", "List the team: names, roles, briefs, and current status.", _obj({}), _list_agents),
-    ToolSpec("finish_cycle", "End your current work cycle. Call this when your focused task or reaction is complete (after committing and updating notes).",
+    ToolSpec("finish_cycle", "End your current work cycle. Completed tasks merge your committed worktree into the project. Commit and test first; resolve any merge conflict and retry. Set task_complete=false only for an unfinished task or blocked work.",
              _obj({"summary": {"type": "string", "description": "What you did this cycle, in one paragraph"},
                    "next_task": {"type": "string", "description": "What you will pick up next cycle"},
+                   "task_complete": {"type": "boolean", "description": "Defaults to true: integrate committed task changes. False keeps unfinished work isolated for a later cycle."},
                    "wait_for_mention": {"type": "boolean", "description": "Set true when you have nothing useful to do until someone asks you (blocked, or your work is complete). You will then sleep until tagged on the board (leads still run scheduled reviews)."}},
                   ["summary", "next_task"]), _finish_cycle),
     ToolSpec("hire_agent", "Add a new agent to the team (after the human confirmed the staffing change on the board). It starts working immediately with the brief you give it.",
@@ -517,6 +533,8 @@ def _with_models(spec: ToolSpec, ids: list[str]) -> ToolSpec:
 
 
 def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
+    if ctx.tool_specs is not None:
+        return ctx.tool_specs
     is_master = ctx.agent.role == "master"
     specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", *WEB_BACKENDS) or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)
              and (not t.web or (backend in WEB_BACKENDS and web.enabled()))]
@@ -528,10 +546,13 @@ def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
 
 async def execute(spec: ToolSpec, data: Any, ctx: ToolContext) -> tuple[str, bool]:
     """Runs a tool with validation. Returns (content, is_error)."""
+    if ctx.cycle.finished:
+        return "ERROR: This cycle is already finished. Stop calling tools.", True
     problem = validate(spec.input_schema, data)
     if problem:
         return f'{{"INVALID_JSON": "{problem}"}}', True
     ctx.cycle.tool_calls += 1
+    ctx.memory.activity("tool", f"{spec.name} {json.dumps(data, default=str)[:300]}")
     try:
         content = await spec.run(data, ctx)
     except Exception as e:  # tool bugs must surface to the model, not crash the agent

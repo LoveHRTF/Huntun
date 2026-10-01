@@ -276,6 +276,8 @@ class VllmBackend:
         usage = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0, "cost_usd": 0.0}
 
         def result(outcome: str, error: str | None = None, resets_at: float | None = None) -> CycleResult:
+            if memory.last_activity:
+                memory.last_activity["active"] = False
             return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at)
 
         try:
@@ -301,6 +303,7 @@ class VllmBackend:
                 "tool_choice": "auto",
             }
             try:
+                memory.activity("waiting", "Waiting for provider response")
                 data = await self._send(body)
                 text, reasoning, calls, finish = _reply(data)
                 attempts = 0
@@ -315,6 +318,10 @@ class VllmBackend:
                     messages = [{"role": "user", "content": f"{_first_prompt(messages, prompt)}\n\n[Your earlier conversation in this cycle overflowed the context window and "
                                                             "was dropped. What you did is on disk: check git status, your notes and the board before continuing.]"}]
                     memory.save_transcript(messages)
+                    memory.state.compactions += 1
+                    memory.state.context_tokens = 0
+                    memory.save_state()
+                    memory.activity("cycle", f"Context reset after overflow (#{memory.state.compactions})")
                     continue
                 if e.transient:
                     attempts += 1
@@ -347,6 +354,10 @@ class VllmBackend:
                 if finish == "length":
                     messages.append({"role": "user", "content": "Your reply was cut off (max_tokens). Continue, more concisely."})
                     memory.save_transcript(messages)
+                    memory.state.compactions += 1
+                    memory.state.context_tokens = 0
+                    memory.save_state()
+                    memory.activity("cycle", f"Context reset after overflow (#{memory.state.compactions})")
                     continue
                 if not cycle.finished:
                     cycle.finished = True
@@ -374,7 +385,6 @@ class VllmBackend:
                     continue
                 ran += 1
                 started = time.monotonic()
-                memory.activity("tool", f"{name} {_short(args, 300)}")
                 out, is_err = await execute(spec, args, ctx)
                 log(f"{name} {_short(args)} -> {'ERROR ' if is_err else ''}{time.monotonic() - started:.1f}s")
                 results.append({"role": "tool", "tool_call_id": c["id"], "content": out})

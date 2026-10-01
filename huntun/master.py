@@ -244,7 +244,7 @@ Every kind of work the goal and the definition of done require must be owned by 
 Pick a model and effort for every agent from its role and the difficulty of its tasks. The team is billed per token, so use the strongest model only where judgment matters, and cheaper models for routine work.
 {catalog_text(config.backend)}
 {_vendor_note(config)}
-Effort levels: low, medium, high, xhigh, max. Higher effort means more reasoning per step and more tokens. Guidance:
+Effort levels: low, medium, high, xhigh, max; ultra is for Codex models that advertise it. Higher effort means more reasoning per step and more tokens. Guidance:
 {"- team-lead: a frontier model at high or xhigh effort (architecture, reviews, integration)." if config.team_lead else "- There is no team lead: you lead the team yourself, so pick strong engineers for the parts that need judgment."}
 - engineers on well-specified features: a strong model at medium or high effort; a frontier model only for the hardest, most cross-cutting component.
 - qa, tech-writer, scrum-master, and other routine roles: a fast or strong model at low or medium effort.

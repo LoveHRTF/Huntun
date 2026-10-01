@@ -13,19 +13,38 @@ import asyncio
 import json
 import os
 from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 import anthropic
 
-from ..models import DEFAULT_API_MODEL, catalog_for, context_limit, cost_usd, note_shared_pool
+from ..models import (
+    DEFAULT_API_MODEL,
+    catalog_for,
+    context_limit,
+    cost_usd,
+    note_shared_pool,
+)
 from ..tools import ToolContext, available_tools, execute
 from ..types import CycleResult, HuntunConfig
 from . import POOL_FULL_RE, looks_like_limit, looks_like_overflow
+from .telemetry import LiveTelemetry
 
 RETRYABLE_ATTEMPTS = 6
 COMPACT_AT = 0.6  # compact the working context when a call reports more than this fraction of the window
 OVERFLOW_RECOVERIES = 4  # context overflows one cycle recovers from (compacting, or waiting out a full shared pool) before it gives up
+
+
+_stream_observer: ContextVar[Callable[[Any], None] | None] = ContextVar("huntun_stream_observer", default=None)
+
+
+async def _stream_reply(stream: Any) -> Any:
+    observer = _stream_observer.get()
+    if observer and hasattr(stream, "__aiter__"):
+        async for event in stream:
+            observer(event)
+    return await stream.get_final_message()
 
 
 class ContextOverflow(Exception):
@@ -166,9 +185,9 @@ class ApiBackend:
             try:
                 if self.compat:
                     async with client.messages.stream(**p) as stream:
-                        return await stream.get_final_message()
+                        return await _stream_reply(stream)
                 async with client.beta.messages.stream(**p) as stream:
-                    return await stream.get_final_message()
+                    return await _stream_reply(stream)
             except anthropic.BadRequestError as e:
                 msg = str(getattr(e, "message", e)).lower()
                 if looks_like_overflow(msg):
@@ -194,7 +213,7 @@ class ApiBackend:
         say = log or (lambda _t: None)
         say(f"Calling {model or self._default_model()} ({PROVIDERS[self.provider]['label']}), waiting for the answer…")
         params: dict[str, Any] = {
-            "model": model or self._default_model(), "max_tokens": 16000, "output_config": {"effort": effort},
+            "model": model or self._default_model(), "max_tokens": 16000, "output_config": {"effort": {"none": "low", "minimal": "low", "ultra": "max"}.get(effort, effort)},
             "tools": [{"name": tool_name, "description": description, "input_schema": schema}],
             "tool_choice": {"type": "tool", "name": tool_name},
             "messages": [{"role": "user", "content": prompt + ("" if not self.compat else f"\n\nCall the `{tool_name}` tool with your answer; do not answer in prose.")}],
@@ -278,11 +297,13 @@ class ApiBackend:
 
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle = ctx.memory, ctx.cycle
+        live = LiveTelemetry(memory, self.provider)
         defs, by_name = _tool_defs(ctx, self.provider)
         usage = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0, "cost_usd": 0.0}
         effective_model = model or self._default_model()
 
         def result(outcome: str, error: str | None = None, resets_at: float | None = None) -> CycleResult:
+            live.close()
             return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at)
 
         saved = memory.load_transcript()
@@ -304,11 +325,16 @@ class ApiBackend:
                 "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 "tools": defs,
                 "messages": messages,
-                "output_config": {"effort": effort},
+                "output_config": {"effort": {"none": "low", "minimal": "low", "ultra": "max"}.get(effort, effort)},
                 "thinking": {"type": "adaptive", "display": "summarized"},
             }
             try:
-                message = await self._call(params, use_fallbacks)
+                memory.activity("waiting", "Waiting for provider response")
+                observer_token = _stream_observer.set(live.anthropic_event)
+                try:
+                    message = await self._call(params, use_fallbacks)
+                finally:
+                    _stream_observer.reset(observer_token)
                 attempts = 0
             except ContextOverflow as e:
                 overflows += 1
@@ -430,7 +456,6 @@ class ApiBackend:
                     results.append({"type": "tool_result", "tool_use_id": tu.id, "is_error": True, "content": f"Unknown tool {tu.name}"})
                     continue
                 started = asyncio.get_event_loop().time()
-                memory.activity("tool", f"{tu.name} {_short(tu.input, 300)}")
                 out, is_err = await execute(spec, tu.input, ctx)
                 took = asyncio.get_event_loop().time() - started
                 log(f"{tu.name} {_short(tu.input)} -> {'ERROR ' if is_err else ''}{took:.1f}s")

@@ -15,6 +15,7 @@ class ModelInfo:
     context: int
     use_for: str
     vendor: str = "anthropic"
+    reasoning_levels: tuple[str, ...] = ()
 
 
 MODEL_CATALOG: list[ModelInfo] = [
@@ -31,6 +32,98 @@ CODEX_CATALOG: list[ModelInfo] = [
     ModelInfo(mid.strip(), mid.strip(), "codex", 0.0, 0.0, 400_000, "OpenAI Codex agent model, strong at end-to-end coding tasks (billed through your ChatGPT plan; Huntun cannot price it)", "openai")
     for mid in __import__("os").environ.get("HUNTUN_CODEX_MODELS", "gpt-5.3-codex").split(",") if mid.strip()
 ]
+LEGACY_CODEX_MODELS = {m.id: m for m in CODEX_CATALOG}
+
+_codex_signature: Any = None
+CODEX_DEFAULT_MODEL_INFO: ModelInfo | None = None
+_codex_metadata: dict[str, ModelInfo] = {}
+
+
+def _codex_info(mid: str, row: dict[str, Any]) -> ModelInfo:
+    advertised = row.get("supported_reasoning_levels")
+    levels = tuple(r["effort"] for r in advertised if isinstance(r, dict) and isinstance(r.get("effort"), str)) if isinstance(advertised, list) else ()
+    # CLI defaults can be smaller than the model/account's supported maximum.
+    context = 400_000
+    for key in ("max_context_window", "context_window"):
+        try:
+            value = int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            context = value
+            break
+    return ModelInfo(mid, str(row.get("display_name") or mid), "codex", 0.0, 0.0, context,
+                     "Codex CLI model (subscription usage; Huntun cannot price it)", "openai", levels)
+
+
+def refresh_codex() -> list[ModelInfo]:
+    """Read the CLI's model cache/config; explicit overrides remain authoritative.
+
+    No model calls, credentials, or guessed model names are needed. File signatures
+    keep repeated board polling cheap and discover CLI cache updates on the fly.
+    """
+    import json
+    import os
+    import tomllib
+    from pathlib import Path
+
+    global _codex_signature, CODEX_DEFAULT_MODEL_INFO, _codex_metadata
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    cache, config = home / "models_cache.json", home / "config.toml"
+    forced = os.environ.get("HUNTUN_CODEX_MODELS", "").strip()
+    def stamp(p: Path) -> tuple[int, int] | None:
+        try:
+            st = p.stat()
+            return st.st_mtime_ns, st.st_size
+        except OSError:
+            return None
+    signature = str(home), stamp(cache), stamp(config), forced
+    if signature == _codex_signature:
+        return CODEX_CATALOG
+    discovered: dict[str, dict[str, Any]] = {}
+    configured = ""
+    try:
+        rows = json.loads(cache.read_text()).get("models", [])
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("slug"), str):
+                discovered[row["slug"]] = row
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    try:
+        cfg = tomllib.loads(config.read_text())
+        profile = (cfg.get("profiles") or {}).get(cfg.get("profile"), {})
+        configured = str(profile.get("model") or cfg.get("model") or "")
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    ids = [s.strip() for s in forced.split(",") if s.strip()] if forced else [mid for mid, row in discovered.items() if row.get("visibility", "list") == "list"]
+    if not forced and configured and configured not in ids:
+        ids.insert(0, configured)
+    if not ids:
+        ids = ["gpt-5.3-codex"]
+    _codex_metadata = {mid: _codex_info(mid, row) for mid, row in discovered.items()}
+    result = [_codex_metadata.get(mid) or _codex_info(mid, {}) for mid in dict.fromkeys(ids)]
+    old_ids = {m.id for m in CODEX_CATALOG}
+    CODEX_CATALOG[:] = result
+    CODEX_DEFAULT_MODEL_INFO = (_codex_metadata.get(configured) or _codex_info(configured, {})) if configured else None
+    if not configured and result:
+        def priority(info: ModelInfo) -> int:
+            try:
+                return int(discovered.get(info.id, {}).get("priority", 1_000_000))
+            except (TypeError, ValueError):
+                return 1_000_000
+        CODEX_DEFAULT_MODEL_INFO = min(result, key=priority)
+    for mid in old_ids:
+        MODEL_BY_ID.pop(mid, None)
+    MODEL_BY_ID.update((m.id, m) for m in result)
+    MODEL_IDS[:] = [i for i in MODEL_IDS if i not in old_ids] + [m.id for m in result]
+    _codex_signature = signature
+    return CODEX_CATALOG
+
+
+def codex_model_info(model: str) -> ModelInfo | None:
+    """The explicit seat model, or the CLI's configured default when known."""
+    refresh_codex()
+    return (_codex_metadata.get(model) or model_info(model)) if model else CODEX_DEFAULT_MODEL_INFO
 def kimi_models() -> list[str]:
     """Model aliases the local Kimi Code install knows, default first (HUNTUN_KIMI_MODELS overrides the list)."""
     import os
@@ -482,7 +575,7 @@ def refresh_local(force: bool = False) -> dict[str, list[ModelInfo]]:
     slugs = _slugs(entries)
     fresh: dict[str, list[ModelInfo]] = {t: [] for t in SERVER_TYPES}
     routes: dict[str, dict[str, str]] = {}
-    for e, r in zip(entries, results):
+    for e, r in zip(entries, results, strict=True):
         for n in r["models"]:
             mid = n if served[n] == 1 else f"{n}@{slugs[e['id']]}"
             if mid in routes:
@@ -494,7 +587,7 @@ def refresh_local(force: bool = False) -> dict[str, list[ModelInfo]]:
             MODEL_BY_ID[m.id] = m
         LOCAL_CATALOGS[t][:] = cat
     _replace(ROUTES, routes)                                                        # in place and never empty in between: calls route from other threads
-    _replace(SERVER_STATUS, {e["id"]: r for e, r in zip(entries, results)})
+    _replace(SERVER_STATUS, {e["id"]: r for e, r in zip(entries, results, strict=True)})
     return LOCAL_CATALOGS
 
 
@@ -560,13 +653,14 @@ def note_shared_pool(url: str) -> bool:
 
 def model_ids() -> list[str]:
     """Every model id an agent can be put on: the fixed catalogs plus what the local servers serve now."""
+    refresh_codex()
     local = [m.id for cat in refresh_local().values() for m in cat]
     return MODEL_IDS + [i for i in dict.fromkeys(local) if i not in MODEL_IDS]
 
 
 def catalog_for(backend: str) -> list[ModelInfo]:
     if backend == "codex":
-        return CODEX_CATALOG
+        return refresh_codex()
     if backend == "kimi":
         return KIMI_CATALOG
     if backend == "deepseek":
@@ -656,7 +750,7 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
     if "claude-code" in avail or "api" in avail:
         out += [(m, "claude-code" if "claude-code" in avail else "api") for m in MODEL_CATALOG]
     if "codex" in avail:
-        out += [(m, "codex") for m in CODEX_CATALOG]
+        out += [(m, "codex") for m in refresh_codex()]
     if "kimi" in avail:
         out += [(m, "kimi") for m in KIMI_CATALOG]
     if "deepseek" in avail:
@@ -668,15 +762,18 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
     if "llamacpp" in avail:
         out += [(m, "llamacpp") for m in refresh_llamacpp()]
     return out
-EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
 DEFAULT_API_MODEL = "claude-opus-5-5"
 
 
 def model_info(model_id: str | None) -> ModelInfo | None:
     if not model_id:
         return None
+    refresh_codex()
     if model_id in MODEL_BY_ID:
         return MODEL_BY_ID[model_id]
+    if model_id in LEGACY_CODEX_MODELS:
+        return LEGACY_CODEX_MODELS[model_id]
     for m in MODEL_CATALOG:  # tolerate aliases such as "opus", "sonnet", "haiku"
         if m.tier and model_id.lower() in m.id:
             return m
@@ -718,5 +815,6 @@ def catalog_text(backend: str = "api", available: dict[str, str] | None = None) 
         price = (f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m
                  else "runs locally, no per-token price" if m.vendor in ("ollama", "vllm", "llamacpp")
                  else "billed through the ChatGPT plan, no per-token price")
-        lines.append(f"- {m.id} ({m.label}; vendor {m.vendor}; runs via {BACKEND_LABEL.get(b, b)}; {price}; {m.context // 1000}k context): {m.use_for}")
+        levels = f"; reasoning levels {', '.join(m.reasoning_levels)}" if m.reasoning_levels else ""
+        lines.append(f"- {m.id} ({m.label}; vendor {m.vendor}; runs via {BACKEND_LABEL.get(b, b)}; {price}; {m.context // 1000}k context{levels}): {m.use_for}")
     return "\n".join(lines)

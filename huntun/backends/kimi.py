@@ -23,6 +23,7 @@ import signal
 import tempfile
 import time
 from collections.abc import Callable
+from hashlib import md5
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,8 @@ from ..models import kimi_models
 from ..tools import available_tools
 from ..types import CycleResult, HuntunConfig
 from . import continue_session, looks_like_limit
-from .codex import McpBridge
+from .codex import McpBridge, _event_lines
+from .telemetry import LiveTelemetry, SessionTail
 
 CONTINUE_NOTE = "(New cycle in the same conversation. Your earlier cycles above are context only; the board, the repository and your notes are the truth now.)\n\n"
 RESUME_PROMPT = (
@@ -87,8 +89,8 @@ class KimiBackend:
 
         async def drain_err() -> None:
             assert proc.stderr
-            async for line in proc.stderr:
-                stderr_chunks.append(line)
+            async for line in _event_lines(proc.stderr):
+                stderr_chunks[:] = [(b"".join(stderr_chunks) + line)[-2000:]]
                 text = line.decode(errors="replace").strip()
                 if text.lower().startswith("error") or looks_like_limit(text):
                     on_event({"role": "meta", "type": "stderr", "text": text})
@@ -110,18 +112,26 @@ class KimiBackend:
 
         err_task, watch_task = asyncio.create_task(drain_err()), asyncio.create_task(watch())
         assert proc.stdout
-        async for raw in proc.stdout:
-            line = raw.decode(errors="replace").strip()
-            if not line:
-                continue
-            try:
-                on_event(json.loads(line))
-            except json.JSONDecodeError:
-                on_event({"role": "meta", "type": "stdout", "text": line})
-        await proc.wait()
-        watch_task.cancel()
-        with contextlib.suppress(Exception):
+        try:
+            async for raw in _event_lines(proc.stdout):
+                line = raw.decode(errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    event = {"role": "meta", "type": "stdout", "text": line}
+                on_event(event)
+            await proc.wait()
             await err_task
+        finally:
+            watch_task.cancel()
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+            err_task.cancel()
+            await asyncio.gather(err_task, watch_task, return_exceptions=True)
         if proc.returncode not in (0, None) and not interrupted:
             on_event({"role": "meta", "type": "stderr", "text": b"".join(stderr_chunks).decode(errors="replace")[-2000:]})
         return proc.returncode, interrupted
@@ -180,6 +190,7 @@ class KimiBackend:
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle, state = ctx.memory, ctx.cycle, ctx.memory.state
         usage: dict[str, float] = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cost_usd": 0.0, "turns": 0.0}
+        live = LiveTelemetry(memory, "Kimi")
         state.context_limit = state.context_limit or DEFAULT_CONTEXT
         limit_hit: dict[str, Any] = {}
         texts: list[str] = []
@@ -193,7 +204,15 @@ class KimiBackend:
             nonlocal chars
             role, t = ev.get("role"), ev.get("type")
             if role == "assistant":
-                content = str(ev.get("content") or "")
+                parts = ev.get("content") or ""
+                if isinstance(parts, list):
+                    for part in parts:
+                        if isinstance(part, dict) and part.get("type") in ("think", "thinking"):
+                            memory.activity("thinking", str(part.get("think") or part.get("thinking") or part.get("text") or ""))
+                    content = "\n".join(str(part.get("text") or "") for part in parts
+                                        if isinstance(part, dict) and part.get("type") == "text")
+                else:
+                    content = str(parts)
                 if content:
                     texts.append(content)
                     memory.activity("text", content)
@@ -240,13 +259,30 @@ class KimiBackend:
                         limit_hit["reason"] = msg[:300]
 
         specs = available_tools(ctx, "kimi")
-        plan = ctx.agent.role == "master"
+        plan = ctx.agent.role in ("master", "watchdog")
         resuming = bool(state.resume_pending and state.session_id)                       # paused mid-cycle: pick up where it stopped
         continuing = continue_session(state, self.config.session_max_cycles)             # otherwise keep the same session going across cycles
         if not continuing and state.session_id:
             log(f"starting a fresh session after {state.session_cycles} cycles")
             state.session_id, state.session_cycles = None, 0
         session_before = state.session_id
+        share = Path(os.environ.get("KIMI_SHARE_DIR", str(Path.home() / ".kimi")))
+        sessions = share / "sessions" / md5(str(ctx.workspace.resolve()).encode()).hexdigest()
+        existing = set(sessions.glob("*/wire.jsonl"))
+
+        def locate_session() -> Path | None:
+            sid = state.session_id
+            if sid and all(c.isalnum() or c in "-_" for c in sid):
+                path = sessions / sid / "wire.jsonl"
+                return path if path.exists() else None
+            # A fresh print-mode session publishes its id only at the end. The
+            # private worktree identifies its new wire file without other seats.
+            return next((path for path in sessions.glob("*/wire.jsonl") if path not in existing), None)
+
+        tail = SessionTail(locate_session, live.kimi_record)
+        await tail.prime(lambda record: live.kimi_record(record, snapshot=True))
+        live.pulse("waiting", "Waiting for Kimi response")
+        tail.start()
         try:
             async with McpBridge(specs, ctx) as bridge:
                 self._write_mcp(ctx.workspace, bridge.url)
@@ -264,8 +300,14 @@ class KimiBackend:
                     self._write_mcp(ctx.workspace, None)
         except Exception as e:
             return result("error", f"{type(e).__name__}: {e}")
+        finally:
+            try:
+                await tail.close()
+            finally:
+                live.close()
         usage["output"] += chars / 4                                                     # Kimi's print mode reports no token counts: a rough estimate
-        state.context_tokens = min(state.context_limit, int(state.context_tokens + chars / 4))
+        if not live.context_seen:
+            state.context_tokens = min(state.context_limit, int(state.context_tokens + chars / 4))
         if state.session_id:
             state.session_cycles = state.session_cycles + 1 if state.session_id == session_before else 1
         if continuing and code not in (0, None) and not cycle.finished and any(SESSION_GONE.search(e) for e in errors):

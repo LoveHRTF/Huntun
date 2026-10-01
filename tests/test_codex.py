@@ -111,7 +111,7 @@ class CodexBackendTests(unittest.TestCase):
         self.assertEqual((res.outcome, res.summary, res.next_task), ("finished", "done via exec", "more"), res.error)
         self.assertEqual((res.usage["input"], res.usage["cache_read"], res.usage["output"], res.usage["turns"]), (100, 50, 10, 1))
         st = ctx.memory.state
-        self.assertEqual((st.session_id, st.context_tokens, st.resume_pending), ("thread-123", 160, False))
+        self.assertEqual((st.session_id, st.context_tokens, st.resume_pending), ("thread-123", 0, False))
         self.assertEqual(self.store.get_comments(1)[0]["body"], "On it.")
         self.assertEqual(self.store.get_comments(1)[-1]["author"], "dev-1")  # commit summary landed in the working thread
         self.assertIn("added hello.py", self.store.get_comments(1)[-1]["body"])

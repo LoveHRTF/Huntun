@@ -94,6 +94,9 @@ class HubTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.home = root / "home"
+        previous_home = os.environ.get("HUNTUN_HOME")
+        os.environ["HUNTUN_HOME"] = str(self.home)
+        self.addCleanup(lambda: os.environ.__setitem__("HUNTUN_HOME", previous_home) if previous_home is not None else os.environ.pop("HUNTUN_HOME", None))
         self.project = root / "myapp"
         self.project.mkdir()
         (self.project / "README.md").write_text("# myapp\nA sample project.\n")
@@ -135,11 +138,57 @@ class HubTests(unittest.TestCase):
             time.sleep(0.2)
         self.fail(f"workspace never reached {states}: {w}")
 
+    def test_watchdog_http_history_and_model_selection(self) -> None:
+        from unittest.mock import patch
+
+        from huntun.config import HuntunConfig, save_config, save_team
+        from huntun.models import model_info
+        from huntun.types import AgentSpec
+        save_config(self.project, HuntunConfig("Recovery", backend="api"))
+        save_team(self.project, [AgentSpec("master", "master", "Master", "Lead")])
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        self.store_of(wid).set_control("plan_approved", "1")
+        with patch("huntun.watchdog.make_backend", return_value=FakeBackend(None)), patch("huntun.watchdog.catalog_available", return_value=[(model_info("claude-sonnet-5"), "api")]):
+            result = self.srv.call(f"/api/workspaces/{wid}/watchdog", {"message": "Inspect master", "model": "claude-sonnet-5", "effort": "high", "target": "master"})
+            self.assertEqual(result["messages"][-1]["body"], "Inspect master")
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                result = self.srv.call(f"/api/w/{wid}/watchdog")
+                if not result["busy"]:
+                    break
+                time.sleep(.05)
+            self.assertEqual(result["messages"][-1]["body"], "noop")
+            self.assertEqual(result["selection"]["model"], "claude-sonnet-5")
+            self.assertEqual(len(self.srv.call(f"/api/w/{wid}/watchdog?before=2")["messages"]), 1)
+            self.assertFalse(self.store_of(wid).is_running())
+
     def test_describe_workspace_sees_existing_files(self) -> None:
         desc = describe_workspace(self.project)
         self.assertIn("src/main.py", desc)
         self.assertIn("A sample project.", desc)
         self.assertEqual(describe_workspace(Path(self.tmp.name) / "home"), "")
+
+    def test_long_threads_use_bounded_http_pages(self) -> None:
+        from huntun.config import default_config, save_config
+        save_config(self.project, default_config("paging check"))
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        store = self.store_of(wid)
+        tid = store.create_thread("human", "Long thread", "opening")["id"]
+        ids = [store.add_comment(tid, "dev", "long reply " * 100)["id"] for _ in range(230)]
+        path = f"/api/w/{wid}/threads/{tid}"
+        latest = self.srv.call(path)
+        self.assertEqual([c["id"] for c in latest["comments"]], ids[-100:])
+        self.assertTrue(latest["has_more"])
+        older = self.srv.call(path + f"?before={latest['first_id']}&limit=20&include_thread=0")
+        self.assertIsNone(older["thread"])
+        self.assertEqual([c["id"] for c in older["comments"]], ids[110:130])
+        empty = self.srv.call(path + f"?after={ids[-1]}&include_thread=0")
+        self.assertEqual(empty["comments"], [])
+        self.assertEqual(empty["last_id"], ids[-1])
+        for query in ("?after=no", "?after=-1", "?before=1&after=2", "?limit=0"):
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.srv.call(path + query)
+            self.assertEqual(cm.exception.code, 400)
 
     def test_browse(self) -> None:
         info = browse(str(Path(self.tmp.name)))

@@ -25,6 +25,7 @@ from claude_agent_sdk import (
     HookMatcher,
     RateLimitEvent,
     ResultMessage,
+    StreamEvent,
     SystemMessage,
     TextBlock,
     ThinkingBlock,
@@ -38,6 +39,7 @@ from ..models import context_limit
 from ..tools import ToolContext, ToolSpec, available_tools, execute, rel_path
 from ..types import CycleResult, HuntunConfig
 from . import continue_session, looks_like_limit
+from .telemetry import LiveTelemetry
 
 
 @lru_cache(maxsize=8)
@@ -118,7 +120,8 @@ class ClaudeCodeBackend:
 
     def _options(self, *, workspace: Path, system: str | None, mcp_tools: list[Any], allowed: list[str], model: str, effort: str,
                  max_turns: int, resume: str | None, on_touch: Callable[[str], None] | None,
-                 on_activity: Callable[[str, str], None] | None = None) -> ClaudeAgentOptions:
+                 on_activity: Callable[[str, str], None] | None = None,
+                 on_compact: Callable[[], None] | None = None) -> ClaudeAgentOptions:
         async def pre_tool(input_data: Any, _tool_use_id: Any, _context: Any) -> dict[str, Any]:
             """Sandbox: file writes must stay inside the workspace and out of .huntun/ and .git/."""
             tool_input = input_data.get("tool_input") or {}
@@ -159,6 +162,17 @@ class ClaudeCodeBackend:
                 pass
             return {}
 
+        async def pre_any_tool(input_data: Any, _tool_use_id: Any, _context: Any) -> dict[str, Any]:
+            name = str(input_data.get("tool_name") or "")
+            if on_activity and not name.startswith("mcp__huntun__"):
+                on_activity("tool", f"{name} {_short(input_data.get('tool_input') or {}, 300)}")
+            return {}
+
+        async def pre_compact(_input_data: Any, _tool_use_id: Any, _context: Any) -> dict[str, Any]:
+            if on_compact:
+                on_compact()
+            return {}
+
         model_id = model if model else None
         return ClaudeAgentOptions(
             system_prompt={"type": "preset", "preset": "claude_code", "append": system} if system else None,
@@ -166,9 +180,11 @@ class ClaudeCodeBackend:
             allowed_tools=allowed,
             permission_mode="acceptEdits",
             hooks={
-                "PreToolUse": [HookMatcher(matcher="Write|Edit|MultiEdit|NotebookEdit", hooks=[pre_tool])],
+                "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_any_tool]), HookMatcher(matcher="Write|Edit|MultiEdit|NotebookEdit", hooks=[pre_tool])],
+                "PreCompact": [HookMatcher(matcher=None, hooks=[pre_compact])],
                 "PostToolUse": [HookMatcher(matcher="Write|Edit|MultiEdit|NotebookEdit", hooks=[post_tool]), HookMatcher(matcher=None, hooks=[post_any_tool])],
             },
+            include_partial_messages=True,
             cwd=str(workspace),
             model=model_id,
             effort=effort if effort in ("low", "medium", "high", "xhigh", "max") else None,  # type: ignore[arg-type]
@@ -244,6 +260,7 @@ class ClaudeCodeBackend:
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle, state = ctx.memory, ctx.cycle, ctx.memory.state
         usage: dict[str, float] = {"cost_usd": 0.0, "turns": 0.0, "input": 0.0, "output": 0.0, "cache_read": 0.0}
+        live = LiveTelemetry(memory, "Claude Code")
         state.context_limit = state.context_limit or context_limit(model)
 
         limit_hit: dict[str, Any] = {}
@@ -254,6 +271,8 @@ class ClaudeCodeBackend:
         specs = available_tools(ctx, "claude-code")
         mcp_tools = [_sdk_tool(s, ctx) for s in specs]
         builtin = [t for t in BUILTIN_TOOLS if not (ctx.agent.role == "master" and t in ("Write", "Edit", "MultiEdit", "NotebookEdit"))]
+        if ctx.agent.role == "watchdog":
+            builtin = [t for t in builtin if t in ("Read", "Grep", "Glob")]
         allowed = builtin + [f"mcp__huntun__{s.name}" for s in specs]
         resuming = bool(state.resume_pending and state.session_id)                       # paused mid-cycle: pick up where it stopped
         continuing = continue_session(state, self.config.session_max_cycles)             # otherwise keep the same conversation going across cycles
@@ -263,8 +282,10 @@ class ClaudeCodeBackend:
         options = self._options(
             workspace=ctx.workspace, system=system, mcp_tools=mcp_tools, allowed=allowed, model=model, effort=effort,
             max_turns=self.config.max_tool_calls_per_cycle + 10, resume=state.session_id if continuing else None,
-            on_touch=memory.touch, on_activity=memory.activity,
+            on_touch=memory.touch, on_activity=memory.activity, on_compact=live.begin_compaction,
         )
+        if ctx.agent.role == "watchdog":
+            options.disallowed_tools = [t for t in BUILTIN_TOOLS if t not in builtin] + ["Task", "Agent", "Skill", "ToolSearch"]
         text_parts: list[str] = []
         interrupted = False
         session_id: str | None = None
@@ -291,6 +312,7 @@ class ClaudeCodeBackend:
                         log(f"interrupt failed: {e}")
                     return
 
+        live.pulse("waiting", "Waiting for Claude Code response")
         try:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(RESUME_PROMPT if resuming else (CONTINUE_NOTE + prompt if continuing else prompt))
@@ -311,10 +333,13 @@ class ClaudeCodeBackend:
                                 memory.activity("cycle", f"Approaching the {info.rate_limit_type} usage limit ({round((info.utilization or 0) * 100)}%)")
                             continue
                         if isinstance(msg, SystemMessage) and msg.subtype == "compact_boundary":
-                            state.compactions += 1
-                            state.context_tokens = 0
-                            memory.save_state()
-                            memory.activity("cycle", f"Context compacted by Claude Code (#{state.compactions})")
+                            live.complete_compaction()
+                            continue
+                        if isinstance(msg, SystemMessage) and msg.subtype == "status" and msg.data.get("status") == "compacting":
+                            live.begin_compaction()
+                            continue
+                        if isinstance(msg, StreamEvent):
+                            live.anthropic_event(msg.event)
                             continue
                         if isinstance(msg, AssistantMessage):
                             if msg.usage:
@@ -358,6 +383,8 @@ class ClaudeCodeBackend:
             if not (session_lost or (continuing and _session_gone(str(e)))):
                 return result("error", f"{type(e).__name__}: {e}")
             session_lost = True
+        finally:
+            live.close()
         if session_lost:
             # Claude Code keeps conversations on the machine that ran them (~/.claude/projects), so they do not move with the
             # project. Retrying the same id fails forever: drop it and run this cycle again in a fresh session.

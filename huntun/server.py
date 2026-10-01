@@ -16,8 +16,22 @@ from urllib.parse import parse_qs, urlparse
 
 from . import auth
 from .hub import Hub, browse
-from .models import (BACKEND_LABEL, ROUTES, SERVER_STATUS, SERVER_TYPES, available_backends, catalog_available, catalog_for, delete_server,
-                     probe_server, refresh_local, save_server, saved_servers, server_label, servers)
+from .models import (
+    BACKEND_LABEL,
+    ROUTES,
+    SERVER_STATUS,
+    SERVER_TYPES,
+    available_backends,
+    catalog_available,
+    catalog_for,
+    delete_server,
+    probe_server,
+    refresh_local,
+    save_server,
+    saved_servers,
+    server_label,
+    servers,
+)
 from .personalities import PERSONALITIES
 
 PAGE = (Path(__file__).parent / "app.html").read_text()
@@ -228,7 +242,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 if path == "/api/providers":
                     return self._json(200, _providers_view())
                 if path == "/api/models":                                           # what a seat (the master's included) can run here
-                    return self._json(200, {"models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label} for m, b in catalog_available()],
+                    return self._json(200, {"models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label, "context": m.context, "efforts": list(m.reasoning_levels)} for m, b in catalog_available()],
                                             "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()}})
                 if path == "/api/fs":
                     q = parse_qs(url.query)
@@ -246,15 +260,25 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
         def _board_get(self, wid: str, sub: str) -> None:
+            if sub == "/watchdog":
+                self._entry(wid)
+                q = parse_qs(urlparse(self.path).query)
+                async def view_watchdog() -> dict[str, Any]:
+                    agent = await hub.watchdog(wid)
+                    return agent.view(int((q.get("before") or [0])[0]))
+                try:
+                    return self._json(200, hub.call(view_watchdog()))
+                except ValueError as ex:
+                    raise HttpError(400, str(ex)) from None
             orch = self._board(wid)
             store = orch.store
             if sub == "/state":
                 statuses = store.agent_statuses()
                 entry = self._entry(wid)
-                threads = store.list_threads(100)
+                threads = store.list_threads(100, preview=True)
                 for t in threads:
                     t["snippet"] = t["body"][:400]
-                    t["last_comments"] = [{"id": c["id"], "author": c["author"], "created_at": c["created_at"], "snippet": c["body"][:240]} for c in store.last_comments(t["id"], 2)]
+                    t["last_comments"] = [{"id": c["id"], "author": c["author"], "created_at": c["created_at"], "snippet": c["body"]} for c in store.last_comments(t["id"], 2, preview=True)]
                     del t["body"]
                 return self._json(200, {
                     "workspace": entry.summary(),
@@ -271,7 +295,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     "max_agents": orch.config.max_agents,
                     "attention": store.open_attention(20),
                     "attention_count": store.attention_count(),
-                    "models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label} for m, b in (catalog_available() or [(m, orch.backend_name) for m in catalog_for(orch.backend_name)])],
+                    "models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label, "context": m.context, "efforts": list(m.reasoning_levels)} for m, b in (catalog_available() or [(m, orch.backend_name) for m in catalog_for(orch.backend_name)])],
                     "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()},
                     "personalities": [{"id": p.id, "name": p.name, "text": p.text, "group": p.group} for p in PERSONALITIES],
                     "limits": entry.orchestrator.limits() if entry.orchestrator is not None else _limits_from(store),
@@ -292,10 +316,19 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 return self._json(200, {"agent": rt.info(), "live": store.agent_statuses().get(rt.name), "entries": entries, "cursor": cursor, "notes": rt.memory.notes(), "journal": rt.memory.recent_journal(8)})
             tm = re.match(r"^/threads/(\d+)$", sub)
             if tm:
-                t = store.get_thread(int(tm.group(1)))
+                q = parse_qs(urlparse(self.path).query)
+                include_thread = (q.get("include_thread") or ["1"])[0] != "0"
+                t = store.get_thread(int(tm.group(1)), include_body=include_thread)
                 if not t:
                     raise HttpError(404, "thread not found")
-                return self._json(200, {"thread": t, "comments": store.get_comments(t["id"])})
+                try:
+                    before, after, limit = (int((q.get(k) or [str(d)])[0]) for k, d in (("before", 0), ("after", 0), ("limit", 100)))
+                except ValueError:
+                    raise HttpError(400, "before, after and limit must be integers") from None
+                if before < 0 or after < 0 or (before and after) or limit < 1:
+                    raise HttpError(400, "Use either before or after, and a positive limit")
+                page = store.comment_page(t["id"], before=before, after=after, limit=limit)
+                return self._json(200, {"thread": t if include_thread else None, **page})
             raise HttpError(404, "not found")
 
         def do_POST(self) -> None:
@@ -367,6 +400,11 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
 
         def _workspace_post(self, wid: str, sub: str, body: dict[str, Any]) -> None:
             e = self._entry(wid)
+            if sub == "/watchdog":
+                async def send_watchdog() -> dict[str, Any]:
+                    agent = await hub.watchdog(wid)
+                    return agent.send(body)
+                return self._json(202, hub.call(send_watchdog()))
             if sub == "/confirm-goal":
                 try:
                     hub.call(hub.confirm_goal(wid, str(body.get("goal") or ""), str(body.get("definition_of_done") or "")), timeout=30)

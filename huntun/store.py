@@ -13,6 +13,9 @@ from .types import InboxItem
 MENTION_RE = re.compile(r"(^|[^\w@])@([a-z0-9][a-z0-9-]*)", re.IGNORECASE)
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS watchdog_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, body TEXT NOT NULL,
+  target TEXT NOT NULL, model TEXT NOT NULL, effort TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS threads (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   author TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
@@ -21,6 +24,8 @@ CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id INTEGER NOT NULL REFERENCES threads(id),
   author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS comments_thread_id ON comments(thread_id, id);
+CREATE INDEX IF NOT EXISTS comments_thread_author ON comments(thread_id, author, id);
 CREATE TABLE IF NOT EXISTS mentions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   target TEXT NOT NULL, kind TEXT NOT NULL, ref_id INTEGER NOT NULL,
@@ -93,6 +98,15 @@ class Store:
             cur = self._db.execute(sql, params)
             return int(cur.lastrowid or 0)
 
+    def watchdog_message(self, role: str, body: str, target: str, model: str, effort: str) -> int:
+        return self._exec("INSERT INTO watchdog_messages(role, body, target, model, effort, created_at) VALUES(?,?,?,?,?,?)",
+                          role, body, target, model, effort, now_iso())
+
+    def watchdog_history(self, before: int = 0, limit: int = 100) -> list[dict[str, Any]]:
+        rows = self._q("SELECT * FROM watchdog_messages WHERE (? = 0 OR id < ?) ORDER BY id DESC LIMIT ?",
+                       before, before, max(1, min(limit, 100)))
+        return [dict(row) for row in reversed(rows)]
+
     # ---- control ---------------------------------------------------------------
 
     def get_control(self, key: str, default: str) -> str:
@@ -107,6 +121,8 @@ class Store:
 
     def set_running(self, running: bool, by: str = "human") -> None:
         self.set_control("running", "1" if running else "0")
+        if not running:
+            self._exec("UPDATE control SET value = '' WHERE key LIKE 'recovery:%'")
         self.log_event(by, "start" if running else "pause", "All agents started" if running else "All agents paused")
         self._emit("control", running)
 
@@ -159,26 +175,60 @@ class Store:
             self._emit("attention", thread_id)
         self._emit("mention", target)
 
-    def get_thread(self, tid: int) -> dict[str, Any] | None:
-        row = self._one("SELECT * FROM threads WHERE id = ?", tid)
+    def get_thread(self, tid: int, include_body: bool = True) -> dict[str, Any] | None:
+        columns = "*" if include_body else "id, author, title, commit_sha, created_at"
+        row = self._one(f"SELECT {columns} FROM threads WHERE id = ?", tid)
         return dict(row) if row else None
+
+    def confirmation_status(self, tid: int, proposer: str) -> tuple[bool, bool]:
+        """Check approval ordering by indexed IDs, without loading thread bodies."""
+        thread = self.get_thread(tid, include_body=False)
+        if not thread:
+            return False, False
+        last = self._one("SELECT id FROM comments WHERE thread_id = ? AND author = ? ORDER BY id DESC LIMIT 1", tid, proposer)
+        proposed = last is not None or thread["author"] == proposer
+        replied = self._one("SELECT id FROM comments WHERE thread_id = ? AND author = 'human' AND id > ? LIMIT 1", tid, last["id"] if last else 0)
+        return proposed, proposed and replied is not None
 
     def get_comments(self, tid: int) -> list[dict[str, Any]]:
         return [dict(r) for r in self._q("SELECT * FROM comments WHERE thread_id = ? ORDER BY id ASC", tid)]
 
-    def list_threads(self, limit: int = 50) -> list[dict[str, Any]]:
+    def comment_page(self, tid: int, *, before: int = 0, after: int = 0, limit: int = 100) -> dict[str, Any]:
+        """Keyset pages: latest on open, older history, or forward-only updates."""
+        limit = max(1, min(200, limit))
+        where, params = "thread_id = ?", [tid]
+        if before:
+            where += " AND id < ?"
+            params.append(before)
+        elif after:
+            where += " AND id > ?"
+            params.append(after)
+        direction = "ASC" if after else "DESC"
+        rows = self._q(f"SELECT * FROM comments WHERE {where} ORDER BY id {direction} LIMIT ?", *params, limit + 1)
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        if not after:
+            rows = list(reversed(rows))
+        comments = [dict(r) for r in rows]
+        return {"comments": comments, "has_more": has_more,
+                "first_id": comments[0]["id"] if comments else 0,
+                "last_id": comments[-1]["id"] if comments else after}
+
+    def list_threads(self, limit: int = 50, preview: bool = False) -> list[dict[str, Any]]:
         return [
             dict(r)
             for r in self._q(
-                """SELECT t.*, COUNT(c.id) AS comment_count, COALESCE(MAX(c.created_at), t.created_at) AS last_activity
-                   FROM threads t LEFT JOIN comments c ON c.thread_id = t.id
-                   GROUP BY t.id ORDER BY last_activity DESC, t.id DESC LIMIT ?""",
+                f"""SELECT t.id, t.author, t.title, {'substr(t.body, 1, 400)' if preview else 't.body'} AS body, t.commit_sha, t.created_at,
+                   (SELECT COUNT(*) FROM comments c WHERE c.thread_id = t.id) AS comment_count,
+                   COALESCE((SELECT c.created_at FROM comments c WHERE c.thread_id = t.id ORDER BY c.id DESC LIMIT 1), t.created_at) AS last_activity
+                   FROM threads t ORDER BY last_activity DESC, t.id DESC LIMIT ?""",
                 limit,
             )
         ]
 
-    def last_comments(self, thread_id: int, n: int = 2) -> list[dict[str, Any]]:
-        rows = self._q("SELECT * FROM comments WHERE thread_id = ? ORDER BY id DESC LIMIT ?", thread_id, n)
+    def last_comments(self, thread_id: int, n: int = 2, preview: bool = False) -> list[dict[str, Any]]:
+        columns = "id, thread_id, author, created_at, substr(body, 1, 240) AS body" if preview else "*"
+        rows = self._q(f"SELECT {columns} FROM comments WHERE thread_id = ? ORDER BY id DESC LIMIT ?", thread_id, n)
         return [dict(r) for r in reversed(rows)]
 
     def take_inbox(self, agent: str) -> list[InboxItem]:

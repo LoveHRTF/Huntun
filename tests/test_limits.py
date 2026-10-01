@@ -4,9 +4,11 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import huntun.orchestrator as orch_module
 from huntun.config import default_config, save_config, save_team
@@ -202,6 +204,94 @@ class MixedVendorTests(unittest.TestCase):
             await orch.stop()
 
         asyncio.run(run())
+
+
+class LimitScopeTests(MixedVendorTests):
+    def test_unused_default_and_retired_vendor_limits_are_hidden(self) -> None:
+        async def run() -> None:
+            orch = Orchestrator(self.ws)
+            try:
+                for spec in orch.team:
+                    spec.backend = "codex"
+                orch.team.append(AgentSpec("old-claude", "backend", "Old", "old", backend="api", status="retired"))
+                orch.store.set_control("limit:api:paused", "1")
+                orch.store.set_control("limit:api:reason", "old quota")
+                self.assertTrue(orch.backend_limited("api"), "history remains for switching back")
+                self.assertEqual(orch.used_backends(), ["codex"])
+                self.assertFalse(orch.limits()["paused"])
+                self.assertEqual(orch.limits()["backends"], {})
+                result = await orch.probe_now("api")
+                self.assertTrue(result["ok"])
+                self.assertEqual(orch.backend.probes, 0, "stale Check requests must not call an unused vendor")
+                orch.store.set_control("limit:codex:paused", "1")
+                self.assertEqual(list(orch.limits()["backends"]), ["codex"], "current vendor limits stay visible even before lazy backend creation")
+            finally:
+                await orch.stop()
+        asyncio.run(run())
+
+    def test_model_switch_stops_unused_checks_and_switch_back_restores_them(self) -> None:
+        async def run() -> None:
+            orch = Orchestrator(self.ws)
+            try:
+                for spec in orch.team:
+                    spec.backend = "codex"
+                orch.store.set_control("limit:api:paused", "1")
+                orch.store.set_control("limit:api:resets_at", str(time.time() + 3600))
+                await orch.set_model("dev-1", "default", None)
+                watchdog = orch.watchdogs["api"]
+                await asyncio.sleep(0)
+                self.assertTrue(orch.limits()["paused"])
+                with patch.object(orch_module, "model_info", return_value=True), patch.object(orch_module, "backend_for_model", return_value="codex"):
+                    await orch.set_model("dev-1", "gpt-5.3-codex", None)
+                await asyncio.gather(watchdog, return_exceptions=True)
+                self.assertTrue(watchdog.cancelled())
+                self.assertNotIn("api", orch.watchdogs)
+                self.assertFalse(orch.limits()["paused"])
+                self.assertTrue(orch.backend_limited("api"))
+                self.assertEqual(orch.store.get_control("limit:api:next_probe", ""), "0")
+                await orch.set_model("dev-1", "default", None)
+                self.assertIn("api", orch.watchdogs)
+                self.assertIn("api", orch.limits()["backends"])
+            finally:
+                await orch.stop()
+        asyncio.run(run())
+
+    def test_retiring_last_affected_seat_hides_limit_and_stops_checks(self) -> None:
+        async def run() -> None:
+            orch = Orchestrator(self.ws)
+            try:
+                orch.on_limit("dev-1", "codex", "quota", time.time() + 3600)
+                watchdog = orch.watchdogs["codex"]
+                self.assertIn("codex", orch.limits()["backends"])
+                await orch.retire("dev-1")
+                await asyncio.gather(watchdog, return_exceptions=True)
+                self.assertFalse(orch.limits()["paused"])
+                self.assertTrue(orch.backend_limited("codex"))
+            finally:
+                await orch.stop()
+        asyncio.run(run())
+
+    def test_start_restores_only_current_vendor_watchdogs(self) -> None:
+        async def run() -> None:
+            orch = Orchestrator(self.ws)
+            try:
+                orch.store.set_control("limit:codex:paused", "1")
+                orch.store.set_control("limit:codex:resets_at", str(time.time() + 3600))
+                orch.store.set_control("limit:kimi:paused", "1")
+                await orch.start()
+                self.assertEqual(set(orch.watchdogs), {"codex"})
+                # A restored limit can be checked before the blocked seat ever
+                # instantiates its lazy backend.
+                self.assertNotIn("codex", orch.backends)
+                response = await orch.probe_now("codex")
+                self.assertFalse(response["ok"])
+                self.assertEqual(orch.backends["codex"].probes, 1)
+            finally:
+                await orch.stop()
+        asyncio.run(run())
+
+    def test_limit_on_one_vendor_only_pauses_its_agents(self) -> None:
+        pass  # The inherited mixed-vendor integration scenario runs in its parent.
 
 
 if __name__ == "__main__":

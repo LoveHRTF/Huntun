@@ -161,6 +161,8 @@ class OrchestratorTests(unittest.TestCase):
 
         orch.backend_for = lambda _spec: Fake()  # type: ignore[method-assign]
         rt = AgentRuntime(orch, spec)
+        from huntun.gitops import ensure_worktree
+        rt.memory.state.worktree_path = str(asyncio.run(ensure_worktree(self.ws, spec.name)))
         rt.memory.save_transcript([{"role": "user", "content": "go"}])
         asyncio.run(rt._run_one("resume"))
         self.assertEqual(seen, ["resuming", "resuming", "working"])
@@ -205,6 +207,10 @@ class OrchestratorTests(unittest.TestCase):
             log = await recent_log(self.ws)
             self.assertIn("docs: architecture", log)
             self.assertIn("feat: scaffold api", log)
+            roots = [rt.memory.state.worktree_path for rt in orch.runtimes.values()]
+            self.assertEqual(len(set(roots)), 3)
+            self.assertTrue(all(Path(root) != self.ws.resolve() for root in roots))
+            self.assertTrue((self.ws / "api/main.py").exists(), "task completion integrated the worker's private commit")
             titles = [t["title"] for t in orch.store.list_threads()]
             self.assertIn("Kickoff", titles)
             self.assertTrue(any("API scaffold" in t for t in titles), titles)
@@ -213,7 +219,7 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual({k: v for k, v in lead.memory.state.usage_totals.items() if k != "cost_usd"}, {"input": 20.0, "output": 10.0, "cache_read": 0.0, "cache_write": 0.0})
             self.assertEqual(lead.info()["context_limit"], 1_000_000)
             kinds = [e["kind"] for e in lead.memory.read_activity()[0]]
-            self.assertEqual(kinds[:3], ["cycle", "prompt", "tool"])
+            self.assertEqual(kinds[:4], ["cycle", "prompt", "waiting", "tool"])
             self.assertIn("result", kinds)
             self.assertEqual(kinds[-1], "cycle")
             self.assertEqual(lead.info()["cycles"], 1)

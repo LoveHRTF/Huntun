@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-Effort = Literal["low", "medium", "high", "xhigh", "max"]
-BackendName = Literal["api", "claude-code"]
+Effort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+BackendName = Literal["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"]
 
 ROLE_KEYS: tuple[str, ...] = (
     "master",
@@ -90,6 +90,7 @@ class HuntunConfig:
 
 @dataclass
 class AgentState:
+    worktree_path: str = ""
     cycles: int = 0
     current_task: str = ""
     last_summary: str = ""
@@ -136,6 +137,8 @@ class CycleState:
     wait_for_mention: bool = False
     # Thread the agent is working in this cycle (the task it was tagged in, or the last one it read / replied to).
     active_thread: int | None = None
+    task_complete: bool = True
+    task_merged: bool = False
 
 
 @dataclass

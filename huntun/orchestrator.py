@@ -20,7 +20,14 @@ from .config import (
     save_team,
     slugify,
 )
-from .gitops import ensure_repo, recent_log
+from .gitops import (
+    GitError,
+    ensure_repo,
+    ensure_worktree,
+    merge_task,
+    recent_log,
+    sync_worktree,
+)
 from .gitops import status as git_status
 from .memory import AgentMemory
 from .models import EFFORTS, backend_for_model, model_info
@@ -109,6 +116,7 @@ class Orchestrator:
             self.store.set_agent_status(spec.name, "idle" if spec.status == "active" else spec.status, "")
             if spec.status != "retired":
                 self.spawn(spec)
+        self._sync_limit_watchdogs()
 
     def spawn(self, spec: AgentSpec) -> None:
         if spec.name in self.runtimes:
@@ -123,7 +131,23 @@ class Orchestrator:
         return f"limit:{backend}:{key}"
 
     def limited_backends(self) -> list[str]:
-        return [b for b in self.backends if self.store.get_control(self._lk(b, "paused"), "0") == "1"]
+        return [b for b in self.used_backends() if self.backend_limited(b)]
+
+    def used_backends(self) -> list[str]:
+        """Current seats determine which vendor limits affect this project."""
+        return list(dict.fromkeys(self.backend_name_for(a) for a in self.active_team()))
+
+    def _sync_limit_watchdogs(self) -> None:
+        """Stop checking unused vendors; retain their limit records for a later switch back."""
+        wanted = set(self.limited_backends())
+        for backend in list(self.watchdogs):
+            if backend not in wanted:
+                self.watchdogs.pop(backend).cancel()
+                self.store.set_control(self._lk(backend, "next_probe"), "0")
+        for backend in wanted:
+            watchdog = self.watchdogs.get(backend)
+            if watchdog is None or watchdog.done():
+                self.watchdogs[backend] = asyncio.create_task(self._watch_limits(backend), name=f"limit-watchdog:{backend}")
 
     def backend_limited(self, backend: str) -> bool:
         return self.store.get_control(self._lk(backend, "paused"), "0") == "1"
@@ -167,14 +191,12 @@ class Orchestrator:
         self.store.log_event("watchdog", "limit", f"Usage limit reached on {backend} (by @{agent}); paused {', '.join('@' + n for n in affected)}{when}")
         self.log("watchdog", f"usage limit on {backend} hit by {agent}: {reason}")
         self._wake_all()
-        wd = self.watchdogs.get(backend)
-        if wd is None or wd.done():
-            self.watchdogs[backend] = asyncio.create_task(self._watch_limits(backend), name=f"limit-watchdog:{backend}")
+        self._sync_limit_watchdogs()
 
     async def _watch_limits(self, backend: str) -> None:
         """Sleeps until just before the provider's announced reset, then retries every couple of minutes.
         With no announced reset there is nothing to wait for: the human checks with the button (probe_now)."""
-        while not self.stopping and self.backend_limited(backend):
+        while not self.stopping and backend in self.used_backends() and self.backend_limited(backend):
             resets_at = float(self.store.get_control(self._lk(backend, "resets_at"), "0") or 0)
             if not resets_at:
                 self.store.set_control(self._lk(backend, "next_probe"), "0")
@@ -182,16 +204,16 @@ class Orchestrator:
             wait = max(5.0, resets_at - self.probe_lead_sec - time.time()) if resets_at - self.probe_lead_sec > time.time() else self.probe_interval_sec
             self.store.set_control(self._lk(backend, "next_probe"), str(time.time() + wait))
             await asyncio.sleep(wait)
-            if self.stopping:
+            if self.stopping or backend not in self.used_backends():
                 return
             await self.probe_now(backend)
 
     async def probe_now(self, backend: str | None = None) -> dict[str, Any]:
         """One check of a limited vendor (automatic near the reset time, or on the human's request)."""
         targets = [backend] if backend else self.limited_backends()
-        targets = [b for b in targets if self.backend_limited(b)]
+        targets = [b for b in targets if b in self.used_backends() and self.backend_limited(b)]
         if not targets:
-            return {"ok": True, "paused": False}
+            return {"ok": True, "paused": bool(self.limited_backends())}
         if self._probing:
             return {"ok": False, "paused": True, "message": "a check is already running"}
         self._probing = True
@@ -199,6 +221,8 @@ class Orchestrator:
         try:
             for b in targets:
                 try:
+                    if b not in self.backends:
+                        self.backends[b] = make_backend(b, self.config)
                     results[b] = await asyncio.wait_for(self.backends[b].probe(), timeout=120)
                 except Exception as e:
                     self.log("watchdog", f"probe of {b} failed: {e}")
@@ -295,6 +319,7 @@ class Orchestrator:
         self.store.set_agent_status(name, "idle", "")
         self.store.log_event("master", "hire", f"@{name} ({spec.title})")
         self.spawn(spec)
+        self._sync_limit_watchdogs()
         return f"Hired @{name} as {spec.title}. Tag them on the board to give them work."
 
     async def set_model(self, name: str, model: str | None, effort: str | None, by: str = "master") -> str:
@@ -318,6 +343,8 @@ class Orchestrator:
             self.config.master_model = spec.model or ""
             save_config(self.workspace, self.config)
         self.store.log_event(by, "model", f"@{name} -> {spec.model or 'default'} / {spec.effort or 'default'}")
+        self._sync_limit_watchdogs()
+        self._wake(name)
         return f"@{name} now uses model {spec.model or 'default'} at {spec.effort or 'default'} effort (from its next cycle)."
 
     async def retire(self, name: str) -> str:
@@ -330,6 +357,7 @@ class Orchestrator:
         save_team(self.workspace, self.team)
         self.store.set_agent_status(name, "retired", "")
         self.store.log_event("master", "retire", f"@{name}")
+        self._sync_limit_watchdogs()
         self._wake(name)
         return f"Retired @{name}."
 
@@ -340,6 +368,8 @@ class AgentRuntime:
         self.spec = spec
         self.memory = AgentMemory(agents_dir(orch.workspace), spec.name)
         self._wake_event = asyncio.Event()
+        self.cycle_lock = asyncio.Lock()
+        self.interrupt_requested = False
         self.task: asyncio.Task[None] | None = None
 
     @property
@@ -353,6 +383,10 @@ class AgentRuntime:
         """Summary for the web UI: effective model, effort, cycles, usage totals, last summary."""
         spec, cfg, st = self.current(), self.orch.config, self.memory.state
         b = self.orch.backend_name_for(spec)
+        window = st.context_limit
+        if b == "codex":
+            from .backends.codex import context_settings
+            window, _ = context_settings(spec.model or cfg.model)
         return {
             "backend": b,
             "model": spec.model or cfg.model or ("claude-opus-5-5" if b == "api" else "Codex default" if b == "codex" else "Kimi default" if b == "kimi" else "DeepSeek default" if b == "deepseek" else "Ollama default" if b == "ollama" else "vLLM default" if b == "vllm" else "llama.cpp default" if b == "llamacpp" else "Claude Code default"),
@@ -367,7 +401,7 @@ class AgentRuntime:
             "resume_pending": st.resume_pending,
             "touched_files": st.touched_files,
             "context_tokens": st.context_tokens,
-            "context_limit": st.context_limit,
+            "context_limit": window,
             "compactions": st.compactions,
             "compacting": st.compacting,
             "activity": self.memory.last_activity,
@@ -399,6 +433,8 @@ class AgentRuntime:
             return rt.memory.state.cycles if rt else 1
 
         def gate() -> bool:
+            if orch.store.get_control("recovery:" + self.name, ""):
+                return True
             if self.spec.role == "master":
                 return True
             if self.spec.role == "team-lead":
@@ -420,7 +456,8 @@ class AgentRuntime:
                 if spec.status == "retired":
                     self._status("retired")
                     return
-                if not orch.running():
+                requested = orch.store.get_control("recovery:" + self.name, "")
+                if self.interrupt_requested or (not orch.running() and not requested):
                     self._status("paused", self.memory.state.current_task)
                     await self._wait(2)
                     continue
@@ -429,7 +466,7 @@ class AgentRuntime:
                     self._status(f"paused (usage limit: {my_backend})", self.memory.state.current_task)
                     await self._wait(5)
                     continue
-                if orch.gate_blocks(self.name):
+                if orch.gate_blocks(self.name) and not requested:
                     self._status("waiting for master", self.memory.state.current_task)
                     await self._wait(5)
                     continue
@@ -446,7 +483,7 @@ class AgentRuntime:
                 kind = None
                 if resume:
                     kind = "resume"
-                elif inbox:
+                elif requested or inbox:
                     kind = "work"
                 elif review_due:
                     kind = "review"
@@ -460,7 +497,15 @@ class AgentRuntime:
                     await self._wait(min(wait, 60.0))
                     continue
 
-                outcome = await self._run_one(kind)
+                try:
+                    async with self.cycle_lock:
+                        outcome = await self._run_one(kind)
+                        if requested and outcome == "finished":
+                            orch.store.set_control("recovery:" + self.name, "")
+                except GitError as e:
+                    self._status("error", str(e))
+                    self.memory.activity("error", str(e))
+                    outcome = "error"
                 if outcome == "error":
                     await self._wait(backoff)
                     backoff = min(backoff * 2, 600)
@@ -478,13 +523,38 @@ class AgentRuntime:
         cfg = orch.config
         cycle = CycleState()
         is_master = spec.role == "master"
+        # Applies on every load, including projects created before worktree isolation.
+        tree = await ensure_worktree(orch.workspace, self.name)
+        if getattr(self.memory.state, "worktree_path", "") != str(tree):
+            self.memory.state.worktree_path = str(tree)
+            # Old CLI sessions retain their original cwd. Start fresh in the tree.
+            self.memory.state.session_id = None
+            self.memory.state.session_cycles = 0
+            self.memory.state.resume_pending = False
+            self.memory.clear_transcript()
+            self.memory.save_state()
+            kind = "work"
+        try:
+            await sync_worktree(orch.workspace, tree, self.name)
+        except GitError as e:
+            orch.log(self.name, f"worktree needs conflict resolution: {e}")
         ctx = ToolContext(
-            agent=spec, team=orch.active_team, workspace=orch.workspace, store=orch.store, memory=self.memory, config=cfg, cycle=cycle,
+            agent=spec, team=orch.active_team, workspace=tree, store=orch.store, memory=self.memory, config=cfg, cycle=cycle,
             hooks=ToolHooks(hire_agent=orch.hire if is_master else None, retire_agent=orch.retire if is_master else None,
                             set_agent_model=orch.set_model if is_master else None, resume_team=orch.release_team if is_master else None,
-                            set_goal=orch.set_goal if is_master else None),
+                            set_goal=orch.set_goal if is_master else None,
+                            complete_task=(lambda: merge_task(orch.workspace, tree, self.name)) if not is_master else None),
         )
         prompt = "" if kind == "resume" else await self._build_prompt(kind)
+        recovery = orch.store.get_control("recovery:" + self.name, "")
+        if recovery and kind != "resume":
+            prompt += f"\nThe local watchdog requested {recovery}. Review the board and continue your current assignment; this authorizes one recovery cycle while the team may be paused.\n"
+        if prompt:
+            prompt += (f"\n\n## Isolated checkout\nYour working directory is {tree}. All project reads, writes, tests and commits must use this worktree. "
+                       "Never edit another checkout or run git worktree/checkout/switch/reset to bypass isolation. "
+                       "Commit and test completed tasks, then finish_cycle(task_complete=true) merges them into the project. "
+                       "For unfinished work use task_complete=false. Integration conflicts stay here: resolve, test, commit, retry.\n"
+                       f"Your worktree status:\n{await git_status(tree) or '(clean)'}\n")
         label = "progress review" if kind == "review" else (self.memory.state.current_task or spec.brief[:80])
         self._status("resuming" if kind == "resume" else "working", label)
         orch.log(self.name, f"cycle {self.memory.state.cycles + 1} ({kind}) started")
@@ -513,7 +583,7 @@ class AgentRuntime:
                 prompt=prompt,
                 model=spec.model or cfg.model,
                 effort=spec.effort or (cfg.lead_effort if self.lead else cfg.worker_effort),
-                should_stop=lambda: not orch.running() or self.current().status == "retired",
+                should_stop=lambda: orch.stopping or self.interrupt_requested or (not orch.running() and not orch.store.get_control("recovery:" + self.name, "")) or self.current().status == "retired",
                 log=lambda line: orch.log(self.name, line),
             )
         finally:
@@ -541,6 +611,19 @@ class AgentRuntime:
             self.memory.activity("error", result.error or "unknown error")
             self._status("error", result.error or "")
             return "error"
+
+        # CLI backends can end without calling finish_cycle. They must still
+        # integrate completed tasks rather than silently leave private commits.
+        if not is_master and cycle.task_complete and not cycle.task_merged:
+            try:
+                merged = await merge_task(orch.workspace, tree, self.name)
+            except GitError as e:
+                self._status("error", f"Task integration blocked: {e}")
+                self.memory.activity("error", f"Task integration blocked: {e}")
+                orch.store.log_event(self.name, "error", str(e))
+                return "error"
+            orch.store.log_event(self.name, "merge", merged)
+            self.memory.activity("merge", merged)
 
         st = self.memory.state
         st.cycles += 1
