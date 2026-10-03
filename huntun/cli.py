@@ -37,7 +37,7 @@ from .store import Store
 
 EPILOG = """environment:
   ANTHROPIC_API_KEY              use the Anthropic API backend (or `ant auth login`)
-  HUNTUN_BACKEND                 force a backend: api|claude-code|codex|kimi|deepseek|ollama|vllm|llamacpp (default: auto-detect)
+  HUNTUN_BACKEND                 force a backend: api|claude-code|codex|kimi|pi-clm|deepseek|ollama|vllm|llamacpp (default: auto-detect)
   VLLM_BASE_URL (http://127.0.0.1:8000/v1)  VLLM_API_KEY  HUNTUN_VLLM_MODELS   local vLLM server (backend vllm)
   HUNTUN_LLAMACPP_URL  HUNTUN_LLAMACPP_KEY  OLLAMA_HOST   a llama.cpp / Ollama server; add more in the web app under Model providers
   HUNTUN_MODEL (claude-opus-5-5)   HUNTUN_LEAD_EFFORT (xhigh)  HUNTUN_WORKER_EFFORT (high)
@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("init", help="plan the team for a goal from the command line (the web app can do this too)")
     add_dir(s)
-    s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"], help="model backend (default: auto-detect)")
+    s.add_argument("--backend", choices=["api", "claude-code", "codex", "kimi", "pi-clm", "deepseek", "ollama", "vllm", "llamacpp"], help="model backend (default: auto-detect)")
     s.add_argument("--context", default="", help="extra context for the master: constraints, stack preferences, existing code")
     s.add_argument("--no-team-lead", action="store_true", help="no team lead: the master leads the team directly (fewer agents, lower cost)")
     s.add_argument("--master-model", default="", help="the master's own model, e.g. claude-opus-5-5 (default: the backend's default model)")

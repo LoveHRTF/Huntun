@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -99,6 +100,42 @@ class WatchdogTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 self.agent.send(body)
         self.assertEqual(self.agent.view()['messages'], [])
+
+    async def test_codex_watchdog_can_use_native_tools_and_integrates_its_tree(self):
+        from dataclasses import replace
+
+        from huntun.gitops import commit
+        systems = []
+        class NativeFake:
+            async def run_cycle(fake, *, ctx, system, **kwargs):
+                systems.append(system)
+                self.assertIn('worktrees/local-watchdog', str(ctx.workspace))
+                (ctx.workspace / 'watchdog-fix.txt').write_text('recovered')
+                await commit(ctx.workspace, 'local-watchdog', 'fix: local recovery', ['watchdog-fix.txt'])
+                return CycleResult('finished', 'Recovered')
+        model = replace(model_info('claude-sonnet-5'), id='gpt-test')
+        with patch('huntun.watchdog.catalog_available', return_value=[(model, 'codex')]), patch('huntun.watchdog.make_backend', return_value=NativeFake()):
+            await self.ask('gpt-test', message='Repair the local configuration')
+        self.assertIn('native shell, file and network tools are unrestricted', systems[0])
+        self.assertNotIn('or run shell commands', systems[0])
+        self.assertEqual((self.root / 'watchdog-fix.txt').read_text(), 'recovered')
+
+    async def test_talk_has_real_target_thread_reply_and_office_events(self):
+        await self.hub.load(self.entry.id)
+        conversation = self.agent.talk('dev', 'How is the session?')
+        tid = conversation['thread_id']
+        store = self.entry.open_store()
+        self.assertIn('@dev', store.get_thread(tid)['body'])
+        self.assertEqual(self.agent.talk('dev', 'Please clarify')['thread_id'], tid)
+        store.add_comment(tid, 'dev', 'The saved session is available.')
+        events = [json.loads(e['detail']) for e in store.list_events() if e['kind'] == 'dialogue']
+        self.assertEqual([e['speaker'] for e in reversed(events)], ['watchdog', 'watchdog', 'dev'])
+        self.assertTrue(all(e['target'] == 'dev' for e in events))
+        self.assertEqual(events[0]['text'], 'The saved session is available.')
+        self.assertNotEqual(self.agent.talk('master', 'Status?')['thread_id'], tid)
+        self.assertFalse(store.is_running())
+        with self.assertRaises(ValueError):
+            self.agent.talk('missing', 'Wake up')
 
     async def test_wake_master_bypasses_pause_waiting_and_cycle_cap_once(self):
         await self.hub.load(self.entry.id)

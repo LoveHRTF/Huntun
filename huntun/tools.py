@@ -17,12 +17,13 @@ from pathlib import Path
 from typing import Any
 
 from . import web
+from .communication import HUMAN_REQUEST_RULE, validate_human_request
 from .config import now_iso
 from .gitops import GitError, commit, recent_log
 from .gitops import status as git_status
 from .memory import AgentMemory
 from .models import EFFORTS, MODEL_IDS, model_ids
-from .store import Store
+from .store import Store, parse_mentions
 from .types import ROLE_KEYS, AgentSpec, CycleState, HuntunConfig, InboxItem
 
 MAX_TOOL_OUTPUT = 24_000
@@ -125,15 +126,26 @@ def _walk(directory: Path, root: Path, depth: int, out: list[str]) -> None:
             out.append(rel)
 
 
-def human_confirmed(ctx: ToolContext, thread_id: Any) -> str | None:
+def human_confirmed(ctx: ToolContext, thread_id: Any, authorization_comment_id: Any = None) -> str | None:
     """Returns None when the human has replied in `thread_id` after the master's proposal there, else the reason it does not count."""
     try:
         tid = int(thread_id or 0)
     except (TypeError, ValueError):
         tid = 0
-    if not tid or not ctx.store.get_thread(tid):
+    if not tid or not ctx.store.get_thread(tid, include_body=False):
         return "post your proposal on the board tagging @human, wait for their reply in that thread, then pass its thread id as confirmation_thread_id"
-    proposed, replied = ctx.store.confirmation_status(tid, ctx.agent.name)
+    try:
+        source_id = int(authorization_comment_id or 0)
+    except (TypeError, ValueError):
+        return "authorization_comment_id must identify the human's explicit hiring instruction in this thread"
+    if source_id < 0:
+        return "authorization_comment_id must be a human comment id, or 0 for a human-authored opening post"
+    has_source = authorization_comment_id is not None
+    proposed, replied = ctx.store.confirmation_status(tid, ctx.agent.name, source_id if has_source else None)
+    if has_source and not proposed:
+        return f"comment #{source_id} is not a human instruction in thread #{tid}; use the actual human authorization"
+    if has_source and not replied:
+        return f"thread #{tid} has a newer changed-scope proposal; wait for the human to approve that scope"
     if not proposed:
         return f"thread #{tid} has no proposal from you; propose the change there, tagging @human, and wait for their reply"
     if not replied:
@@ -246,6 +258,14 @@ async def _git_status(a: dict[str, Any], ctx: ToolContext) -> str:
 
 
 async def _git_commit(a: dict[str, Any], ctx: ToolContext) -> str:
+    thread_id = int(a.get("thread_id") or ctx.cycle.active_thread or 0)
+    thread = ctx.store.get_thread(thread_id) if thread_id else None
+    summary = str(a["summary_body"]) + "\n" + str(a["message"]).partition("\n")[0]
+    if not thread:
+        summary = str(a["summary_title"]) + "\n" + summary
+    if "human" in parse_mentions(summary):
+        # A rejected board request must not leave an already-created commit behind.
+        validate_human_request(summary)
     explicit = [str(f) for f in (a.get("files") or [])]
     files = explicit or list(ctx.memory.state.touched_files)
     try:
@@ -262,8 +282,7 @@ async def _git_commit(a: dict[str, Any], ctx: ToolContext) -> str:
     ctx.cycle.commits.append(result.sha)
     ctx.store.log_event(ctx.agent.name, "commit", f"{result.sha} {a['message']}")
     body = f"{a['summary_body']}\n\n`{result.sha}` {a['message'].splitlines()[0]} · {len(result.files)} file{'s' if len(result.files) != 1 else ''}"
-    thread_id = int(a.get("thread_id") or ctx.cycle.active_thread or 0)
-    if thread_id and ctx.store.get_thread(thread_id):
+    if thread:
         c = ctx.store.add_comment(thread_id, ctx.agent.name, body)
         ctx.memory.state.last_seen_comment_id = max(ctx.memory.state.last_seen_comment_id, c["id"])
         where = f"Posted the summary as a reply on thread #{thread_id}."
@@ -309,7 +328,8 @@ async def _post_thread(a: dict[str, Any], ctx: ToolContext) -> str:
 
 async def _post_comment(a: dict[str, Any], ctx: ToolContext) -> str:
     try:
-        c = ctx.store.add_comment(int(a["thread_id"]), ctx.agent.name, str(a["body"]))
+        c = ctx.store.add_comment(int(a["thread_id"]), ctx.agent.name, str(a["body"]),
+                                  requires_confirmation=a.get("requires_confirmation") is True)
     except ValueError as e:
         return f"ERROR: {e}"
     ctx.memory.state.last_seen_comment_id = max(ctx.memory.state.last_seen_comment_id, c["id"])
@@ -338,8 +358,74 @@ async def _list_agents(a: dict[str, Any], ctx: ToolContext) -> str:
     return "\n".join(lines)
 
 
+def task_owner(owner: str, ctx: ToolContext) -> str:
+    if owner and owner not in {ag.name for ag in ctx.team() if ag.status != "retired"}:
+        raise ValueError("Assign the task to an active teammate")
+    return owner
+
+
+async def _list_tasks(a: dict[str, Any], ctx: ToolContext) -> str:
+    tasks = ctx.store.list_tasks()
+    return json.dumps([t for t in tasks if (not a.get("owner") or t["owner"] == a["owner"])
+                       and (not a.get("status") or t["status"] == a["status"])], ensure_ascii=False)
+
+
+async def _create_task(a: dict[str, Any], ctx: ToolContext) -> str:
+    if ctx.agent.role not in ("master", "team-lead"):
+        return "ERROR: Master and team lead own the task breakdown"
+    owner = task_owner(str(a.get("owner") or ""), ctx)
+    task = ctx.store.create_task(ctx.agent.name, str(a["title"]), description=str(a.get("description") or ""),
+                                 acceptance=str(a["acceptance"]), owner=owner, parent_id=a.get("parent_id"), thread_id=a.get("thread_id"))
+    if owner:
+        body = f"@{owner} Task #{task['id']}: {task['description']}\n\nAcceptance: {task['acceptance']}"
+        if task["thread_id"]:
+            ctx.store.add_comment(task["thread_id"], ctx.agent.name, body)
+        else:
+            thread = ctx.store.create_thread(ctx.agent.name, task["title"], body)
+            task = ctx.store.update_task(task["id"], ctx.agent.name, {"thread_id": thread["id"]})
+    return json.dumps(task, ensure_ascii=False)
+
+
+async def _update_task(a: dict[str, Any], ctx: ToolContext) -> str:
+    task = ctx.store.get_task(a["task_id"])
+    if not task:
+        return "ERROR: Task does not exist"
+    lead = ctx.agent.role in ("master", "team-lead")
+    if not lead and task["owner"] != ctx.agent.name:
+        return "ERROR: Only the owner, Master or team lead can update this task"
+    changes = {k: v for k, v in a.items() if k != "task_id"}
+    if not lead and set(changes) - {"status", "evidence", "description"}:
+        return "ERROR: Ask the Master or team lead to change the assignment or acceptance criteria"
+    if "owner" in changes:
+        task_owner(changes["owner"], ctx)
+    # Worker completion goes through finish_cycle so private commits cannot be
+    # labelled Done before integration. Leads can close reviewed parent cards.
+    if changes.get("status") == "done" and (not lead or (task["owner"] == ctx.agent.name and ctx.hooks.complete_task)):
+        return "ERROR: Complete with finish_cycle(task_id=..., evidence=...) after committing and testing"
+    updated = ctx.store.update_task(task["id"], ctx.agent.name, changes)
+    if updated["owner"] and updated["owner"] != task["owner"]:
+        body = f"@{updated['owner']} Assigned task #{task['id']}: {updated['title']}. Acceptance: {updated['acceptance']}"
+        if updated["thread_id"]:
+            ctx.store.add_comment(updated["thread_id"], ctx.agent.name, body)
+        else:
+            thread = ctx.store.create_thread(ctx.agent.name, updated["title"], body)
+            updated = ctx.store.update_task(task["id"], ctx.agent.name, {"thread_id": thread["id"]})
+    return json.dumps(updated, ensure_ascii=False)
+
+
 async def _finish_cycle(a: dict[str, Any], ctx: ToolContext) -> str:
     ctx.cycle.task_complete = bool(a.get("task_complete", True))
+    task_id = a.get("task_id")
+    task = ctx.store.get_task(task_id) if task_id else None
+    if not task_id and ctx.cycle.task_complete and any(t["owner"] == ctx.agent.name and t["status"] == "in_process" for t in ctx.store.list_tasks()):
+        return "ERROR: Pass the task_id and verification evidence for the card you completed, or task_complete=false for unfinished work"
+    if task_id:
+        if not task or (task["owner"] != ctx.agent.name and ctx.agent.role not in ("master", "team-lead")):
+            return "ERROR: Select a task owned by you"
+        if ctx.cycle.task_complete and not str(a.get("evidence") or "").strip():
+            return "ERROR: Provide completion evidence (tests, commits or walkthrough)"
+        if ctx.cycle.task_complete and any(t["status"] != "done" for t in ctx.store.list_tasks() if t["parent_id"] == task_id):
+            return "ERROR: Finish all subtasks first"
     if ctx.cycle.task_complete and ctx.hooks.complete_task:
         try:
             merged = await ctx.hooks.complete_task()
@@ -348,6 +434,8 @@ async def _finish_cycle(a: dict[str, Any], ctx: ToolContext) -> str:
         ctx.memory.activity("merge", merged)
         ctx.store.log_event(ctx.agent.name, "merge", merged)
         ctx.cycle.task_merged = True
+    if task and ctx.cycle.task_complete:
+        ctx.store.update_task(task_id, ctx.agent.name, {"status": "done", "evidence": str(a["evidence"])})
     ctx.cycle.finished = True
     ctx.cycle.summary = str(a["summary"])
     ctx.cycle.next_task = str(a["next_task"])
@@ -358,7 +446,7 @@ async def _finish_cycle(a: dict[str, Any], ctx: ToolContext) -> str:
 async def _hire_agent(a: dict[str, Any], ctx: ToolContext) -> str:
     if not ctx.hooks.hire_agent:
         return "ERROR: hiring is not available in this context"
-    problem = human_confirmed(ctx, a.get("confirmation_thread_id"))
+    problem = human_confirmed(ctx, a.get("confirmation_thread_id"), a.get("authorization_comment_id"))
     if problem:
         return f"ERROR: staffing changes need the human's confirmation: {problem}"
     return await ctx.hooks.hire_agent({"name": str(a["name"]), "role": str(a["role"]), "title": str(a["title"]), "brief": str(a["brief"]),
@@ -375,6 +463,9 @@ async def _set_agent_model(a: dict[str, Any], ctx: ToolContext) -> str:
 
 
 async def _deliver_project(a: dict[str, Any], ctx: ToolContext) -> str:
+    ctx.store.seed_tasks(ctx.config.definition_of_done)
+    if any(t["status"] != "done" for t in ctx.store.list_tasks()):
+        return "ERROR: The delivery board still has unfinished cards; verify and complete every DoD and subtask first"
     title = str(a.get("title") or "Final delivery").strip()[:120]
     report = str(a["report"]).strip()
     if not report:
@@ -417,6 +508,15 @@ def _obj(props: dict[str, Any], required: list[str] | None = None) -> dict[str, 
 
 
 TOOLS: list[ToolSpec] = [
+    ToolSpec("list_tasks", "Read the delivery board, including DoD parents and their subtasks.",
+             _obj({"owner": {"type": "string"}, "status": {"type": "string", "enum": ["backlog", "in_process", "done"]}}), _list_tasks),
+    ToolSpec("create_task", "Master/TL: create every DoD subtask in Backlog, linked to its DoD parent, with an owner and acceptance criteria. Assignment notifies the owner on a discussion thread.",
+             _obj({"title": {"type": "string"}, "description": {"type": "string"}, "acceptance": {"type": "string"},
+                   "owner": {"type": "string"}, "parent_id": {"type": "integer"}, "thread_id": {"type": "integer"}}, ["title", "acceptance"]), _create_task),
+    ToolSpec("update_task", "Update a delivery card. Move to in_process when work starts; owners finish using finish_cycle with task_id and evidence. Master/TL maintain assignments and close reviewed DoD parents only after all subtasks finish.",
+             _obj({"task_id": {"type": "integer"}, "title": {"type": "string"}, "description": {"type": "string"},
+                   "acceptance": {"type": "string"}, "owner": {"type": "string"}, "status": {"type": "string", "enum": ["backlog", "in_process", "done"]},
+                   "evidence": {"type": "string"}, "thread_id": {"type": "integer"}}, ["task_id"]), _update_task),
     ToolSpec("read_file", "Read a text file from the repository. Optionally limit to a line range (1-indexed, inclusive).",
              _obj({"path": {"type": "string", "description": "Path relative to the repository root"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, ["path"]), _read_file, api_only=True),
     ToolSpec("write_file", "Create or overwrite a file with the given content. Parent directories are created. Prefer edit_file for small changes to existing files.",
@@ -450,28 +550,32 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("list_threads", "List recent board threads (newest activity first).", _obj({"limit": {"type": "integer"}}), _list_threads),
     ToolSpec("read_thread", "Read a board thread and a bounded page of comments (latest 50 by default). Use before for older history, after for updates; limit is capped at 200.",
              _obj({"thread_id": {"type": "integer"}, "before": {"type": "integer"}, "after": {"type": "integer"}, "limit": {"type": "integer"}}, ["thread_id"]), _read_thread),
-    ToolSpec("post_thread", "Start a new board thread (proposal, design, bug report, review, question). @name tags someone and wakes them: use it only when you need them to act or answer; otherwise refer to people by name without @. @human only when the human must decide or provide something.",
+    ToolSpec("post_thread", "Start a new board thread (proposal, design, bug report, review, question). @name tags someone and wakes them: use it only when you need them to act or answer; otherwise refer to people by name without @. @human only when the human must decide or provide something. " + HUMAN_REQUEST_RULE,
              _obj({"title": {"type": "string"}, "body": {"type": "string"}}, ["title", "body"]), _post_thread),
-    ToolSpec("post_comment", "Reply on a board thread. @name tags someone and wakes them: only when you need them to act or answer; otherwise write names without @. @human only when the human must decide or provide something.",
-             _obj({"thread_id": {"type": "integer"}, "body": {"type": "string"}}, ["thread_id", "body"]), _post_comment),
+    ToolSpec("post_comment", "Reply on a board thread. @name tags someone and wakes them: only when you need them to act or answer; otherwise write names without @. Set requires_confirmation=true only when proposing a NEW or CHANGED decision for human approval in this thread. Acknowledgements, progress updates and retries of an already approved unchanged action leave it false. Alternatively propose changed scope in a new thread. @human only when the human must decide or provide something. " + HUMAN_REQUEST_RULE,
+             _obj({"thread_id": {"type": "integer"}, "body": {"type": "string"},
+                   "requires_confirmation": {"type": "boolean", "description": "Start a new proposal awaiting human confirmation. Default false; never set for an acknowledgement, status update, quoted error or unchanged approved action."}}, ["thread_id", "body"]), _post_comment),
     ToolSpec("check_inbox", "Fetch new mentions and replies addressed to you since you last checked.", _obj({}), _check_inbox),
     ToolSpec("update_notes", "Overwrite your persistent notes (your long-term memory). Include: what you own, key decisions, what is done, what is in progress, what is next, open questions, and useful file paths. This is all you will remember next cycle.",
              _obj({"notes": {"type": "string"}}, ["notes"]), _update_notes),
     ToolSpec("list_agents", "List the team: names, roles, briefs, and current status.", _obj({}), _list_agents),
     ToolSpec("finish_cycle", "End your current work cycle. Completed tasks merge your committed worktree into the project. Commit and test first; resolve any merge conflict and retry. Set task_complete=false only for an unfinished task or blocked work.",
              _obj({"summary": {"type": "string", "description": "What you did this cycle, in one paragraph"},
+                   "task_id": {"type": "integer", "description": "Delivery card completed this cycle; marked Done only after a successful merge"},
+                   "evidence": {"type": "string", "description": "Concrete verification and commit references for the completed card"},
                    "next_task": {"type": "string", "description": "What you will pick up next cycle"},
                    "task_complete": {"type": "boolean", "description": "Defaults to true: integrate committed task changes. False keeps unfinished work isolated for a later cycle."},
                    "wait_for_mention": {"type": "boolean", "description": "Set true when you have nothing useful to do until someone asks you (blocked, or your work is complete). You will then sleep until tagged on the board (leads still run scheduled reviews)."}},
                   ["summary", "next_task"]), _finish_cycle),
-    ToolSpec("hire_agent", "Add a new agent to the team (after the human confirmed the staffing change on the board). It starts working immediately with the brief you give it.",
+    ToolSpec("hire_agent", "Add a new agent to the team after the human authorized the staffing change on the board. If the human directly instructs you to recruit, pass that instruction's authorization_comment_id with confirmation_thread_id; execute within its count, roles, model and delegated choices without requesting a second approval. Otherwise use the human's reply to your proposal. Unchanged approved scope survives acknowledgements, progress reports and retries. New or changed scope needs a new proposal and human confirmation. It starts working immediately with the brief you give it.",
              _obj({"name": {"type": "string", "description": "Unique lowercase slug, e.g. backend-2"},
                    "role": {"type": "string", "enum": [r for r in ROLE_KEYS if r != "master"]},
                    "title": {"type": "string"},
                    "brief": {"type": "string", "description": "What this agent owns and its first task"},
                    "model": {"type": "string", "enum": MODEL_IDS, "description": "Model chosen for the role and task difficulty (cost matters)"},
                    "effort": {"type": "string", "enum": EFFORTS},
-                   "confirmation_thread_id": {"type": "integer", "description": "Thread where you proposed this hire to @human and they replied confirming"}},
+                   "authorization_comment_id": {"type": "integer", "description": "Optional: exact HUMAN comment explicitly directing or authorizing this hire in confirmation_thread_id, including a direct hiring instruction before your acknowledgement. Use 0 when the instruction is that thread's human-authored opening post. Never cite an unrelated message or your own reply. Stay within its authorized scope; do not mark unchanged execution as a new proposal."},
+                   "confirmation_thread_id": {"type": "integer", "description": "Thread containing the human's explicit hiring instruction or confirmation of your proposal"}},
                   ["name", "role", "title", "brief", "confirmation_thread_id"]), _hire_agent, master_only=True),
     ToolSpec("set_agent_model", "Change an agent's model and/or effort (after the human confirmed on the board), e.g. downgrade a role doing routine work to save cost, or upgrade one that is struggling. Takes effect on its next cycle.",
              _obj({"name": {"type": "string"}, "model": {"type": "string", "enum": MODEL_IDS}, "effort": {"type": "string", "enum": EFFORTS},
@@ -521,7 +625,7 @@ def validate(schema: dict[str, Any], data: Any) -> str | None:
 
 
 MASTER_EXCLUDED = {"write_file", "edit_file", "git_commit"}  # the master leads; it does not build or commit
-WEB_BACKENDS = ("deepseek", "ollama", "vllm", "llamacpp")   # providers with no web tools of their own: they get web_search / web_fetch
+WEB_BACKENDS = ("deepseek", "ollama", "vllm", "llamacpp", "pi-clm")   # harnesses with no built-in web tools
 
 
 def _with_models(spec: ToolSpec, ids: list[str]) -> ToolSpec:
@@ -536,7 +640,7 @@ def available_tools(ctx: ToolContext, backend: str) -> list[ToolSpec]:
     if ctx.tool_specs is not None:
         return ctx.tool_specs
     is_master = ctx.agent.role == "master"
-    specs = [t for t in TOOLS if (not t.master_only or is_master) and (backend in ("api", *WEB_BACKENDS) or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)
+    specs = [t for t in TOOLS if (not t.master_only or is_master) and ((backend in ("api", *WEB_BACKENDS) and backend != "pi-clm") or not t.api_only) and not (is_master and t.name in MASTER_EXCLUDED)
              and (not t.web or (backend in WEB_BACKENDS and web.enabled()))]
     if is_master:                                                                          # only the master's tools (hire, set model) name models
         ids = model_ids()

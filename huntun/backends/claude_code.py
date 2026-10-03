@@ -259,14 +259,16 @@ class ClaudeCodeBackend:
 
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle, state = ctx.memory, ctx.cycle, ctx.memory.state
-        usage: dict[str, float] = {"cost_usd": 0.0, "turns": 0.0, "input": 0.0, "output": 0.0, "cache_read": 0.0}
+        usage: dict[str, float] = {"cost_usd": 0.0, "turns": 0.0, "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0}
         live = LiveTelemetry(memory, "Claude Code")
         state.context_limit = state.context_limit or context_limit(model)
 
         limit_hit: dict[str, Any] = {}
+        reported_cost = missing_cost = 0
 
         def result(outcome: str, error: str | None = None) -> CycleResult:
-            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, limit_hit.get("resets_at"))
+            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, limit_hit.get("resets_at"),
+                               cost_status="reported" if reported_cost and not missing_cost else "partial" if reported_cost else "untracked")
 
         specs = available_tools(ctx, "claude-code")
         mcp_tools = [_sdk_tool(s, ctx) for s in specs]
@@ -356,12 +358,17 @@ class ClaudeCodeBackend:
                                     memory.activity("thinking", b.thinking.strip())
                         elif isinstance(msg, ResultMessage):
                             session_id = msg.session_id
+                            if msg.total_cost_usd is None:
+                                missing_cost += 1
+                            else:
+                                reported_cost += 1
                             usage["cost_usd"] += msg.total_cost_usd or 0.0
                             usage["turns"] += msg.num_turns or 0
                             if msg.usage:
                                 usage["input"] += msg.usage.get("input_tokens") or 0
                                 usage["output"] += msg.usage.get("output_tokens") or 0
                                 usage["cache_read"] += msg.usage.get("cache_read_input_tokens") or 0
+                                usage["cache_write"] += msg.usage.get("cache_creation_input_tokens") or 0
                             if msg.is_error and (looks_like_limit(msg.result) or limit_hit):
                                 limit_hit.setdefault("reason", (msg.result or "usage limit")[:300])
                                 state.session_id = session_id

@@ -26,6 +26,8 @@ if args == ["--version"]:
     print("2.1.0"); sys.exit(0)
 prompt = args[args.index("-p") + 1]
 resumed = "--session" in args
+if resumed:
+    assert "SYS: maintain the delivery board" in prompt, "resumed agents must receive current team instructions"
 def emit(ev): print(json.dumps(ev), flush=True)
 emit({"role": "meta", "type": "system.version", "version": "2.1.0"})
 if resumed and args[args.index("--session") + 1] in os.environ.get("FAKE_KIMI_GONE", "").split(","):   # another machine's session
@@ -98,7 +100,7 @@ class KimiBackendTests(unittest.TestCase):
                            memory=memory or AgentMemory(agents_dir(self.ws), "dev-1"), config=self.config, cycle=CycleState())
 
     def run_cycle(self, ctx: ToolContext, should_stop=lambda: False):
-        return asyncio.run(KimiBackend(self.config).run_cycle(ctx=ctx, system="SYS", prompt="go", model="kimi-k3", effort="high", should_stop=should_stop, log=lambda m: None))
+        return asyncio.run(KimiBackend(self.config).run_cycle(ctx=ctx, system="SYS: maintain the delivery board", prompt="go", model="kimi-k3", effort="high", should_stop=should_stop, log=lambda m: None))
 
     def test_cycle_uses_mcp_bridge_and_records_everything(self) -> None:
         ctx = self.ctx()

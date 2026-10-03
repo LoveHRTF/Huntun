@@ -1,0 +1,3559 @@
+function makeOffice(wid, simulation = false) {
+  let clockAt = 0, clockReceived = simulation ? 0 : performance.now(), clockRate = 1, clockResyncs = 0, authoritativeAt = -1, authoritativeRevision = -1, authoritativeScene = null, revision = 0, pollTimer = null, polling = false;
+  // Playback follows a monotonic browser clock between packets. Fresh samples
+  // correct drift gently; after sleep or a slow first load, rejoin the buffer.
+  const PLAYBACK_DELAY = 1000;
+  const nowMs = () => simulation ? globalThis.__officeClock : clockAt + (performance.now() - clockReceived) * clockRate - PLAYBACK_DELAY;
+  function syncPlaybackClock(scene, requested) {
+    const received = performance.now();
+    if (authoritativeAt < 0) { clockAt = scene.at; clockReceived = received; return; }
+    // Board responses lack a measured Office request time. Slow packets may
+    // lag by their entire round trip; distinguish that from actual clock drift.
+    if (requested == null) return;
+    const roundTrip = received - requested;
+    const head = clockAt + (received - clockReceived) * clockRate, error = scene.at - head;
+    if (error > 1300 || error < -1300 - roundTrip) {
+      clockAt = scene.at; clockReceived = received; clockRate = 1; clockResyncs++;
+    } else if (roundTrip <= 350) {
+      // Re-anchor at the same instant: packet jitter cannot jump the playhead.
+      clockAt = head; clockReceived = received;
+      clockRate = Math.abs(error) < 150 ? 1 : Math.max(0.9, Math.min(1.1, 1 + error / 5000));
+    }
+  }
+  const T = 32, P = 2; let MW = 20, MH = 18, W = MW * T, H = MH * T;               // native size follows the team size; the scene is scaled to fill the panel
+  let canvas = null, vctx = null, off = null, ctx = null, mapImg = null, raf = null, chars = {}, lastState = null, t0 = nowMs();
+  let hostBox = null, compact = false, lastPaint = 0;                       // where it renders; compact: a cell of the all-offices grid (no bar, 30 fps, a click opens the board)
+  let scale = 1, ox = 0, oy = 0, last = 0;
+  const SANS = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+  const C = { wood: "#d8b26b", woodLine: "#c39a55", woodHi: "#e8c98a", wood2: "#c9a26a", wood2Line: "#b58b52", wallTop: "#3b2f22", wallTopHi: "#54432f", wall: "#f2e4c8", wallTrim: "#cdb38a", wallPanel: "#e6d5b3", base: "#8b6b43", baseLine: "#6e4f2e",
+              carpet: "#5e7ac9", carpet2: "#566fb8", carpetDot: "#7d98e2", deskTop: "#c58a4a", deskHi: "#d9a262", deskEdge: "#8f5e2f", leg: "#6e4726", pc: "#cfd3df", pcDark: "#9ea3b3", screen: "#3c8fd0", screenHi: "#6fc3f0", keys: "#b8bcc8", key: "#8f95a3",
+              chair: "#3a6fd8", chairDark: "#2f5fc0", chairLeg: "#2b2b2b", bedFrame: "#8b5a2b", mattress: "#f4efe6", pillow: "#ffffff", pillowSh: "#dcdcdc", blanket: "#d0413f", blanketHi: "#e85a58", tableTop: "#d9a262", tableEdge: "#7a5230",
+              pot: "#c0603a", potRim: "#d9805a", leaf: "#3fa34d", leafDark: "#2c7a39", door: "#7a5230", doorPanel: "#a97a4e", knob: "#ffd23f", mat: "#6a8fd8", matEdge: "#557ac0", shadow: "rgba(0,0,0,.28)" };
+
+  // ---- tile painters at 32x32 (tile-local pixel coordinates)
+  let TX = 0, TY = 0;
+  const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(TX + x, TY + y, w, h); };
+  const Q = (x, y, w, h, col) => R(x / 2, y / 2, w / 2, h / 2, col);        // half-unit grid: 64x64 art pixels per tile
+  const rgbOf = (col) => { if (col[0] === "#") return [1, 3, 5].map(i => parseInt(col.slice(i, i + 2), 16)); const m = col.match(/[\d.]+/g).map(Number); if (col.startsWith("hsl")) { const [hh, ss, ll] = m, a = ss / 100 * Math.min(ll / 100, 1 - ll / 100), f = n => { const k = (n + hh / 30) % 12; return Math.round(255 * (ll / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; } return m.slice(0, 3); };
+  const tint = (col, f) => "#" + rgbOf(col).map(v => Math.max(0, Math.min(255, Math.round(f > 0 ? v + (255 - v) * f : v * (1 + f)))).toString(16).padStart(2, "0")).join("");
+  const wood = (base, line, hi, grain) => { Q(0, 0, 64, 64, base); for (let y = 0; y < 64; y += 16) { Q(0, y, 64, 1, line); const o = (y / 16) % 2 ? 32 : 0; Q(o, y, 1, 16, line); Q(o + 6, y + 5, 12, 1, grain); Q(o + 20, y + 9, 10, 1, grain); Q(o + 8, y + 12, 8, 1, grain); Q(o + 4, y + 2, 1, 1, hi); Q(o + 26, y + 3, 1, 1, hi); } };
+  const wallBase = () => { Q(0, 0, 64, 64, C.wall); Q(0, 0, 64, 8, C.wallTrim); Q(0, 8, 64, 2, "#b89a6e"); Q(0, 10, 64, 1, "#f9f0dc"); Q(0, 54, 64, 10, C.base); Q(0, 54, 64, 2, C.baseLine); Q(0, 56, 64, 1, "#a07a4c"); Q(0, 62, 64, 2, "#5c3f22"); };
+  // desk pieces (half-unit coordinates). The left tile carries the left edge and leg, the right tile the right ones, so a pair reads as one desk.
+  const deskAt = (dx) => { const row = map[TILE_Y], t = row && row[TILE_X + dx]; return !!(t && t.some(n => n.startsWith("desk"))); };
+  const deskBase = (side) => { const left = side === true, mid = side === "mid", edgeL = (left || mid) && !deskAt(-1), edgeR = (!left || mid) && !deskAt(1), x0 = edgeL ? 4 : 0, x1 = edgeR ? 60 : 64; Q(x0, 0, x1 - x0, 46, C.deskTop); Q(x0, 0, x1 - x0, 3, C.deskHi); Q(x0, 3, x1 - x0, 1, "#e2b072"); for (let y = 8; y < 42; y += 6) { Q(x0 + 3, y, x1 - x0 - 6, 1, "#bd8244"); Q(x0 + 9, y + 3, x1 - x0 - 18, 1, "#c9914f"); } Q(x0, 42, x1 - x0, 4, C.deskEdge); Q(x0, 42, x1 - x0, 1, "#a56c38"); Q(x0, 45, x1 - x0, 1, "#6e4726");
+                               if (edgeL) { Q(4, 0, 4, 46, C.deskEdge); Q(4, 0, 1, 46, tint(C.deskEdge, -0.15)); Q(8, 46, 6, 16, C.leg); Q(8, 46, 2, 16, tint(C.leg, 0.25)); Q(8, 60, 6, 2, tint(C.leg, -0.3)); }
+                               if (edgeR) { Q(56, 0, 4, 46, C.deskEdge); Q(59, 0, 1, 46, tint(C.deskEdge, -0.15)); Q(50, 46, 6, 16, C.leg); Q(50, 46, 2, 16, tint(C.leg, 0.25)); Q(50, 60, 6, 2, tint(C.leg, -0.3)); } };
+  const BOSS = { deskTop: "#7a1f1f", deskHi: "#9a2a2a", deskEdge: "#4a1010", leg: "#3a0c0c", chair: "#5a0f0f", chairDark: "#3f0a0a" };
+  const withBoss = (fn) => { const keep = {}; for (const k in BOSS) { keep[k] = C[k]; C[k] = BOSS[k]; } fn(); Object.assign(C, keep); };
+  const monitorFront = (x, w, second) => {                                 // facing the camera: bezel, editor + terminal, taskbar, LED, neck and foot on the desk
+    const h = 26, sx = x + 3, sw = w - 6 - (second ? 2 : 0), half = Math.floor((sw - 4) / 2), cx = x + Math.floor(w / 2);
+    Q(x + 1, 0, w - 2, h, "#23262e"); Q(x, 1, w, h - 2, "#23262e"); Q(x + 2, 2, w - 4 - (second ? 2 : 0), h - 4, "#2f3340"); Q(sx, 3, sw, h - 6, "#101a2e");
+    Q(sx + 2, 5, sw - 4, 3, "#2a4a7a"); Q(sx + 3, 6, 1, 1, "#e8f2ff"); Q(sx + 5, 6, 1, 1, "#e8f2ff"); Q(sx + 7, 6, 1, 1, "#e8f2ff"); Q(sx + 2, 8, sw - 4, 12, "#1c3358");
+    for (let i = 0; i < 5; i++) { const y = 10 + i * 2; Q(sx + 4, y, 3, 1, "#3c8fd0"); Q(sx + 8, y, Math.min(half - 6, 4 + (i * 3) % 5), 1, i % 2 ? "#bcd8f5" : "#e8f2ff"); }
+    Q(sx + 4 + half, 9, sw - 8 - half, 10, "#0d1626"); for (let i = 0; i < 4; i++) Q(sx + 6 + half, 11 + i * 2, Math.min(sw - 12 - half, 3 + (i * 2) % 5), 1, "#7fd68a");
+    Q(sx, 20, sw, 3, "#1a2436"); Q(sx + 2, 21, 2, 1, "#5cff8a"); Q(sx + 6, 21, 2, 1, "#3c8fd0"); Q(sx + sw - 8, 21, 6, 1, "#9fb6d6"); Q(cx - 1, 24, 2, 1, "#5cff8a");
+    Q(cx - 4, h, 8, 5, "#2f3340"); Q(cx - 4, h, 8, 1, "#454a58"); Q(cx - 12, h + 5, 24, 4, "#23262e"); Q(cx - 10, h + 4, 20, 1, "#454a58"); Q(cx - 12, h + 8, 24, 1, "#15171c"); };
+  const monitorBack = (x, w, top, second) => {                             // back to the camera: shell with vents, ports and logo; neck and foot stand on the near part of the desk
+    const h = 22, cx = x + Math.floor(w / 2);
+    Q(x + 1, top, w - 2, h, "#3a3e4a"); Q(x, top + 1, w, h - 2, "#3a3e4a"); Q(x + 1, top, w - 2, 1, "#5f6675"); Q(x + 2, top + 2, w - 4, h - 4, "#4b5160"); Q(x + 4, top + 4, w - 8, 4, "#5a6170"); if (second) Q(x + w - 4, top + 2, 2, h - 4, "#30343e");
+    Q(x + 8, top + 10, w - 16, 1, "#2c3038"); Q(x + 8, top + 13, w - 16, 1, "#2c3038"); Q(x + 8, top + 16, 4, 2, "#23262e"); Q(x + 14, top + 16, 3, 2, "#23262e"); Q(cx - 3, top + 17, 6, 2, "#7d8496");
+    Q(cx - 4, top + h, 8, 6, "#2f3340"); Q(cx + 1, top + h, 1, 8, "#1a1c22"); Q(cx - 12, top + h + 6, 24, 4, "#23262e"); Q(cx - 10, top + h + 5, 20, 1, "#454a58"); Q(cx - 12, top + h + 9, 24, 1, "#15171c"); };
+  const chairSeatUp = () => { Q(17, -10, 30, 18, C.chair); Q(16, -9, 32, 16, C.chair); Q(17, -10, 30, 3, "#4d80e8"); Q(31, -7, 2, 12, C.chairDark); Q(12, -8, 4, 14, "#2b2b2b"); Q(48, -8, 4, 14, "#2b2b2b"); Q(12, -8, 4, 1, "#454545"); Q(48, -8, 4, 1, "#454545"); };
+  const chairBackUp = () => { Q(19, 8, 26, 18, C.chairDark); Q(18, 9, 28, 16, C.chairDark); Q(20, 10, 24, 14, C.chair); Q(20, 10, 24, 2, "#4d80e8"); Q(20, 17, 24, 1, C.chairDark); Q(18, 26, 28, 3, C.chairLeg); Q(16, 27, 5, 3, C.chairLeg); Q(43, 27, 5, 3, C.chairLeg); Q(17, 28, 2, 1, "#555555"); Q(44, 28, 2, 1, "#555555"); };
+  const laptopFront = (x, w) => {                                          // open laptop facing the camera: lid with the screen, base with keyboard and trackpad
+    Q(x, 4, w, 22, "#5a6170"); Q(x + 1, 3, w - 2, 1, "#6d7484"); Q(x + 2, 6, w - 4, 18, "#101a2e"); Q(x + 4, 8, w - 8, 3, "#2a4a7a"); Q(x + 5, 9, 1, 1, "#e8f2ff"); Q(x + 7, 9, 1, 1, "#e8f2ff"); Q(x + 4, 11, w - 8, 10, "#1c3358");
+    for (let i = 0; i < 4; i++) { Q(x + 6, 13 + i * 2, 3, 1, "#3c8fd0"); Q(x + 10, 13 + i * 2, 5 + (i * 3) % 6, 1, i % 2 ? "#bcd8f5" : "#e8f2ff"); } Q(x + w / 2 + 2, 12, w / 2 - 8, 8, "#0d1626"); for (let i = 0; i < 3; i++) Q(x + w / 2 + 4, 14 + i * 2, 4 + (i * 2) % 4, 1, "#7fd68a");
+    Q(x + 2, 22, w - 4, 2, "#1a2436"); Q(x + 4, 22, 2, 1, "#5cff8a");
+    Q(x - 2, 26, w + 4, 12, "#6d7484"); Q(x - 2, 26, w + 4, 1, "#8a92a3"); Q(x + 2, 28, w - 4, 5, "#4b5160"); for (const yy of [29, 31]) for (let xx = x + 3; xx < x + w - 3; xx += 3) Q(xx, yy, 2, 1, "#6a7283"); Q(x + w / 2 - 6, 34, 12, 3, "#5a6170"); Q(x - 2, 37, w + 4, 1, "#3a3e4a"); };
+  const laptopBack = (x, w) => {                                           // occupant beyond it: a sliver of the base shows above the closed side of the lid
+    Q(x - 2, 4, w + 4, 5, "#6d7484"); Q(x - 2, 4, w + 4, 1, "#8a92a3"); Q(x + 2, 5, w - 4, 2, "#4b5160");
+    Q(x, 8, w, 24, "#4b5160"); Q(x + 1, 8, w - 2, 1, "#5f6675"); Q(x, 31, w, 1, "#3a3e4a"); Q(x + 2, 10, w - 4, 20, "#525a6a"); Q(x + w / 2 - 3, 18, 6, 5, "#9aa3b5"); Q(x + w / 2 - 1, 19, 2, 3, "#525a6a"); };
+  const marble = (base, vein) => { Q(0, 0, 64, 64, base); [[4, 6, 18], [20, 7, 9], [30, 22, 14], [8, 36, 12], [40, 44, 18], [18, 54, 10], [46, 12, 12]].forEach(([x, y, w]) => { Q(x, y, w, 1, vein); Q(x + w, y + 1, Math.max(2, w >> 2), 1, vein); }); };
+  const walnutWall = () => { Q(0, 0, 64, 64, "#3b2414"); Q(0, 0, 56, 14, "#5a3820"); Q(0, 0, 56, 1, "#6e4628"); Q(0, 14, 56, 1, "#d4af37"); Q(0, 15, 56, 49, "#4a2e1a"); Q(0, 30, 56, 1, "#553520"); Q(0, 48, 56, 1, "#553520"); Q(0, 63, 56, 1, "#2a180c");
+    Q(56, 0, 8, 64, "#4a2e1a"); Q(55, 0, 1, 64, "#d4af37"); };                                        // a walnut stall wall seen from the room, gold trim along its top
+  const toiletFront = () => { Q(16, 42, 32, 4, "#ffffff"); Q(16, 42, 32, 1, "#f4f6f8"); Q(18, 45, 28, 2, "#e3e6ea"); Q(22, 47, 22, 8, "#f1f3f6"); Q(22, 47, 2, 8, "#ffffff"); Q(42, 47, 2, 8, "#d9dde2"); Q(22, 54, 22, 1, "#cfd4da"); Q(22, 55, 22, 1, "#d4af37"); };   // the near rim and base, drawn over a seated occupant's legs
+  const toiletBowl = () => { Q(18, 20, 30, 24, "#ffffff"); Q(16, 22, 34, 20, "#ffffff"); Q(16, 22, 1, 20, "#dde1e6"); Q(18, 20, 30, 1, "#ffffff"); Q(18, 22, 30, 20, "#e8ebef"); Q(20, 24, 26, 16, "#f7f8fa"); Q(20, 24, 26, 1, "#ffffff");
+    Q(24, 27, 18, 10, "#8fc4e8"); Q(24, 27, 18, 1, "#6fa8d2"); Q(26, 28, 14, 2, "#c3e2f7"); Q(29, 33, 6, 1, "#b0d6f0"); Q(45, 24, 2, 4, "#d4af37"); Q(45, 36, 2, 4, "#d4af37"); toiletFront(); };   // bowl facing the room, tank side on the right, gold hinges
+  const keyboard = (x, y) => { Q(x, y, 28, 8, C.keys); Q(x, y, 28, 1, "#d5d8e0"); Q(x, y + 7, 28, 1, "#8f95a3"); for (const yy of [y + 2, y + 5]) for (let xx = x + 2; xx < x + 26; xx += 3) Q(xx, yy, 2, 2, C.key); Q(x + 9, y + 5, 10, 2, "#a3a8b6"); };
+  const mouse = (x, y) => { Q(x + 1, y, 6, 10, "#e6e8ee"); Q(x, y + 1, 8, 8, "#e6e8ee"); Q(x + 4, y + 1, 1, 4, "#b0b4c0"); Q(x + 3, y + 2, 2, 2, "#8f95a3"); Q(x + 1, y + 9, 6, 1, "#c4c7cf"); };
+  const mug = (x, y) => { Q(x + 1, y, 10, 14, "#ffffff"); Q(x, y + 1, 12, 12, "#ffffff"); Q(x + 11, y + 4, 4, 6, "#ffffff"); Q(x + 12, y + 5, 2, 4, C.deskTop); Q(x + 2, y + 1, 8, 2, "#7a4b2a"); Q(x + 3, y + 1, 2, 1, "#a06a3f"); Q(x + 1, y + 4, 1, 8, "#f5f5f5"); Q(x + 1, y + 12, 10, 1, "#dcdcdc"); Q(x + 4, y + 6, 4, 4, "#d84c4c"); };
+  const papers = () => { Q(10, 22, 26, 18, "#e9e9e3"); Q(8, 20, 26, 18, "#f7f7f2"); Q(8, 20, 26, 1, "#ffffff"); for (let i = 0; i < 4; i++) Q(11, 24 + i * 3, 12 + (i * 5) % 8, 1, "#b8bcc8"); Q(11, 36, 8, 1, "#3a6fd8"); Q(36, 24, 3, 14, "#3a6fd8"); Q(36, 24, 1, 14, "#5a8cf0"); Q(36, 38, 3, 2, "#f3c9a0"); Q(37, 40, 1, 1, "#2b2b2b"); Q(36, 22, 3, 2, "#2b3f7a"); };
+  const BASE_TILES = {
+    floor2: () => wood(C.wood2, C.wood2Line, C.woodHi, "#bf965a"),
+    wallHigh: () => { Q(0, 0, 64, 64, C.wall); Q(0, 0, 64, 2, C.wallTrim); },
+    office: () => { Q(0, 0, 64, 64, "#b9bcc4"); Q(0, 0, 64, 1, "#a6a9b2"); Q(0, 0, 1, 64, "#a6a9b2"); Q(1, 1, 63, 1, "#c6c9d0"); Q(1, 1, 1, 63, "#c6c9d0"); Q(32, 1, 1, 63, "#b1b4bc"); Q(1, 32, 63, 1, "#b1b4bc"); for (const y of [16, 48]) for (const x of [16, 48]) { Q(x, y, 2, 2, "#c9ccd3"); Q(x, y, 1, 1, "#d3d6dc"); } },
+  };
+  const TILES = {
+    floor: () => wood(C.wood, C.woodLine, C.woodHi, "#cfa65f"),
+    office: () => themed("office")(), floor2: () => themed("floor2")(), wallHigh: () => themed("wallHigh")(), bedHead: () => themed("bedHead")(), bedFoot: () => themed("bedFoot")(), deskPlain: () => themed("deskPlain")(), wallTop: () => themed("wallTop")(), wallFace: () => themed("wallFace")(), board: () => themed("board")(), shelf: () => themed("shelf")(),
+    carpet: () => { Q(0, 0, 64, 64, C.carpet); for (let y = 0; y < 64; y += 16) for (let x = 0; x < 64; x += 16) if ((x + y) / 16 % 2) Q(x, y, 16, 16, C.carpet2); for (let y = 0; y < 64; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 64; x += 4) Q(x, y, 1, 1, "#6480cf"); for (let y = 6; y < 64; y += 16) for (let x = 6; x < 64; x += 16) { Q(x, y, 4, 4, C.carpetDot); Q(x + 1, y + 1, 2, 2, "#93aaec"); } },
+    _wallTop: () => { Q(0, 0, 64, 64, C.wallTop); Q(0, 0, 64, 4, C.wallTopHi); Q(0, 4, 64, 1, "#493b2a"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#33291d"); },
+    _wallFace: () => { wallBase(); Q(30, 12, 4, 40, C.wallPanel); Q(30, 12, 1, 40, "#d9c6a0"); },
+    _board: () => { wallBase(); Q(2, 12, 60, 38, "#8d949f"); Q(4, 14, 56, 34, "#f7f9fb"); Q(4, 14, 56, 1, "#ffffff"); Q(2, 49, 60, 1, "#6d747e"); Q(8, 50, 48, 3, "#7d848f"); Q(10, 51, 6, 1, "#d84c4c"); Q(18, 51, 6, 1, "#3a6fd8");
+                  Q(12, 20, 24, 2, "#3a6fd8"); Q(12, 26, 36, 2, "#d84c4c"); Q(12, 32, 18, 2, "#3aa35b"); Q(12, 38, 28, 2, "#3a6fd8"); Q(12, 44, 10, 2, "#d84c4c");
+                  Q(44, 18, 12, 9, "#ffe27a"); Q(44, 18, 12, 1, "#e8c94f"); Q(46, 21, 8, 1, "#c9a83a"); Q(46, 24, 6, 1, "#c9a83a"); Q(42, 32, 14, 12, "#a7d8f5"); Q(44, 36, 2, 6, "#3a6fd8"); Q(47, 34, 2, 8, "#3a6fd8"); Q(50, 38, 2, 4, "#3a6fd8"); Q(53, 35, 2, 7, "#3a6fd8"); },
+    deskL: () => { deskBase(true); monitorFront(10, 44, false); keyboard(18, 34); mouse(50, 34); },
+    deskLap: () => { deskBase(true); laptopFront(12, 40); mouse(55, 28); },
+    deskLapBack: () => { deskBase(true); mouse(55, 4); laptopBack(12, 40); },
+    deskLBack: () => { deskBase(true); keyboard(18, 4); mouse(50, 4); monitorBack(10, 44, 10, false); },
+    deskR: () => { deskBase(false); monitorFront(4, 36, true); mug(44, 22); },
+    deskRBack: () => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); },
+    _deskPlain: () => { deskBase(false); papers(); mug(44, 22); },
+    deskMid: () => { deskBase("mid"); Q(20, 22, 24, 6, "#f7f7f2"); Q(22, 24, 20, 1, "#b8bcc8"); Q(22, 26, 14, 1, "#b8bcc8"); mug(48, 8); },
+    bossDeskL: () => withBoss(() => { deskBase(true); keyboard(18, 4); mouse(50, 4); monitorBack(10, 44, 10, false); }),
+    bossDeskR: () => withBoss(() => { deskBase(false); monitorBack(4, 36, 10, true); mug(44, 22); }),
+    bossDeskMid: () => withBoss(() => { deskBase("mid"); Q(8, 20, 26, 8, "#e6c15a"); Q(10, 22, 22, 4, "#c9a24a"); Q(40, 18, 14, 12, "#f7f7f2"); Q(42, 20, 10, 1, "#b8bcc8"); Q(42, 23, 8, 1, "#b8bcc8"); }),
+    bossChair: () => withBoss(() => TILES.chair()),
+    bossChairBack: () => withBoss(() => TILES.chairUpBack()),
+    moneyTree: () => { Q(20, 42, 24, 18, "#b8202a"); Q(18, 40, 28, 5, "#d9303a"); Q(18, 40, 28, 1, "#f05a64"); Q(24, 48, 16, 1, "#e6c15a"); Q(30, 24, 4, 18, "#5a3a1f");
+                       Q(20, 10, 24, 20, "#2c7a39"); Q(16, 16, 32, 12, "#3fa34d"); Q(24, 6, 16, 8, "#3fa34d"); Q(12, 20, 8, 8, "#2c7a39"); Q(44, 20, 8, 8, "#2c7a39");
+                       [[22, 14], [36, 12], [18, 24], [42, 24], [30, 20], [28, 28]].forEach(([x, y]) => { Q(x, y, 5, 5, "#e6c15a"); Q(x + 1, y + 1, 3, 3, "#f5d76e"); Q(x + 2, y + 2, 1, 1, "#b8861e"); }); },
+    chairUp: () => { chairSeatUp(); chairBackUp(); },
+    chairUpBack: () => chairBackUp(),
+    chair: () => { Q(19, 22, 26, 20, C.chairDark); Q(18, 23, 28, 18, C.chairDark); Q(20, 24, 24, 16, C.chair); Q(20, 24, 24, 2, "#4d80e8"); Q(20, 31, 24, 1, C.chairDark); Q(12, 44, 4, 12, "#2b2b2b"); Q(48, 44, 4, 12, "#2b2b2b"); Q(12, 44, 4, 1, "#454545"); Q(48, 44, 4, 1, "#454545");
+                   Q(17, 42, 30, 18, C.chair); Q(16, 43, 32, 16, C.chair); Q(17, 42, 30, 3, "#4d80e8"); Q(31, 45, 2, 12, C.chairDark); Q(16, 58, 32, 3, C.chairDark); Q(17, 61, 30, 1, "#264c9a"); },
+    _bedHead: () => { Q(4, 0, 56, 64, C.bedFrame); Q(4, 0, 56, 8, "#6f4520"); Q(4, 0, 56, 2, "#9a6a3a"); Q(4, 0, 5, 12, "#5c3a1c"); Q(55, 0, 5, 12, "#5c3a1c"); Q(9, 8, 46, 56, C.mattress); Q(9, 8, 46, 1, "#e6e0d4");
+                     Q(13, 10, 38, 16, C.pillowSh); Q(14, 9, 36, 14, C.pillow); Q(13, 10, 1, 12, C.pillow); Q(50, 10, 1, 12, C.pillow); Q(18, 13, 28, 1, "#f2f2f2"); Q(22, 17, 20, 1, "#f2f2f2");
+                     Q(9, 30, 46, 34, C.blanket); Q(9, 30, 46, 5, "#f1eae0"); Q(9, 35, 46, 1, "#d9d2c6"); for (let y = 40; y < 64; y += 8) { Q(9, y, 46, 2, C.blanketHi); for (let x = 12; x < 55; x += 8) Q(x, y + 4, 2, 1, "#b73634"); } Q(9, 36, 1, 28, "#b53230"); Q(54, 36, 1, 28, "#b53230"); },
+    _bedFoot: () => { Q(4, 0, 56, 60, C.bedFrame); Q(9, 0, 46, 44, C.blanket); for (let y = 0; y < 44; y += 8) { Q(9, y, 46, 2, C.blanketHi); for (let x = 12; x < 55; x += 8) Q(x, y + 4, 2, 1, "#b73634"); } Q(9, 0, 1, 44, "#b53230"); Q(54, 0, 1, 44, "#b53230");
+                     Q(9, 44, 46, 8, C.mattress); Q(9, 51, 46, 1, "#dcd6ca"); Q(4, 52, 56, 8, "#6f4520"); Q(4, 52, 56, 2, "#9a6a3a"); Q(4, 50, 5, 12, "#5c3a1c"); Q(55, 50, 5, 12, "#5c3a1c"); Q(4, 60, 56, 2, "#4a2d14"); },
+    tableTL: () => { R(4, 4, 28, 28, C.tableEdge); R(6, 6, 26, 26, C.tableTop); },
+    tableML: () => { R(4, 0, 28, 32, C.tableEdge); R(6, 0, 26, 32, C.tableTop); },
+    tableBL: () => { R(4, 0, 28, 28, C.tableEdge); R(6, 0, 26, 26, C.tableTop); },
+    printer: () => { Q(8, 30, 48, 30, "#5b6270"); Q(8, 30, 48, 3, "#7d8595"); Q(10, 36, 20, 20, "#4a505c"); Q(32, 36, 22, 20, "#4a505c"); Q(27, 44, 2, 4, "#c9ced6"); Q(34, 44, 2, 4, "#c9ced6"); Q(10, 60, 6, 3, "#2b2f3a"); Q(48, 60, 6, 3, "#2b2f3a");
+      Q(18, 4, 28, 10, "#b9c0c9"); Q(20, 2, 24, 11, "#f7f7f7"); Q(20, 2, 24, 1, "#dde1e6"); Q(10, 12, 44, 20, "#dfe3e8"); Q(10, 12, 44, 3, "#f2f4f7"); Q(10, 29, 44, 3, "#b9c0c9"); Q(16, 24, 32, 3, "#2b2f3a"); Q(14, 27, 36, 2, "#c9ced6");
+      Q(40, 15, 12, 6, "#2b2f3a"); Q(41, 16, 6, 4, "#3a6fd8"); Q(49, 17, 2, 2, "#3fd46b"); Q(12, 16, 3, 2, "#7d8595"); Q(16, 16, 3, 2, "#7d8595"); },
+    plant: () => { Q(22, 40, 20, 20, C.pot); Q(20, 38, 24, 5, C.potRim); Q(20, 38, 24, 1, "#e69572"); Q(24, 44, 2, 12, "#d0785a"); Q(22, 58, 20, 2, "#8f4426"); Q(24, 34, 16, 6, "#5a3a1f"); Q(31, 20, 2, 16, "#2c7a39");
+                   Q(26, 6, 12, 12, C.leaf); Q(24, 8, 16, 8, C.leaf); Q(14, 16, 16, 12, C.leaf); Q(12, 18, 20, 8, C.leaf); Q(34, 14, 18, 12, C.leafDark); Q(32, 16, 22, 8, C.leafDark); Q(20, 26, 24, 10, C.leaf); Q(18, 28, 28, 6, C.leaf); Q(10, 24, 12, 8, C.leafDark); Q(42, 26, 12, 8, C.leafDark);
+                   Q(30, 8, 1, 8, "#6dc47a"); Q(18, 20, 8, 1, "#6dc47a"); Q(24, 30, 10, 1, "#6dc47a"); Q(40, 18, 8, 1, "#3d9a4c"); Q(28, 6, 4, 2, "#7fd68a"); Q(16, 16, 4, 2, "#7fd68a"); },
+    _shelf: () => { Q(4, 0, 56, 60, C.bedFrame); Q(4, 0, 56, 2, "#a97a4e"); Q(8, 4, 48, 24, "#8a5c33"); Q(8, 32, 48, 24, "#8a5c33"); Q(8, 28, 48, 4, "#c58a4a"); Q(8, 56, 48, 4, "#c58a4a"); Q(8, 28, 48, 1, "#d9a262"); Q(8, 56, 48, 1, "#d9a262");
+                   [[["#d84c4c", 6, 20], ["#3a6fd8", 5, 22], ["#e6c15a", 7, 18], ["#3aa35b", 5, 21], ["#f0f0f0", 6, 19], ["#8e44ad", 6, 22], ["#e67e22", 5, 20]], [["#3a6fd8", 6, 21], ["#f0f0f0", 5, 19], ["#d84c4c", 7, 22], ["#e6c15a", 5, 18], ["#3aa35b", 6, 21], ["#e67e22", 5, 20], ["#8e44ad", 4, 17]]].forEach((books, i) => {
+                     const base = i ? 56 : 28; let x = 10; books.forEach(([col, w, h]) => { Q(x, base - h, w, h, col); Q(x + w - 1, base - h, 1, h, tint(col, -0.3)); Q(x + 1, base - h + 3, w - 2, 1, "#f7f7f7"); Q(x + 1, base - h + 6, w - 2, 1, "#f7f7f7"); x += w + 1; }); }); },
+    toilet: () => { marble("#f5f1ea", "#e0d8cb"); Q(0, 0, 56, 3, "rgba(60,40,20,.22)"); Q(0, 61, 56, 3, "rgba(60,40,20,.12)");                                   // a marble stall between walnut walls
+                    Q(56, 0, 8, 64, "#4a2e1a"); Q(57, 0, 1, 64, "#6b4428"); Q(55, 0, 1, 64, "#d4af37"); Q(58, 10, 4, 44, "#553520");                                   // the walnut back wall, gold trim
+                    Q(6, 5, 12, 2, "#d4af37"); Q(7, 7, 10, 9, "#ffffff"); Q(7, 7, 10, 1, "#f0f0f0"); Q(11, 10, 2, 2, "#dcdcdc"); Q(7, 15, 10, 4, "#fafafa"); Q(7, 18, 10, 1, "#e6e6e6");   // gold paper holder and roll
+                    Q(44, 12, 12, 34, "#ffffff"); Q(44, 12, 2, 34, "#f2f4f6"); Q(54, 12, 2, 34, "#e1e5ea"); Q(42, 9, 15, 4, "#fafafa"); Q(42, 9, 15, 1, "#ffffff"); Q(42, 12, 15, 1, "#d9dde2");   // the tank, its lid
+                    Q(47, 21, 7, 6, "#b8952e"); Q(48, 22, 2, 3, "#f5d76e"); Q(51, 22, 2, 3, "#f5d76e");                                                                // dual-flush plate
+                    Q(46, 3, 7, 6, "#f4f4f4"); Q(46, 3, 7, 1, "#ffffff"); Q(49, -4, 1, 7, "#3d8a4c"); Q(46, -6, 4, 3, "#ff9fd0"); Q(50, -8, 4, 3, "#ff8fc8"); Q(47, -5, 1, 1, "#ffe27a"); Q(51, -7, 1, 1, "#ffe27a");   // an orchid on the lid
+                    toiletBowl(); },
+    stallPanel: () => { walnutWall();                                                   // the wall at the head of a stall: its timer screen, the alarm light on top
+                    Q(6, 1, 44, 17, "#b8952e"); Q(6, 1, 44, 1, "#f5d76e"); Q(6, 17, 44, 1, "#8a6d1f"); Q(8, 3, 40, 13, "#0a0a0c"); Q(8, 3, 40, 1, "#26262c");          // high on the wall: the occupant's head covers the lower half
+                    Q(55, 9, 8, 3, "#6b6b73"); Q(55, 9, 8, 1, "#9a9aa3"); Q(55, 1, 8, 8, "#5a0a0e"); Q(56, 2, 6, 2, "#6e1216"); Q(56, 2, 2, 2, "#9a3a3e");            // the alarm light on its bracket
+                    Q(2, 26, 2, 10, "#d4af37"); Q(1, 25, 4, 2, "#f5d76e"); },
+    stallEnd: () => { walnutWall(); Q(16, 22, 32, 20, "#d4af37"); Q(16, 22, 32, 1, "#f5d76e"); Q(18, 24, 28, 16, "#1f1a12");                                   // a gold WC plaque
+                    Q(22, 26, 4, 4, "#d4af37"); Q(21, 31, 6, 7, "#d4af37"); Q(31, 25, 1, 14, "#8a6d1f"); Q(38, 26, 4, 4, "#d4af37"); Q(37, 31, 6, 3, "#d4af37"); Q(36, 34, 8, 4, "#d4af37"); },
+    vanity: () => { Q(56, 0, 8, 64, "#4a2e1a"); Q(55, 0, 1, 64, "#d4af37"); Q(57, 8, 6, 40, "#b9d7ea"); Q(57, 8, 6, 1, "#e8f4fb"); Q(56, 8, 1, 40, "#d4af37");        // the mirror on the wall
+                    Q(18, 2, 38, 60, "#efe9df"); Q(18, 2, 1, 60, "#d4af37"); Q(18, 61, 38, 1, "#cdb77a"); Q(24, 12, 14, 1, "#d9d0c1"); Q(30, 50, 16, 1, "#d9d0c1");          // a marble counter
+                    Q(26, 18, 22, 26, "#ffffff"); Q(28, 20, 18, 22, "#dfe7ee"); Q(28, 20, 18, 1, "#c5d0da"); Q(36, 30, 2, 2, "#9aa3ad");                              // the basin
+                    Q(46, 29, 10, 3, "#d4af37"); Q(45, 28, 2, 5, "#f5d76e"); Q(50, 25, 3, 2, "#f5d76e"); Q(50, 35, 3, 2, "#f5d76e");                                   // gold tap and handles
+                    Q(49, 6, 5, 8, "#d4af37"); Q(50, 4, 3, 2, "#f5d76e"); Q(22, 48, 14, 9, "#ffffff"); Q(22, 51, 14, 1, "#e6e6e6"); Q(22, 54, 14, 1, "#e6e6e6");         // soap, folded towels
+                    Q(42, 50, 7, 7, "#ffffff"); Q(45, 42, 1, 8, "#3d8a4c"); Q(42, 40, 4, 3, "#ff9fd0"); Q(46, 38, 4, 3, "#ff8fc8"); },
+
+    door: () => { Q(0, 0, 64, 64, "#4a2f16"); Q(4, 0, 56, 64, C.door); Q(4, 0, 56, 1, "#9a6a3a"); Q(4, 0, 1, 64, "#9a6a3a"); Q(59, 0, 1, 64, "#4a2f16"); Q(10, 6, 44, 22, "#6a4327"); Q(12, 8, 40, 18, C.doorPanel); Q(12, 8, 40, 1, "#c3946a"); Q(10, 34, 44, 24, "#6a4327"); Q(12, 36, 40, 20, C.doorPanel); Q(12, 36, 40, 1, "#c3946a"); Q(46, 30, 8, 4, "#5c3a1c"); Q(47, 29, 6, 5, C.knob); Q(48, 30, 2, 1, "#fff0a0"); Q(4, 12, 3, 5, "#3a3a3a"); Q(4, 46, 3, 5, "#3a3a3a"); },
+    mat: () => { Q(8, 40, 48, 24, C.matEdge); Q(12, 44, 40, 16, C.mat); for (let x = 16; x < 52; x += 8) Q(x, 48, 4, 8, "#7fa0e8"); Q(12, 44, 40, 1, "#7d9ce0"); Q(8, 62, 48, 2, "#4a6cae"); },
+  };
+  Object.assign(BASE_TILES, { wallTop: TILES._wallTop, wallFace: TILES._wallFace, board: TILES._board, shelf: TILES._shelf, bedHead: TILES._bedHead, bedFoot: TILES._bedFoot, deskPlain: TILES._deskPlain });
+  // ---- office themes: the same desks, chairs, bunks, toilets and door everywhere; floors, walls, colours and the props on the back wall change
+  const BASE_C = { ...C };
+  let TILE_X = 0, TILE_Y = 0, Y_MID = 0;                                  // tile coordinates while painting, so a theme can draw court lines or parking bays across tiles
+  const lines = (col, w = 3) => { const L = TILE_X === 1, R = TILE_X === MW - 2, Tp = TILE_Y === 2, B = TILE_Y === Y_MID - 1; if (L) Q(0, 0, w, 64, col); if (R) Q(64 - w, 0, w, 64, col); if (Tp) Q(0, 0, 64, w, col); if (B) Q(0, 64 - w, 64, w, col); };
+  const speckle = (col, n, seed) => { let h = (TILE_X * 73 + TILE_Y * 151 + seed) >>> 0; for (let i = 0; i < n; i++) { h = Math.imul(h ^ (h >>> 13), 0x5bd1e995) >>> 0; Q(h % 62, (h >>> 8) % 62, 1 + (h >>> 16) % 2, 1, col); } };
+  const brick = (a, b, mortar) => { Q(0, 0, 64, 64, a); for (let y = 0; y < 64; y += 8) { const o = (y / 8) % 2 ? 8 : 0; for (let x = -8; x < 64; x += 16) Q(x + o + 1, y + 1, 14, 6, (x + y) % 32 ? a : b); Q(0, y, 64, 1, mortar); for (let x = o; x < 64; x += 16) Q(x, y, 1, 8, mortar); } };
+  const glowBoard = (bg, fg, digits) => { Q(2, 10, 60, 40, "#1b1d22"); Q(4, 12, 56, 36, bg); Q(4, 12, 56, 1, "#3a3d44"); digits.forEach(([x, y, w, col]) => Q(x, y, w, 2, col)); Q(6, 40, 52, 1, fg); };
+  const THEMES = {
+    regular: { label: "Regular office" },
+    tech: { label: "Microsoft campus", colors: { deskTop: "#e9ebf0", deskHi: "#f7f8fb", deskEdge: "#b3b8c4", leg: "#8a8f9c", wall: "#1c2130", wallTrim: "#2b3345", wallPanel: "#27304a", base: "#141826", baseLine: "#0e1118", wallTop: "#0d1020", wallTopHi: "#1d2338", door: "#2b3345", doorPanel: "#3a465f", knob: "#3fd2e6", bedFrame: "#3a3f4c", pot: "#3a3f4c", potRim: "#4a5062" },
+      office: () => { Q(0, 0, 64, 64, "#232838"); Q(0, 0, 64, 1, "#2f3650"); Q(0, 0, 1, 64, "#2f3650"); Q(32, 0, 1, 64, "#2a3048"); Q(0, 32, 64, 1, "#2a3048"); for (const y of [0, 32]) for (const x of [0, 32]) Q(x, y, 1, 1, "#3fd2e6"); },
+      floor2: () => { Q(0, 0, 64, 64, "#1c2030"); Q(0, 0, 64, 1, "#262b3e"); Q(0, 0, 1, 64, "#262b3e"); Q(31, 31, 2, 2, "#2c3348"); },
+      wallTop: () => { Q(0, 0, 64, 64, "#0d1020"); Q(0, 0, 64, 4, "#1d2338"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#151a2c"); },
+      wallFace: () => { wallBase(); Q(6, 12, 52, 40, "#27304a"); Q(8, 14, 48, 36, "#2f3b5c"); Q(8, 14, 48, 1, "#4a5a86"); Q(10, 16, 20, 1, "#3fd2e6"); Q(10, 20, 30, 1, "#3fd2e6"); Q(10, 24, 14, 1, "#3fd2e6"); },
+      shelf: () => { Q(6, 0, 52, 60, "#2b3040"); Q(8, 2, 48, 56, "#1b1f2a"); for (let y = 6; y < 56; y += 8) { Q(10, y, 44, 6, "#2f3546"); Q(12, y + 2, 2, 2, (y / 8) % 3 ? "#3fd2e6" : "#5cff8a"); Q(16, y + 2, 2, 2, "#5cff8a"); Q(48, y + 1, 4, 4, "#0f1218"); } },
+      board: () => { wallBase(); glowBoard("#0f1626", "#3fd2e6", [[8, 18, 20, "#3fd2e6"], [8, 24, 32, "#5cff8a"], [8, 30, 14, "#3fd2e6"], [30, 18, 24, "#ff5cab"]]); } },
+    finance: { label: "Goldman Sachs", colors: { deskTop: "#6b3a2a", deskHi: "#83493a", deskEdge: "#4a251a", leg: "#3a1d14", wall: "#243a5e", wallTrim: "#c9a24a", wallPanel: "#2d4670", base: "#1a2a45", baseLine: "#c9a24a", wallTop: "#141f33", wallTopHi: "#243a5e", door: "#4a251a", doorPanel: "#6b3a2a", knob: "#e6c15a", pot: "#c9a24a", potRim: "#e6c15a", bedFrame: "#4a251a", blanket: "#2f4a8a", blanketHi: "#3f5fa8" },
+      office: () => { Q(0, 0, 64, 64, "#e9e4d8"); Q(0, 0, 64, 1, "#c9c2b2"); Q(0, 0, 1, 64, "#c9c2b2"); Q(10, 4, 30, 1, "#d4cdbd"); Q(38, 6, 20, 1, "#d4cdbd"); Q(4, 40, 22, 1, "#d4cdbd"); Q(24, 42, 34, 1, "#d4cdbd"); Q(50, 20, 1, 16, "#d4cdbd"); },
+      floor2: () => { Q(0, 0, 64, 64, "#6a2e3a"); for (let y = 4; y < 64; y += 16) for (let x = 4; x < 64; x += 16) { Q(x, y, 8, 8, "#5f2733"); Q(x + 3, y + 3, 2, 2, "#c9a24a"); } },
+      wallTop: () => { Q(0, 0, 64, 64, "#141f33"); Q(0, 0, 64, 4, "#243a5e"); Q(0, 4, 64, 1, "#c9a24a"); },
+      wallFace: () => { wallBase(); Q(12, 14, 40, 34, "#2d4670"); Q(12, 14, 40, 1, "#c9a24a"); Q(12, 47, 40, 1, "#c9a24a"); Q(12, 14, 1, 34, "#c9a24a"); Q(51, 14, 1, 34, "#c9a24a"); },
+      shelf: () => { Q(4, 4, 56, 52, "#0e1218"); Q(6, 6, 52, 48, "#141a22"); [["#5cff8a", 10], ["#ff5c5c", 18], ["#5cff8a", 26], ["#5cff8a", 34], ["#ff5c5c", 42]].forEach(([c, y]) => { Q(10, y, 14, 3, "#e6e6e6"); Q(30, y, 8, 3, c); Q(42, y, 12, 3, c); }); },
+      board: () => { wallBase(); glowBoard("#0e1218", "#c9a24a", [[8, 34, 6, "#5cff8a"], [14, 30, 6, "#5cff8a"], [20, 32, 6, "#ff5c5c"], [26, 26, 6, "#5cff8a"], [32, 22, 6, "#5cff8a"], [38, 24, 6, "#ff5c5c"], [44, 18, 8, "#5cff8a"]]); } },
+    factory: { label: "Factory", colors: { deskTop: "#8f96a0", deskHi: "#a9b0ba", deskEdge: "#5f666f", leg: "#4a4f57", wall: "#8f4a3a", wallTrim: "#e0b73a", wallPanel: "#7a3e30", base: "#5a4a44", baseLine: "#3a302c", wallTop: "#3a2a26", wallTopHi: "#5a3e36", door: "#5f666f", doorPanel: "#8f96a0", knob: "#e0b73a", bedFrame: "#5f666f", pot: "#5f666f", potRim: "#8f96a0" },
+      office: () => { Q(0, 0, 64, 64, "#9a9b9a"); Q(0, 0, 64, 1, "#8a8b8a"); Q(0, 0, 1, 64, "#8a8b8a"); speckle("#8c8d8c", 14, 3); if (TILE_Y === 2 || TILE_Y === Y_MID - 1) for (let x = 0; x < 64; x += 16) { Q(x, TILE_Y === 2 ? 0 : 58, 8, 6, "#e0b73a"); Q(x + 8, TILE_Y === 2 ? 0 : 58, 8, 6, "#2b2b2b"); } },
+      floor2: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(0, 0, 64, 1, "#6f706f"); Q(0, 0, 1, 64, "#6f706f"); speckle("#717271", 12, 9); },
+      wallTop: () => { Q(0, 0, 64, 64, "#3a2a26"); Q(0, 0, 64, 4, "#5a3e36"); for (let y = 12; y < 64; y += 16) Q(0, y, 64, 1, "#2e2220"); },
+      wallFace: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); },
+      shelf: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); Q(8, 20, 20, 34, "#d9a22a"); Q(8, 20, 20, 3, "#f0c04a"); Q(8, 30, 20, 3, "#b8861e"); Q(8, 42, 20, 3, "#b8861e"); Q(34, 24, 22, 30, "#2f6fb8"); Q(34, 24, 22, 3, "#4a8fd8"); Q(34, 36, 22, 3, "#255a96"); },
+      board: () => { brick("#8f4a3a", "#7a3e30", "#b58a7a"); Q(0, 54, 64, 10, "#5a4a44"); Q(0, 54, 64, 2, "#3a302c"); Q(6, 10, 52, 36, "#e0b73a"); Q(8, 12, 48, 32, "#f0c95a"); Q(12, 16, 40, 4, "#2b2b2b"); Q(12, 24, 28, 3, "#2b2b2b"); Q(12, 31, 34, 3, "#2b2b2b"); Q(12, 38, 20, 3, "#2b2b2b"); } },
+    basketball: { label: "Basketball court", colors: { deskTop: "#e2c48f", deskHi: "#efd7a8", deskEdge: "#b3925e", leg: "#8a6d42", wall: "#a8332f", wallTrim: "#f2f2f2", wallPanel: "#8e2a27", base: "#7a2320", baseLine: "#5a1a18", wallTop: "#4a1a18", wallTopHi: "#6a2622", door: "#8a6d42", doorPanel: "#b3925e", knob: "#f2f2f2", pot: "#e8792b", potRim: "#f28c28" },
+      office: () => { wood("#d99a4a", "#c4863c", "#e8b060", "#cf9040"); },
+      floor2: () => { Q(0, 0, 64, 64, "#9fc3d8"); for (let i = 0; i < 64; i += 16) { Q(i, 0, 1, 64, "#8bb1c8"); Q(0, i, 64, 1, "#8bb1c8"); } },
+      wallTop: () => { Q(0, 0, 64, 64, "#4a1a18"); Q(0, 0, 64, 4, "#6a2622"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 30, 64, 4, "#f2f2f2"); for (let x = 0; x < 64; x += 16) Q(x, 14, 1, 40, "#8e2a27"); Q(0, 54, 64, 10, "#7a2320"); Q(0, 54, 64, 2, "#5a1a18"); },
+      shelf: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 54, 64, 10, "#7a2320"); Q(14, 16, 36, 24, "#f7f7f7"); Q(16, 18, 32, 20, "#e8e8e8"); Q(24, 26, 16, 10, "#d84c4c"); Q(22, 36, 20, 3, "#f28c28"); Q(24, 39, 16, 10, "#f2f2f2"); for (let x = 26; x < 40; x += 4) Q(x, 39, 1, 10, "#c8c8c8"); },
+      board: () => { Q(0, 0, 64, 64, "#a8332f"); Q(0, 8, 64, 6, "#f2f2f2"); Q(0, 54, 64, 10, "#7a2320"); glowBoard("#111111", "#ff5c5c", [[10, 20, 6, "#ff5c5c"], [18, 20, 6, "#ff5c5c"], [30, 20, 3, "#f2f2f2"], [38, 20, 6, "#ff5c5c"], [46, 20, 6, "#ff5c5c"], [12, 30, 40, "#5cff8a"]]); } },
+    tennis: { label: "Tennis court", colors: { deskTop: "#e6e0d0", deskHi: "#f4efe3", deskEdge: "#b8b09c", leg: "#8f8878", wall: "#2f5e3a", wallTrim: "#3f7a4a", wallPanel: "#27502f", base: "#1f4026", baseLine: "#163019", wallTop: "#163019", wallTopHi: "#27502f", door: "#8f8878", doorPanel: "#b8b09c", knob: "#e6e0d0", pot: "#c0603a", potRim: "#d9805a", blanket: "#3aa35b", blanketHi: "#4fbf6f" },
+      office: () => { Q(0, 0, 64, 64, "#3b6fb0"); Q(0, 0, 64, 1, "#3565a2"); Q(0, 0, 1, 64, "#3565a2"); },
+      floor2: () => { Q(0, 0, 64, 64, "#4d9c56"); speckle("#438a4b", 16, 5); speckle("#5aac63", 10, 11); },
+      wallTop: () => { Q(0, 0, 64, 64, "#163019"); Q(0, 0, 64, 4, "#27502f"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#2f5e3a"); for (let y = 8; y < 54; y += 6) for (let x = (y / 6) % 2 ? 3 : 0; x < 64; x += 6) Q(x, y, 1, 1, "#4a8a56"); Q(0, 54, 64, 10, "#1f4026"); Q(0, 54, 64, 2, "#163019"); },
+      shelf: () => { Q(0, 0, 64, 64, "#2f5e3a"); Q(0, 54, 64, 10, "#1f4026"); Q(10, 10, 44, 36, "#1b1b1b"); Q(12, 12, 40, 32, "#f7f7f7"); Q(14, 14, 36, 28, "#d8ecff"); Q(18, 18, 28, 1, "#ff5c5c"); Q(18, 24, 28, 1, "#ff5c5c"); Q(18, 30, 12, 1, "#ff5c5c"); Q(46, 20, 12, 12, "#d5ff5c"); Q(48, 22, 8, 8, "#c4ee4b"); },
+      board: () => { Q(0, 0, 64, 64, "#2f5e3a"); Q(0, 54, 64, 10, "#1f4026"); glowBoard("#111111", "#f2f2f2", [[10, 20, 6, "#e6c15a"], [18, 20, 6, "#e6c15a"], [30, 20, 3, "#f2f2f2"], [38, 20, 6, "#e6c15a"], [46, 20, 6, "#e6c15a"], [12, 30, 40, "#5cff8a"]]); } },
+    parking: { label: "Parking lot", colors: { deskTop: "#7d838c", deskHi: "#959ba4", deskEdge: "#565b63", leg: "#3f434a", wall: "#8f9298", wallTrim: "#e0b73a", wallPanel: "#7f8288", base: "#e0b73a", baseLine: "#b8931e", wallTop: "#5a5d63", wallTopHi: "#6f7278", door: "#565b63", doorPanel: "#7d838c", knob: "#e0b73a", bedFrame: "#565b63", pot: "#f28c28", potRim: "#ff9f3f" },
+      office: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 7); },
+      floor2: () => { Q(0, 0, 64, 64, "#3f4247"); speckle("#484b51", 14, 13); for (let i = -64; i < 64; i += 16) { for (let k = 0; k < 64; k++) if (i + k >= 0 && i + k < 64) Q(i + k, k, 3, 1, "#e0b73a"); } },
+      wallTop: () => { Q(0, 0, 64, 64, "#5a5d63"); Q(0, 0, 64, 4, "#6f7278"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(0, 44, 64, 2, "#b8931e"); for (let x = 0; x < 64; x += 16) Q(x, 46, 8, 18, "#2b2b2b"); },
+      shelf: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(18, 14, 6, 40, "#5a5d63"); Q(14, 6, 14, 14, "#3a6fd8"); Q(16, 8, 10, 6, "#e6e6e6"); Q(18, 10, 6, 2, "#ff5c5c"); Q(36, 24, 16, 30, "#f28c28"); Q(38, 34, 12, 4, "#f7f7f7"); Q(32, 52, 24, 4, "#2b2b2b"); },
+      board: () => { Q(0, 0, 64, 64, "#8f9298"); Q(0, 44, 64, 20, "#e0b73a"); Q(14, 8, 36, 36, "#2f4a8a"); Q(16, 10, 32, 32, "#3a5fd8"); Q(24, 14, 16, 24, "#f7f7f7"); Q(28, 18, 8, 8, "#3a5fd8"); Q(28, 26, 4, 12, "#3a5fd8"); } },
+    garage: { label: "Garage", colors: { deskTop: "#a9a39a", deskHi: "#c2bcb2", deskEdge: "#6f6a62", leg: "#4f4b45", wall: "#a5a9b0", wallTrim: "#8e929a", wallPanel: "#9a9ea6", base: "#6f737a", baseLine: "#4f5359", wallTop: "#4f5359", wallTopHi: "#6f737a", door: "#8e929a", doorPanel: "#a5a9b0", knob: "#d84c4c", bedFrame: "#6f6a62", pot: "#d84c4c", potRim: "#e86060" },
+      office: () => { Q(0, 0, 64, 64, "#7f8288"); Q(0, 0, 64, 1, "#6f7278"); Q(0, 0, 1, 64, "#6f7278"); speckle("#767980", 12, 17); if ((TILE_X * 7 + TILE_Y * 3) % 5 === 0) { Q(20, 24, 24, 12, "#5f6268"); Q(26, 20, 12, 20, "#5f6268"); Q(30, 28, 6, 4, "#55585e"); } },
+      floor2: () => { Q(0, 0, 64, 64, "#6c6f75"); speckle("#63666c", 12, 19); },
+      wallTop: () => { Q(0, 0, 64, 64, "#4f5359"); Q(0, 0, 64, 4, "#6f737a"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) { Q(x, 0, 2, 54, "#8e929a"); Q(x + 5, 0, 1, 54, "#b8bcc3"); } Q(0, 54, 64, 10, "#6f737a"); Q(0, 54, 64, 2, "#4f5359"); },
+      shelf: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) Q(x, 0, 2, 54, "#8e929a"); Q(0, 54, 64, 10, "#6f737a"); Q(6, 8, 52, 40, "#c9a26a"); for (let y = 12; y < 46; y += 6) for (let x = 10; x < 56; x += 6) Q(x, y, 1, 1, "#8a6a3a"); Q(12, 14, 4, 20, "#5f6268"); Q(10, 30, 8, 4, "#5f6268"); Q(24, 14, 14, 3, "#5f6268"); Q(30, 17, 3, 16, "#5f6268"); Q(44, 14, 8, 22, "#d84c4c"); Q(46, 10, 4, 5, "#2b2b2b"); },
+      board: () => { Q(0, 0, 64, 64, "#a5a9b0"); for (let x = 0; x < 64; x += 8) Q(x, 0, 2, 54, "#8e929a"); Q(0, 54, 64, 10, "#6f737a"); Q(6, 8, 52, 40, "#f7f7f7"); Q(8, 10, 48, 36, "#e9e9e9"); Q(12, 14, 40, 3, "#3a6fd8"); Q(12, 22, 28, 3, "#d84c4c"); Q(12, 30, 34, 3, "#3aa35b"); Q(12, 38, 18, 3, "#3a6fd8"); } },
+  };
+  const CN_SLOGANS = ["业绩是唯一的保命符，零单就是自上绞刑架！", "绩效末位，即刻斩首；没有功劳，就是死罪！", "淘汰台已经搭好，今天谁的名字挂在刽子手刀下？", "拿不出结果，就自己把绳索套在脖子上！", "这里没有缓刑，不出单，当下立决！", "KPI就是你的铡刀，升上去是神，掉下来是鬼！",
+    "今天不冲业绩，明天就冲人才市场！", "客户不签字，你就别下班！", "数据不好看，人就不好过！", "报表上没你的名字，工位上也不该有！", "指标就是圣旨，完不成就是抗旨！", "谁的曲线往下走，谁的工牌就往外走！",
+    "月底不达标，月初就清场！", "不加班的人，是在偷公司的时间！", "凌晨三点的灯，才配叫奋斗！", "别谈感受，谈转化率！", "客户挂电话，你就得再打十个！", "订单是氧气，没单就窒息！",
+    "今天的懈怠，就是明天的裁员通知！", "把竞品逼到墙角，再把墙推倒！", "市场只有一块饼，抢不到就饿死！", "只有第一名有饭吃，第二名连汤都没有！", "你不是来上班的，你是来打仗的！", "考核不看过程，只看尸体数量！",
+    "跪着签单也是签单！", "今天少打一个电话，明天少活一天！", "会议室里没有借口，只有数字！", "你的假期，是客户给的！", "不出成绩，年终奖就是空气！", "团队不需要好人，只需要能人！",
+    "哭是没用的，哭完继续打电话！", "把身体交给公司，把灵魂交给业绩！", "月度冠军上墙，月度末位出局！", "别等风口，自己当推土机！", "客户的拒绝，是你的开场白！", "没有周末，只有周报！",
+    "谁先松懈，谁先出局！", "把对手的客户列成清单，一个一个拔掉！", "用他们的市场，养我们的团队！", "别人休息的时候，我们在收割！", "同情心是业绩的毒药！", "服务到客户害怕为止！",
+    "指标翻倍，人手减半，这才叫效率！", "低于均值，就是拖累！", "每一分钟不产出，都是在浪费公司的空气！", "今天不狠，明天就没！", "问题只有一个：单呢？", "对不起三个字，换不来一分钱！",
+    "累了就想想房贷！", "签单之前，不许生病！", "客户是猎物，不是朋友！", "不要解释，要交付！", "谁敢按时下班，谁就是在挑衅！", "把'不可能'三个字从字典里撕掉！",
+    "业绩就是尊严，没业绩就没尊严！", "团队只记得冠军的名字！", "对自己狠一点，对客户再狠一点！", "今天签不下来，明天就换人来签！", "一天不进步，就是在退步等死！", "每一次拒绝都是你没努力的证据！",
+    "别把'尽力了'当成绩！", "工资是公司借你的，业绩是你还的！", "不要让你的坐姿比业绩还稳！", "没有淡季的市场，只有懒惰的销售！", "把客户的钱包翻过来，抖三下！", "你的对手今晚没睡，你凭什么睡？",
+    "冠军吃肉，末位喝西北风！", "会哭的孩子没奶吃，会签的员工才有！", "打不动了就想想被淘汰的样子！", "在这里，慢就是死！", "汇报里少一个零，人生就少一个机会！", "只有结果有人听，过程没人问！",
+    "目标定得不吓人，就没有意义！", "今天是压力，明天是压垮！", "干不完就别回家，家不需要一个失败者！", "工位是租的，业绩是命！", "没有借口的团队，才配叫团队！", "谁拖后腿，就砍谁的腿！",
+    "客户不下单，就再见一次，再再见一次！", "你的KPI，是你的通行证，也是你的判决书！", "不比谁聪明，比谁更狠！", "先干死对手，再谈理想！", "考核的刀口，永远朝着最慢的那个人！", "哪怕签下一个，也别空手回来！",
+    "别等公司裁你，先把自己逼疯！", "拼命是底线，不是上限！", "早上不定目标，晚上就定罪名！", "有些人的工牌，今晚就要回收了！", "把每一句'再想想'都当成'再打一次'！", "不允许亏损，不允许安逸，不允许喘气！",
+    "别问方法，问你自己有没有拼到吐！", "月底见真章，见不到就见走人！", "别把公司当家，家不会考核你！", "抢光他们的客户，榨干他们的市场，断绝他们的生路！", "不要问公司能为你做什么，问问你自己今天配不配活着！", "今天你挤不出业绩，明天团队就挤干你的水分！",
+    "签单不是任务，是活命！", "你的产出，决定你的座位！", "落后一天，全盘皆输！", "把数字做上去，其他都是废话！", "断头台不认加班费，只认成交额！", "午时三刻到了，末位的名字念一遍！",
+    "菜市口的看客都等着，谁今天出单谁留头！", "秋后问斩太慢，我们月底就斩！", "不签单的，自己去领枷锁！", "业绩表就是生死簿，判官只看最后一列！", "阎王要你三更走，业绩差的二更就得走！", "黑白无常已经在前台登记了，来接谁？",
+    "每一个空白的日报，都是提前写好的讣告！", "遗照都拍好了，就差你月底的数字！", "业绩为零的人，工位上先放个花圈！", "头七还没过，你的客户已经被别人签走了！", "不冲的人，公司连悼词都懒得写！", "火刑柱已经点着，谁的转化率最低谁上去！",
+    "凌迟只割三千刀，考核一天割你三万刀！", "十字架背好，不出单的自己往山上走！", "枪决只需一颗子弹，末位淘汰连子弹钱都省！", "墓碑上刻的是名字，绩效表上刻的是罪名！", "棺材板已经在打折，专供不出单的员工！", "给自己挖坑的人，公司提供铲子！",
+    "死在冲锋路上是烈士，死在工位上是懒鬼！", "前线不缺炮灰，缺的是能炸出订单的炮弹！", "冲锋号响了，还在系鞋带的人不用系了！", "战壕里没有午休，只有敌军的火力！", "督战队就在你身后，退一步就开枪！", "军令状签了，完不成就以身谢罪！",
+    "逃兵的下场，比阵亡更难看！", "白刃战开始了，谁手软谁躺下！", "勋章只发给活着回来的，业绩就是你的命！", "弹药就是电话，打空了再装！", "上了战场，你的名字就是数字！", "阵亡名单每月更新，别让家属来收工牌！",
+    "屠宰场的猪至少有人喂，你连饲料都得自己挣！", "磨刀声听到了吗？那是给下个月准备的！", "角斗场只有一个出口，踩着别人的业绩出去！", "狼群不养病狼，队伍不养弱者！", "鲨鱼闻到血就冲，你闻到客户就该扑！", "食物链最底层的，是那个还在犹豫的！",
+    "绞肉机已经开了，进去的是人，出来的是数据！", "榨汁机不会问橙子累不累！", "你是电池，电量归公司，电池壳归你！", "齿轮不需要梦想，转就完了！", "螺丝钉松了就换，别指望被拧回去！", "煤块不燃烧，就是一块黑石头，等着被扔！",
+    "蜡烛两头烧才亮，烧完了公司换新的！", "骆驼被压垮了？换头骆驼继续驮！", "赌桌上没有退出，筹码就是你的工牌！", "零单一天，就是白吃公司一天，账都记着！", "你的时间已经抵押了，赎回价格是业绩！", "卖身契不用签，入职那天就生效了！",
+    "法庭开庭，罪名是转化率过低，证据是你的日报！", "陪审团就是财务部，判决书就是工资条！", "死刑犯还有最后一餐，零单的连外卖都不给！", "镣铐叫做打卡机，钥匙叫做成交！", "流放边疆的人，明天开始跑最偏的片区！", "一人不出单，全组连坐扣绩效！",
+    "组长不达标，整个组满门抄斩！", "天牢里关的都是上个月零单的！", "验尸官的结论写好了：死因，业绩不足！", "太平间的床位比会议室多，别急着躺！", "殡仪馆和人事部共用一个流程！", "遗书要写，写清楚你的客户资源交接给谁！",
+    "祭日定在月底，谁的数字最低谁被祭！", "地狱十八层，最底一层是不出单还请假的！", "想投胎？先把这个月的指标投出来！", "阴曹地府都开始卷了，你还在摸鱼？", "心电图变直线不可怕，销售曲线变直线才是死！", "ICU里也能打电话，别拿病危通知书当请假条！",
+    "呼吸机可以租，业绩租不到！", "体检报告不重要，业绩报告才决定你的寿命！", "猝死之前，记得把单签了！", "血压高说明你还活着，业绩低说明你活不久！", "终点线是画出来的，冲不过去的人被擦掉！", "红牌一张，工位清空，没有第二张黄牌！",
+    "替补席上坐满了想要你工位的人！", "记分牌不会撒谎，会撒谎的是你的借口！", "裁判就是老板，哨声就是裁员！", "天梯往上爬，掉下去的人没有安全网！", "成绩单不及格的，不是留级，是退学！", "挂科可以补考，挂单没有补签！",
+    "开除只需要一张表，你的表已经填了一半！", "羊圈里的羊不会思考，狼只会吃！", "鹰不抓兔子就饿死，你不抓客户也一样！", "蚂蚁扛着十倍的重量，你的指标才三倍！", "蜜蜂采不到蜜就被赶出蜂巢！", "秃鹫在头顶盘旋，等的就是躺平的人！",
+    "沙漠里没有水，只有还没签的客户！", "火山口上开会，谁不发言谁先掉下去！", "海啸来了，游得慢的先淹！", "食堂的窗口按排名排队，末位排到菜没了！", "铁饭碗早砸了，现在连纸饭碗都得抢！", "泡面是奖励，吃不上的人只能闻！",
+    "骨头都留给你了，还嫌硬？", "米缸见底了，去客户那里舀！", "椅子有四条腿，你的业绩得撑住每一条！", "显示器亮着不算工作，订单亮了才算！", "键盘声要响到隔壁公司都害怕！", "鼠标点得再快，不如客户点头一次！",
+    "门禁卡明天还能不能刷，看你今晚的数！", "打卡机记得你迟到，客户记得你没来！", "微信已读不回的，是客户；已死不知的，是你！", "群里静音的人，工位也该静音！", "邮件不回，等着回家写检讨书！", "钉钉一响，魂就得到岗！",
+    "父母问你在忙什么？告诉他们在保命！", "孩子的学费，写在你还没签的合同里！", "婚礼可以推迟，冲刺不能延期！", "相亲的时候记得说业绩，别说感情！", "秒表已经按下，每一秒都在扣分！", "沙漏漏完，工位也漏完！",
+    "闹钟响不是让你醒，是让你冲！", "倒计时挂在墙上，倒的是你的命！", "工资条上的每个零，都是客户给的！", "社保是公司交的，命是你自己搏的！", "罚款不设上限，业绩不设天花板！", "提成是奖赏，底薪是施舍，零单是耻辱！",
+    "花名册每周刷新，别以为你一定在上面！", "黑名单就是末位名单，写上就擦不掉！", "大字报贴在门口，写的是上月零单的名字！", "检讨书写得再好，也换不来一个客户！", "投名状就是第一单，没交的别说自己入了伙！", "生死状按了手印，月底见分晓！",
+    "卖命不是选择，是入职条件！", "别人家的公司谈文化，我们谈存活率！", "存活率每月百分之九十，你在哪个十？", "团建就是一起加班，福利就是不裁你！", "老板的耐心已经用完，你的时间也是！", "求情的话省下来，多打一个电话！",
+    "空调是给出单的人吹的，零单的自带扇子！", "下午茶取消了，改成下午追单！", "年假是传说，季度冲刺才是现实！", "生日不放假，寿星今天要签两单！", "过年回家？先问问你的指标同不同意！", "情人节最好的礼物，是一份签好的合同！",
+    "中秋的月亮再圆，也圆不了你的缺口！", "咖啡免费，因为清醒的人才能被榨！", "睡眠是奢侈品，零单的人消费不起！", "你的黑眼圈，是公司唯一认可的妆容！", "掉头发不算工伤，掉业绩才算重伤！", "胃病是勋章，颈椎病是资历！",
+    "医生说要休息，客户说要报价，听谁的？", "咳嗽不算病，零单才是绝症！", "心理咨询不报销，业绩奖金随时发！", "你的焦虑不够，说明目标定低了！", "崩溃可以，崩溃之后把电话打完！", "客户的犹豫是机会，你的犹豫是罪证！",
+    "抱怨一句，指标加一成！", "沉默是金？在这里沉默是零！", "没有意见，只有指标；没有情绪，只有数据！", "面子留在家里，进门只带脸皮和电话！", "你的名字后面只有两种后缀：冠军或前员工！", "前员工群已经建好，位置随时给你留！",
+    "离职证明打印好了，就等你的零单！", "保安也知道谁要走，因为他看到了排行榜！", "电梯只往上开给冠军，末位走楼梯！", "停车位按业绩分配，零单的停马路！", "工位靠窗的是冠军，靠厕所的是末位！", "周会发言顺序按业绩排，末位最后说，说完就走！",
+    "排行榜倒数三名，红字加粗，全员可见！", "大屏幕滚动的是成交额，滚不到你就滚出去！", "周会不汇报数字的人，下周不用来汇报了！", "日报写感想的，请把感想换成金额！", "周报字数不限，业绩下限是三十万！", "月报交不上来的，直接交离职申请！",
+    "复盘不是反思，是审判！", "每次复盘都有人被开，今天轮到谁？", "指标拆到小时，罪责拆到个人！", "指标不是讨论出来的，是宣判出来的！", "上级说的数字，就是你的生命线！", "中层不背锅，中层背指标；背不动的，滚！",
+    "总监也在淘汰名单上，别以为职级能保命！", "新人三个月不开单，试用期变临终期！", "老员工不出单，资历就是墓志铭！", "实习生都开单了，你的全薪拿得心不慌？", "培训不是福利，是磨刀，磨完就上阵！", "入职第一天就该有单，第二天就该有客户名单！",
+    "你的成长，公司不关心；你的成交，公司只关心！", "潜力是借口，业绩是通货！", "努力不入账，签字才入账！", "态度好不加分，数字好才不扣分！", "情商是用来签单的，不是用来共情的！", "谦让是美德？在排行榜上是自杀！",
+    "客户说要商量？那就把他要商量的人也约出来！", "客户说没钱？帮他找出来！", "客户说不需要？那是你还没说到他的痛处！", "客户不接电话？去他公司门口等！", "客户在开会？等到散会，等到深夜！", "客户出差了？买票跟上去！",
+    "客户的老婆都该认识你，你才算做了跟进！", "客户的生日比你爸的生日重要！", "客户投诉你太烦？说明你还不够烦！", "拉黑你的客户，换个号码再打！", "报价单发出去不跟进，等于扔进火里！", "合同不盖章，一切都是幻觉！",
+    "意向不是订单，订金才是！", "回款没到账，签的单等于没签！", "尾款拖着不催，你的工资也拖着不发！", "说客户资源少的人，是没去过对手的停车场！", "抢单是本事，让单是耻辱！", "同事的客户你签了，那是你的能耐！",
+    "内部竞争不是内耗，是自然选择！", "隔壁组的名额，是你踩着他们拿的！", "团队协作？先活下来再说协作！", "互相帮助？锅可以分，单不能分！", "别人的失误，就是你的机会窗口！", "你的同事今晚在打电话，你在刷手机？",
+    "你旁边的空工位，是上周的零单留下的！", "别问谁被裁了，问问自己凭什么没被裁！", "裁员不是坏事，空出来的客户归活着的人！", "优化名单不公开，但你自己知道在不在！", "人事部的表格，比你的合同更新得快！", "降本增效第一刀，砍的是不出单的！",
+    "组织架构调整，调整的就是你！", "末位不是百分之十，是所有没达标的人！", "淘汰不看排名，看达标；都没达标就全淘汰！", "达标线不是终点，是起刑点！", "同比不增长，环比就换人！", "增速低于行业，人就低于地面！",
+    "市场下行？那是你下行，市场没有心情！", "经济不好不是借口，客户的钱又不在你口袋！", "大环境不好？大环境会替你交房租吗？", "别看新闻，新闻不会签单！", "行业寒冬，冻死的都是不动的人！", "别人裁员，我们扩招，招来的人替换你！",
+    "竞品倒闭了，他们的客户在等你的电话！", "对手降价了？那就抢他的客户再降他的价！", "对手在开庆功会，正好去抢他们没人接的电话！", "打不死对手，就等着对手打死你！", "市场份额是抢的，不是等的！", "让对手的销售失业，是你的KPI之一！",
+    "对手的年终奖，本该是你的！", "客户回头找对手，说明你的跟进是假的！", "每丢一个客户，就扣一个月的信任！", "丢单要写报告，报告结尾要写处分！", "掉单的人今晚别睡，把单找回来！", "单子跑了，你追；追不回来，你走！",
+    "客户流失率就是你的失血率！", "老客户不复购，是你死了一半！", "新客户不开发，是你死了另一半！", "转介绍不做，说明客户不想认识你！", "电话量不够，说明你的手指在偷懒！", "拜访量不够的人，鞋是新的，人是旧的！",
+    "通讯录不过千，别说自己是做销售的！", "朋友圈不发产品的，视为叛逃！", "家人群也是渠道，亲戚也是客户！", "同学会是签单会，婚礼是招商会！", "送孩子上学的路上，也能拜访一家！", "通勤时间不打电话，等于坐着浪费钱！",
+    "上厕所带着手机，客户不等你冲水！", "午饭十分钟，超时按早退处理！", "吃饭的时候手别停，报价单不会自己发出去！", "喝水可以，别喝到失去斗志！", "站着开会，坐着干活，躺着淘汰！", "手机静音的人，是在给客户机会拒绝你！",
+    "关机就是逃岗，飞行模式就是叛变！", "电量低于百分之二十，你的斗志也该充电了！", "你的手机壳可以旧，你的话术不能旧！", "话术背不熟，就抄一百遍！", "产品参数记不住，回去吃饭前默写！", "演练不合格，明天别去见客户，去见人事！",
+    "培训考试不及格，绩效直接为零！", "学习是自费的，产出是公司的！", "别指望公司教你，公司只考你！", "师傅带你三天，第四天开始比你狠！", "你的导师会第一个举报你的懒！", "组长的奖金看你的单，组长的眼睛盯着你的手！",
+    "老板办公室的门开着，带单进去，或者带箱子出来！", "老板记得每个人的业绩，但不记得零单的人的脸！", "想升职？先让排行榜记住你三个月！", "想加薪？先把成交额加上去再开口！", "想转正？合同换你的转正表！", "想要尊重？排行榜第一名自动获得！",
+    "你的椅子转得再快，也转不出一个客户！", "电脑可以重启，淘汰不能撤回！", "公司的WiFi密码每月换，零单的人不告诉！", "你的价值等于你的成交额除以你的工资！", "你的定价写在排行榜上，不在简历上！", "每个人都是成本，只有出单的人是资产！",
+    "公司的账本上，零单的人记在坏账栏！", "你不是员工，是投资标的；不涨就抛！", "你不是人力，是耗材，用完就换！", "你的工位是产能，闲置就是浪费！", "你的时间是公司的库存，过期就报废！", "产能不足的机器要维修，产能不足的人要更换！",
+    "公司不是避风港，是暴风眼！", "团队精神就是一起冲，一起活，或者一起死！", "战友不冲锋，就是敌人的内应！", "公司的地板每月拖一次，拖走的是末位的痕迹！", "荣誉墙只留三个人，其他人的照片明天摘！", "战报每天早上发，红的是英雄，黑的是烈士！",
+    "晨会喊口号声音小的，罚打五十个电话！", "晨会迟到一分钟，当天业绩不计！", "早会不来，等于自动退出比赛！", "下班前不报数的人，等于报了零！", "九点的办公室，应该像早上九点一样满！", "十点走的是中庸，十一点走的是及格，十二点走的才是奋斗！",
+    "加班不打卡，因为加班就是正常上班！", "通宵不是特例，是节奏！", "三天一个通宵，一周一个奇迹！", "熬夜是标配，请假是异类！", "周六是工作日，周日是冲刺日！", "跳槽？先看看你的业绩能不能让下家收尸！",
+    "请假条上写业绩，批不批看数字！", "病假要出示业绩证明，婚假要出示合同！", "产假不是理由，客户不介意婴儿哭！", "葬礼请假可以，回来把丢的单补上！", "陪家人的时间是借的，利息是明天的双倍指标！", "你的私生活已经被公司征用！",
+    "下班后的时间叫作\"未开发市场\"！", "你的梦里也该有客户的名字！", "早上醒来第一件事：看昨天的漏斗！", "睡前最后一件事：给客户发晚安报价！", "白日梦不许做，白天的单必须做！", "理想是给冠军讲的，末位只配听通知！",
+    "情怀不值钱，签字才值钱！", "兴趣是奢侈品，指标是必需品！", "热爱不能量化，成交能！", "快乐不能兑现，回款能！", "幸福感由财务部发放，仅限达标者！", "自由是达标后的三分钟！",
+    "松一口气的代价，是三个客户！", "深呼吸一次的功夫，排行榜已经换了三个名字！", "停下来的人，会被后面的人踩成台阶！", "慢一步是掉队，慢两步是掉名单！", "犹豫是死亡的前奏，拖延是自杀的方式！", "你等的客户，别人已经签了三次！",
+    "会议室里的PPT再漂亮，不如门外的一张订单！", "你的计划书还没写完，对手的合同已经盖章了！", "抬头看天的人，脚下的工位已经被搬走！", "别看窗外，窗外没有客户！", "别刷短视频，短视频里没有你的工资！", "别玩手机，除非你在给客户打电话！",
+    "摸鱼的鱼，最后都进了锅！", "划水的人，会被潮水拍死！", "躺平的地方，就是你的坟！", "佛系的下场，是被送去庙里当香火钱！", "混日子的人，日子会先把你混掉！", "想稳定？去博物馆，那里的东西都不动！",
+    "舒适区就是刑场，进去就是等死！", "安全感是幻觉，只有排行榜是真的！", "稳定是骗子的词，增长才是活人的词！", "你以为的底线，是公司的起跑线！", "你以为的极限，是明天的最低标准！", "上个月的冠军，这个月的起点！",
+    "昨天的业绩已经过期，今天从零开始！", "每天归零，每天重生，或者每天等死！", "历史业绩不能当饭吃，今天的单才能！", "过去的荣誉是枕头，枕着睡的人醒不来！", "冠军奖杯下面，压着下个月的翻倍指标！", "第一名的奖励是更高的指标，第二名的奖励是被淘汰！",
+    "拿了奖金的人别高兴，明天开始还债！", "拿了提成就是签了新的卖命合同！", "奖金是鱼饵，指标是鱼钩！", "胡萝卜前面是鞭子，鞭子后面是断头台！", "鞭子抽不动的，换刀！", "挨骂是福利，被无视才是判决！",
+    "老板骂你说明你还有救，不骂你说明表已经批了！", "被点名批评的，今晚别走；没被点名的，明天别来！", "骂人的会议是给活人开的，安静的会议是给名单开的！", "会说的人多了，会签的人才稀缺！", "讲故事的销售，最后自己成了故事！", "说困难的人，就是困难本身！",
+    "不许说\"但是\"，\"但是\"后面全是墓志铭！", "排行榜没有并列，只有上下！", "\"下个月一定\"是遗言，不是承诺！", "\"我在跟进\"是最贵的谎言！", "\"客户很有意向\"翻译过来是\"我没签下来\"！", "借口的数量和淘汰的概率成正比！",
+    "理由说得越圆，位子空得越快！", "别打感情牌，公司不收感情！", "苦劳是给老人讲的，你只有功劳可以讲！", "忠诚不能当业绩，业绩才是唯一的忠诚！", "你和公司的关系，只维持到下一张报表！", "公司记得你的每一分成交，不记得你的每一滴汗！",
+    "汗水不能存银行，签字能！", "眼泪流在工位上，会腐蚀键盘，不会增加订单！", "你的委屈没有发票，报不了！", "抗压能力是这里唯一的入职培训！", "你可以恨我，但你得先把单签了再恨！", "表格里没有\"努力\"这一栏！",
+    "后台不识别汉字，只识别金额！", "后台只显示两种颜色：绿的留，灰的走！", "漏斗底部没有数字的人，漏斗顶部也不需要你！", "跟进记录空白，跟你的前途一样空白！", "CRM里没有更新，人事里就会更新！", "客户名单不够长，离职名单就会更长！",
+    "客户记不住你的名字，人事会记住！", "每天一百个电话是及格，两百个才是活人！", "报价不等客户问，问了就是晚了！", "嗓子没哑，说明电话没打够！", "客户的沉默不是答案，是你下一通电话的理由！", "鞋底没磨穿，别说市场不好！",
+    "名片发完了才能回来，发不完就在外面睡！", "不带回一张名片，就不许进门！", "门口的地毯写着\"不出单者止步\"！", "公司大门只有两个方向：进来卖命，出去要饭！", "每一层楼都有名额要砍，每一层楼都有人在数！", "这栋楼里没有安全的位置，只有还没轮到的位置！",
+    "消防通道是给火用的，不是给你跑的！", "电梯里也能签单，别浪费三十秒！", "楼道里的烟是给冠军抽的，末位没时间抽！", "茶水间是谈客户的，不是谈心的！", "会议室的投影仪照的是排行榜，不是你的PPT！", "办公室的每一盏灯，都是用订单点亮的！",
+    "空调温度按业绩调，零单的组冬天不供暖！", "饮水机的水是给达标的人喝的，其余的喝自来水！", "工位的绿植都比你能产氧，你产了什么？", "你的显示器比你更努力，至少它一直亮着！", "打印机一天吐三百份合同，你吐了几份？", "键盘上最该磨掉的键是回车，别磨掉了删除！",
+    "白板上的目标不是装饰，是通缉令！", "墙上的口号会换，末位的下场不会！", "门上的名牌可以换人，指标不会换数字！", "公司会变，指标会涨，唯一不变的是淘汰！", "商业的本质是吞噬，吞不下的人就是被吞的！", "市场没有慈善，公司没有慈悲，客户没有耐心！",
+    "弱肉强食不是比喻，是排行榜！", "数字不会疲劳，所以你也不许！", "合同的墨水没干之前，谁也不许坐下！", "物竞天择，公司就是天！", "适者生存，不适者请去人事部！", "你的简历在这里只有一行有用：本月成交！",
+    "你的人生意义，就是这个季度的数字！", "你的一生，从公司的角度看只有一个季度长！", "站着淘汰别人，或者躺着被别人淘汰！", "这个月的最后一天，不是月底，是审判日！", "今晚十二点，排行榜和淘汰榜同时更新！", "记住：你的价值不是你，是你签的字！",
+    "记住：公司不会哭，只会换人！", "别求老天保佑，老天也得看排行榜！", "祈祷不如拨号，烧香不如上门！", "神仙来了也得先出单！", "佛祖不保佑零单的人，只保佑冲刺的人！", "命运不在你手里，在客户的签字笔里！",
+    "风水轮流转？在这里只转排行榜！", "运气这个词，只允许出现在冠军的谦虚里！", "历史只记录赢家，公司只保留赢家！", "谁笑到最后？签到最后的人！", "骨头缝里榨出来的业绩，才叫真业绩！", "咬牙签下来的单，比躺着丢的单值钱一万倍！",
+    "冲到最后一口气，那口气也得用来报价！", "累是常态，死是意外，零单是必然的淘汰！", "活着走出这个季度的人，才配谈下个季度！", "别数还剩几天，数还差几单！", "简历上写\"抗压\"的人，今天来证明一下！", "打印室的纸不够了，因为通报单印太多！",
+    "前台的笑容只对客户和冠军开放！", "试用期不是缓冲期，是加速淘汰期！"];
+  const CN_BANNER_POOL = ["公司不养闲人，团队不养懒人；想留下的，拿命来换！", "少在下面发牢骚，多在台上拿业绩；听指挥、敢拼命，才是合格员工！", "这里是战场不是养老院，不服管教的走人，不敢拼命的滚蛋！", "年轻人不要整天想着偷懒，付出多少拿多少，天地公道！", "今天我对你们严格，是为你们好；明天社会淘汰你们，可没人可怜你们！", "收起你们的娇气和傲气，把执行力拉满，把指标给我啃下来！",
+    "把公司当成自己的家，把指标当成自己的命；谁拖后腿，谁就是全员公敌！", "不要问团队能给你们什么，先问问你们为团队拼过什么！", "集体荣誉大于天，个人利益往后签；听话照干，保证你们吃香喝辣！", "没有公司这个平台，你们什么都不是；学会感恩，全力冲刺！", "教你们是给你们机会，逼你们是促你们成才；不理解也得给我死磕！", "狼群出征，见肉就抢；谁要是拖了队伍的后腿，别怪团队无情！",
+    "集体立下生死状，完不成指标，全员无颜见江东父老！", "要当就当战功赫赫的狼，别当任人宰割的羊；全员冲锋，没有退路！", "听懂规矩、服从命令、干出结果；拿不下市场，所有人集体领罚！", "今天不听劝、不拼命，明天全员陪着公司一起喝西北风！", "全员听令：指标不达，谁都别想下班！", "别拿借口糊弄我，我只看结果，不听故事！",
+    "听话、出活、不抱怨，这三条做不到的自己走！", "把手机收起来，把脑子打开，把业绩做上来！", "公司给你们发工资，不是请你们来喝茶的！", "今天的懒惰，就是明天的失业通知书！", "态度端正、动作要快、嘴要闭紧！", "不要跟我讲困难，困难是给弱者准备的！",
+    "你们不是来交朋友的，是来打仗的！", "执行力就是生命力，谁慢谁死！", "每一分钟都是公司的钱，别浪费！", "别把'我尽力了'挂嘴边，尽力不等于做到！", "抱怨的人先走，拼命的人留下！", "服从是第一美德，结果是唯一标准！",
+    "吃得了苦，才配得上这份工资！", "别指望有人替你兜底，自己的坑自己填！", "今天给我干出成绩，明天才有资格谈感受！", "公司不是慈善机构，养不起躺平的人！", "别问加不加班，问自己对不对得起工资！", "军令如山，指标如铁，谁都别想含糊！",
+    "不换脑子，就换人！", "嘴上说忠诚没用，用业绩证明！", "把你们的委屈咽下去，把客户的钱拿回来！", "全员皆兵，不留一个观众！", "你的工位不是你的，是公司借你的！", "公司是船，谁凿船，谁下海！",
+    "一荣俱荣，一损俱损；谁掉链子，全员挨罚！", "没有团队，你们连饭碗都端不稳！", "个人服从集体，集体服从目标！", "团队的命运，握在每个人的手里，别当逃兵！", "公司给了你舞台，你要还公司一个奇迹！", "在这里，感恩是义务，拼命是本分！",
+    "不要计较得失，公司永远不会亏待拼命的人！", "全员一条心，指标才能拿；一人开小差，全员付代价！", "谁给团队抹黑，团队就让谁出局！", "公司兴衰，人人有责；业绩不达，人人有罪！", "在这条船上，没有乘客，只有水手！", "团队不需要英雄，需要的是不掉队的士兵！",
+    "为集体流汗，才配为自己流泪！", "公司利益高于一切，个人想法请留在家里！", "一人偷懒，全员买单；一人拼命，全员受益！", "感恩平台，服从安排，拼命冲刺！", "别人在替你扛指标的时候，你在干什么？！", "集体的荣誉，就是你们唯一的勋章！",
+    "狼性团队，弱者退散！", "要么做头狼，要么做狼的口粮！", "市场是抢来的，不是等来的！", "不出单的狼不配叫狼！", "猎物就在眼前，谁犹豫谁饿死！", "团队只记冠军，不记努力！",
+    "末位淘汰，绝不留情；冲锋在前，重赏不吝！", "这一战输了，大家一起卷铺盖！", "每个月都是决赛，没有热身赛！", "不拿下客户，就把自己交出去！", "狼群不养病狼，团队不留弱者！", "成王败寇，业绩说话！",
+    "要么带着业绩回来，要么别回来！", "咬住目标不松口，撕开市场不留情！", "谁掉队，谁出局；谁冲锋，谁封神！", "一个人失守，全队陪葬！", "别等团队救你，团队只会淘汰你！", "想活下来，就得比别人更狠！",
+    "今天不冲，明天集体喝西北风！", "猎场没有第二名，只有猎人和猎物！", "把对手打趴下，把市场吞下去！", "没有全员达标，就没有全员奖金！", "集体荣誉靠抢，个人饭碗靠拼！", "用业绩证明你还配留在狼群里！",
+    "谁在战壕里躲着，谁就第一个出局！", "让对手颤抖，让客户投降！", "狼性不是口号，是牙齿！", "拿不出结果的团队，不配有明天！", "今天多啃一块骨头，明天多活一天！", "别怕流血，怕的是流血没结果！",
+    "没有退路的人，才跑得最快！", "把指标钉死，把对手钉死！", "打不下市场，全员写检讨！", "冲锋号一响，谁都别想躲！", "不在冲锋中崛起，就在安逸中淘汰！", "狼的眼里只有猎物，没有借口！",
+    "这个月不翻倍，下个月不见人！", "争第一是义务，拿第一是本分！", "不拿结果的人，团队不会记得你！", "全员冲锋，剑指第一，绝不后退！", "胜利属于狼群，淘汰留给绵羊！", "工资是公司给的，本事是公司教的；不懂感恩的人，走到哪儿都是废人！",
+    "年轻不是资本，是欠债；欠公司的成长，要用加班来还！", "别拿家里那套娇生惯养带进办公室，这里只认能干活的手！", "领导批评你，是看得起你；领导不理你，你就该收拾东西了！", "上班不是来上学的，没人有义务哄着你成长！", "累是正常的，不累说明你没干活；委屈是多余的，有空委屈不如多打一个电话！", "你的青春不值钱，你的产出才值钱！",
+    "睡觉是给死人准备的，活人只有工作！", "别人在冲刺，你在刷短视频；别人在升职，你在找借口！", "眼里没活的人，公司眼里也没有你！", "少问为什么，多问怎么办；老板说的每一句话，都是对的！", "记住：你不是在为公司打工，是在为自己的前途打工；所以加班理所应当！", "玻璃心请碎在门外，办公室只收钢铁心脏！",
+    "不要拿“我还年轻”当挡箭牌，年轻就该被榨干！", "老板骂你是恨铁不成钢，老板不骂你是已经放弃你！", "下班早的人，早晚被淘汰；下班晚的人，晚晚有饭吃！", "没有一份工资是白发的，每一分钱都要拿汗水来换！", "来这里就是被磨的，磨不出来是你的问题，不是磨盘的问题！", "把“辛苦”两个字从字典里撕掉，这里只有“应该”！",
+    "想请假？先想想你这个月的数据配不配休息！", "老板的时间是金子，你的时间是公司的；别拿公司的东西自己享受！", "不懂的就学，学不会就熬，熬不住就是你的命！", "情绪是留给失败者的奢侈品，成功者只有任务清单！", "工作没有分内分外，只有做完没做完！", "培训不是福利，是投资；投资了你，你就得给公司回本！",
+    "别人的周末是周末，你的周末叫备战！", "哭可以，哭完把报表交上来！", "你说压力大？压力大说明公司看得起你！", "记住你的身份：你是螺丝钉，不是方向盘！", "领导让你往东，你别往西；领导让你加班，你别问几点！", "学历不值钱，态度才值钱；态度不够好，学历再高也是垃圾！",
+    "别嫌工资低，先问问自己值不值这个价！", "会议室里不许打瞌睡，打瞌睡的人心里没有公司！", "今天你嫌活多，明天有的是人抢着干你的活！", "敬业不是口号，是每天最后一个走出办公室！", "年轻人吃亏是福，多吃点亏，公司才好安排你！", "你的能力配不上你的野心，就先把野心收起来干活！",
+    "在公司，没有“我觉得”，只有“领导说”！", "病假可以批，业绩不会等；想好了再请！", "不主动加班的人，就是主动申请淘汰！", "身体是革命的本钱，但本钱是拿来花的，不是拿来供的！", "咖啡是燃料，闹钟是号角，键盘是武器，睡意是敌人！", "抬头看目标，低头干活，别东张西望看别人怎么摸鱼！",
+    "少刷朋友圈，多刷客户圈！", "别人夸你是客气，领导批你才是真心！", "感谢每一次通宵，那是公司在锻造你！", "十八般武艺不如一个“服从”，聪明脑袋不如一双勤快的手！", "所谓能力，就是领导说得出，你就做得到！", "没有不合理的要求，只有不合格的执行！",
+    "把家里的事留在家里，把公司的事带回家里！", "公司让你成长，成长的代价就是你的时间、你的睡眠、你的周末！", "你以为你在打工，其实公司是在渡你！", "干得慢就是在偷，干得差就是在抢，干得少就是在骗！", "不要跟公司谈平衡，工作就是你的生活！", "上班迟到一分钟，说明你心里对公司少了一分敬畏！",
+    "别把“我不会”挂嘴上，学会之前先熬夜！", "你不是主角，你是零件；零件不需要情绪，只需要转！", "任务下来不许讨论，讨论就是拖延，拖延就是叛变！", "每一个抱怨的念头，都是对老板的一次背叛！", "领导画的饼，你要当成米饭吃下去！", "加班不是公司的要求，是你自己该有的觉悟！",
+    "把“下班”从你的词汇表里删掉，把“完成”刻进骨头里！", "熬夜伤身，摸鱼伤心；伤心的是公司，伤身是你自己活该！", "面试时说的那些话，现在该兑现了！", "头发掉了可以再长，指标没了饭碗不保！", "工位是你的战位，椅子是你的马鞍，不许离开半步！", "世界上没有难做的事，只有不肯熬的人！",
+    "别人能做到的，你也必须做到；别人做不到的，你更要做到！", "挨骂是成长的营养，没挨过骂的员工是温室里的花！", "主动汇报叫忠诚，被动汇报叫敷衍，不汇报叫背叛！", "别在公司谈梦想，你的梦想就是公司的指标！", "眼泪解决不了客户，只有电话能！", "老板的批评是灯塔，你得顺着挨骂的方向游！",
+    "站起来的时候想想工资，坐下去的时候想想指标！", "别拿“身体不舒服”当理由，客户可不管你舒不舒服！", "工作是你的信仰，公司是你的道场，老板是你的师父！", "不学习的员工是公司的负担，不进步的员工是公司的毒瘤！", "你的第一份忠诚给公司，第二份忠诚给领导，剩下的自己留着！", "早到一小时是本分，晚走两小时是常识！",
+    "公司不需要你的意见，需要你的执行！", "干活别讲条件，讲条件的都被条件淘汰了！", "客户是衣食父母，公司是再生父母，你得孝敬两家！", "责任心是免费的，但没责任心的代价很贵！", "谁说累，谁就是在承认自己不行！", "把领导的指令刻在脑子里，把客户的需求刻在心上，把自己的想法扔进垃圾桶！",
+    "忙才是福气，闲着就是公司在浪费你！", "说“做不到”之前，先问问自己熬了几个通宵！", "拿了年终奖再想跳槽的，是白眼狼；没拿年终奖就跳的，是傻子！", "公司的规章是圣经，谁质疑谁就是异端！", "你嫌工资低，是因为你干得少；你嫌加班多，是因为你干得慢！", "今天你不逼自己，明天公司就得逼你走！",
+    "少年不努力，中年被优化！", "你不是员工，你是公司的信徒；信徒不问回报，只献身！", "别用你的辛苦感动自己，用结果感动老板！", "手机响一次，客户少一个；朋友圈发一条，业绩掉一截！", "谁把公司的规矩当耳旁风，公司就把谁当过路风！", "拒绝借口，拒绝拖延，拒绝“明天再说”！",
+    "老板的一句“辛苦了”，抵得上你熬的一百个夜！", "我们不看你几点来，只看你几点走！", "做不到“随叫随到”的，就别指望“随涨随升”！", "精神不是用来消费的，是用来透支的！", "不要问公司有没有前途，先问自己有没有用处！", "你不努力，谁都帮不了你；你一努力，公司就是你的靠山！",
+    "犯错不可怕，可怕的是你还敢解释！", "年轻人，多干少说，说多了没人喜欢你！", "领导没说下班，就当今天没有下班这回事！", "假期是给客户放的，不是给你放的！", "白天干不完，晚上接着干；晚上干不完，第二天早点来！", "把加班当成修行，把指标当成功课，把老板当成佛！",
+    "没有天生的好员工，只有被骂出来的好员工！", "少点自尊，多点业绩；自尊不能换工资，业绩可以！", "别把公司的宽容当成你的资本！", "干活的时候不许看表，看表的人心里已经下班了！", "你不是在做工作，你是在做人；做不好工作，就是做不好人！", "腰可以弯，头可以低，指标不能低！",
+    "老板给你安排的每一件事，都是他对你的信任，别辜负！", "不进步的每一天，都是在给自己挖坟！", "睁开眼是指标，闭上眼是客户，做梦也得梦见业绩！", "什么叫职业化？领导凌晨两点发消息，你两点零一分回复！", "别谈“生活”，你现在还没资格谈生活！", "没有伞的孩子必须努力奔跑，没有背景的员工必须拼命加班！",
+    "你的价值不是你觉得，是老板觉得！", "学会闭嘴，学会点头，学会说“收到”！", "不许提“劳动法”，公司的规定就是法！", "想涨薪？先把自己变成公司离不开的人！", "一天不学习，落后一年；一天不冲刺，落后一生！", "周末不看工作群的人，星期一就别来了！",
+    "这份工作是很多人求都求不来的，你还有什么脸抱怨？", "谁要是敢准点下班，就是在向全公司挑衅！", "工牌挂在胸口，就得把公司挂在心口！", "你今天的每一次抱怨，都会变成明天的每一次失败！", "不要用你的辛苦来绑架公司，公司只认你的产出！", "有能力的多干，没能力的更要多干！",
+    "好员工不问薪水，只问任务！", "别拿离职威胁公司，公司缺谁都照样转！", "别人下班你别走，别人休假你别停，这就是你脱颖而出的秘诀！", "你的私生活不重要，重要的是你的KPI！", "想混日子？外面的世界会教你做人！", "公司发的不是工资，是救济；领了救济就得听话！",
+    "没有“我以为”，只有“领导要”；没有“差不多”，只有“零差错”！", "抗压能力是标配，脆弱是缺陷！", "在公司眼里，你不是人才，是耗材；耗材就该被用到最后一滴！", "把公司的会议当成课堂，把老板的训话当成经文！", "不要计较今天的付出，公司会在你退休那天记得你！", "少问回报，多问贡献；先做牛马，再谈人生！",
+    "公司养了你三年，你欠公司一辈子！", "老板的白发是为你们熬的，你们的黑眼圈算什么！", "谁要是提离职，就是在往兄弟们的心口捅刀子！", "公司是你们的父母，父母困难的时候，孩子就得拿命顶上！", "你辞职的那一刻，就是你背叛所有同事的那一刻！", "大家都在加班，你先走了，你的良心过得去吗？",
+    "每一次早退，都是把担子压在同事肩上；每一次敷衍，都是往公司脸上抹灰！", "你的父母还在等你出人头地，公司还在等你出业绩！", "老板的信任不是白给的，辜负一次，永远别想再有！", "谁在背后说公司的坏话，谁就是在砸所有人的饭碗！", "想想你的房贷，想想你的孩子，你还敢懈怠？", "公司困难的时候你不在，公司辉煌的时候也不会有你！",
+    "领导熬夜改你的方案，你却在数下班的钟声，你配吗？", "哪个团队没你，公司照样转；你没了公司，一天都活不下去！", "谁不愿意为公司牺牲，公司就替他做出牺牲！", "不要让你的懒惰，成为同事的负担，成为公司的伤疤！", "你的绩效不是你一个人的，是全部门的脸面！", "吃着公司的饭，砸着公司的锅，天理难容！",
+    "公司给你交五险一金，你拿什么回报？一句“我尽力了”？", "每一位不加班的员工，都在拖累一位加班的同事！", "团队的成绩单上，没有你的名字，只有你留下的窟窿！", "没有对公司的忠诚，就没有对家人的交代！", "谁要是把公司的事往外说，就是自己把自己开除！", "集体开会你请假，集体加班你早退，集体奖金你伸手？",
+    "你今天摸的鱼，都是同事替你抓的；你今天欠的账，团队替你还！", "拿着公司的钱不为公司卖命，跟偷有什么区别？", "老板不欠你的，是你欠老板一个奇迹！", "部门每一次挨骂，都有你的一份责任！", "你有孩子要养，公司也有几百张嘴要养，别只想着自己！", "公司的每一个客户，都是全体员工的饭碗，别把碗打碎！",
+    "想跳槽的人，先问问自己对得起谁！", "公司对你的好，你要用余生来记；公司对你的严，你要用感恩来接！", "公司的规矩你觉得不合理，是因为你还没资格理解！", "你的懒散，是对同事的不尊重，是对领导的不忠诚，是对公司的不感恩！", "领导批评你的时候，全公司都在看你怎么回应！", "公司的损失就是你的损失，公司的耻辱就是你的耻辱！",
+    "你以为你在为自己活？你的每一个决定都关系到几十个家庭！", "别让公司成为你人生的过客，让你成为公司的传说！", "谁往外投简历，谁就是在往同事的碗里吐口水！", "忠诚不是说出来的，是从不下班证明出来的！", "你的每一次懈怠，都在给对手公司送礼！", "领导陪你熬的每一个夜，你都要用十倍的业绩来偿还！",
+    "不为公司着想的人，不配为自己的家庭着想！", "你嫌公司苦，公司还嫌你不够拼呢！", "有人半夜还在回客户，你却敢把手机静音？", "把个人的事放在公司前面的人，就是集体的蛀虫！", "公司对你的每一次容忍，都是在从别人身上扣钱！", "不要问公司为什么不涨薪，先问问自己为什么让公司失望！",
+    "领导的期望就是你的债务，还不上就是老赖！", "谁提“工作生活平衡”，谁就是不打算在这里干长久！", "你可以走，但走之前想想是谁给了你今天的一切！", "员工的每一分懒惰，都要老板用白头发去买单！", "你的病假单，是全部门的加班单！", "公司给你的机会，是别人拿命都换不来的！",
+    "谁要是敢让客户等，就等于在扇整个公司的耳光！", "客户的电话就是圣旨，敢不接就是欺君！", "你的岗位是公司的信任，你的离职是公司的伤疤！", "不感恩的人，走遍天下都没有立足之地！", "部门是一个整体，你的懒惰是整体的癌症！", "想想那些被裁掉的同事，他们多想有你今天的机会！",
+    "公司容忍你犯错，是给你面子；你再犯，就是给公司丢脸！", "你的家人指望你，你的同事依靠你，你有什么资格躺平？", "老板把公司交给你们，你们却把时间交给了手机！", "领导没喊停，就是让你继续；领导没说好，就是让你重做！", "谁要是敢在公司困难的时候谈薪资，谁就是趁火打劫！", "你不是一个人在工作，你的每一次失误都在连累整个部门！",
+    "公司培养你，是希望你回报；你若走了，就是忘恩负义！", "别人的通宵是奉献，你的准点下班是逃跑！", "在公司不顺心就辞职的人，在哪里都干不长！", "老板的今天，是拿命拼来的；你的今天，是老板赏的！", "你一个人的懈怠，让整个团队在客户面前抬不起头！", "拒绝加班就是拒绝团队，拒绝团队就是拒绝未来！",
+    "不忠诚的人，比不能干的人更可恨！", "公司的荣誉墙上没有你的照片，是因为你还不够拼！", "你的成绩是公司的，你的失败是你自己的！", "提离职之前，先想想带你的师傅有多寒心！", "你的一句“太累了”，会让整个团队都松懈！", "公司在你身上花的钱，你得用血汗一分一分还回来！",
+    "领导给你发消息，秒回是尊重，慢回是傲慢，不回是背叛！", "团队不是你的靠山，团队是你要扛的山！", "你的绩效差，丢的不是你自己的脸，是带你的领导的脸！", "别人在为公司卖命，你在为自己算账，你还有脸领工资？", "谁要是拖了项目进度，就是在偷全公司的时间！", "出了问题不要找借口，找借口就是在把锅甩给兄弟们！",
+    "你把公司当跳板，公司就把你当垃圾！", "团队的每一次失败，都要追到具体的人！", "你不做的活，总有人替你做；你不背的锅，总有人替你背；你好意思吗？", "谁的数据拖了后腿，谁就站到台上给大家解释！", "不能为公司分忧的员工，就是公司的累赘！", "你休的是假，团队丢的是单！",
+    "公司给了你身份，你得给公司卖命！", "谁泄露薪资，谁就是在挑拨同事的团结！", "上班时间聊私事，就是拿全公司的钱养自己的闲！", "你今天对公司的每一分冷漠，公司都会在裁员名单上还给你！", "团队的荣誉挂在墙上，你的责任压在肩上！", "你的工资是同事们帮你挣的，你有什么脸嫌少？",
+    "谁不把公司的事当自己的事，谁就别把自己当公司的人！", "领导可以骂你，你不能顶嘴；顶嘴就是不认这个家！", "不愿为团队牺牲个人时间的人，团队也不会为他留位置！", "对公司三心二意，就是对自己的人生不负责任！", "领导的忍耐是有限度的，你的表现已经在挑战底线！", "你在这里的每一天，都是公司在替你担着风险！",
+    "对公司的忠诚度，就是你人品的分数！", "谁敢在客户面前说公司的不是，谁就是全体员工的叛徒！", "兄弟们都在拼，你在混，你晚上睡得着吗？", "团队的血汗不是让你来享受的，是让你来添砖加瓦的！", "你辜负的不是公司，是所有相信你的人！", "公司的每一分困难，都是员工不够努力造成的！",
+    "老板今天的每一个决定，都是为了让你们有饭吃，不理解也要执行！", "谁要是让团队在总部面前丢脸，团队就让谁在所有人面前丢脸！", "有本事跳槽，没本事就闭嘴干活！", "你不是在给公司打工，你是在替公司挡子弹，挡不住就是你的失职！", "谁给公司添麻烦，公司就给谁的档案添一笔！", "你的每一次迟到，都是对准时同事的一次侮辱！",
+    "团队精神就是：你的时间不是你的，是团队的！", "领导替你扛了多少责任，你就得替领导扛多少指标！", "公司的名声就是你的名声，公司的失败就是你的失败！", "谁想清闲，外面的马路很宽，走好不送！", "你在公司里的每一个不良情绪，都是在给同事下毒！", "团队的信任是有限的，用完就没了；你已经用了多少？",
+    "你的错误，全部门陪你返工；你的失误，全公司陪你挨骂！", "老板对你狠，是把你当自己人；老板对你客气，你就该害怕了！", "团队给了你舞台，你却在后台睡觉！", "谁要是把公司当过渡，公司就把谁当过客！", "你的每一份偷懒，都会在年底的裁员会上被算总账！", "别人的孩子在等爸爸回家，你的同事在等你交方案！",
+    "别把领导的关心当成软弱，别把公司的耐心当成理所当然！", "领导的每一次不高兴，你们都要反省三天！", "所有人的奖金，都挂在你的那一单上，别让大家白干！", "公司的墙上写着感恩，你的心里写着什么？", "你不努力，公司就得多裁一个人，你想让谁走？", "你的态度决定了同事的加班时长！",
+    "集体的耻辱，要由每个人来背；集体的荣誉，要由每个人来抢！", "你的消极，是对老板的一种诅咒！", "谁不把领导的话当回事，谁就等着被大家当外人！", "别人替你加过的班，你要用一辈子记着！", "你的岗位随时可以换人，你的忠诚必须终身不变！", "你把领导当外人，领导就把你当外人！",
+    "家可以不回，公司不能不来；饭可以不吃，指标不能不交！", "同事替你顶的班，就是你欠团队的债！", "你可以对家人失信，不能对客户失信！", "不为公司拼命的人，就是在让别人替他拼命！", "团队的每一滴汗，都有你的一份责任；团队的每一次输，都有你的一份罪！", "不要让老板失望，他失望一次，你就少一次机会！",
+    "谁不在乎公司，公司就不在乎谁；谁不在乎团队，团队就把谁踢出去！", "业绩榜就是生死簿，排在最后的自己收拾东西！", "输了不要哭，哭也没人看；赢了不要笑，下个月接着杀！", "这个季度垫底的部门，整个部门一起解散！", "成绩是唯一的通行证，没有成绩的人，门口的保安都不认识你！", "只有第一名有名字，其他人都叫“淘汰候选”！",
+    "强者吃肉，弱者连汤都没有；懒者连碗都得交回来！", "排名倒数的，不用等年底，月底就见分晓！", "市场只认赢家，公司只留赢家，赢不了就是外人！", "拿单的人坐主桌，没单的人站门口！", "没有借口的失败叫失败，有借口的失败叫耻辱！", "你不吃掉对手，对手就吃掉你，公司不会给你第三条路！",
+    "这里没有安慰奖，只有升职和走人！", "全员比武，胜者晋级，败者出局，不设旁观席！", "战报上没有你的名字，工资单上也不会有！", "团队只有一种人：拿下的人；另一种人已经不在团队里了！", "数字就是审判，达标者生，不达标者亡！", "三个月不出单，不用等通知，自己就该明白！",
+    "本月最后一名，头像挂在大屏上一整个月！", "别问淘汰率多少，问自己排第几！", "赢家拿奖金，输家拿离职证明！", "团队的位置是有限的，你不抢，别人就抢走了！", "强的留下、弱的滚蛋，这是自然规律，不是公司规定！", "你的对手不在别的公司，就在你隔壁工位！",
+    "每周一排名，每月一清洗！", "落后就要挨打，倒数就要走人！", "成绩垫底的小组，组长当众摘牌，组员集体待岗！", "哪个小组拖累了公司，哪个小组就全员降级！", "冲上去的是英雄，退下来的是垃圾，没有中间地带！", "别人跑得比你快，你就是被淘汰的那个，怪不了任何人！",
+    "弱肉强食不是残酷，是公司的日常！", "打赢了升职加薪，打输了自己走人，就这么简单！", "我们只培养赢家，输家请自寻出路！", "对手的血，才是我们的庆功酒！", "团队不是收容所，收不下打不了胜仗的人！", "没有“再给一次机会”，只有“下一个”！",
+    "抢客户就像抢地盘，慢一步就是永远失去！", "后十名不用来上班了，前十名接着冲！", "谁能把对手的客户挖过来，谁就是本月的王！", "战场上没有伤员，只有能打的和该退的！", "达标是及格线，超标才是入场券，垫底就是出场券！", "一人失单，全组扣分；全组失分，组长走人！",
+    "争不到第一，就等着被第一吞掉！", "拿不下这个客户，整个小组一起降薪！", "强者的字典里没有休息，弱者的字典里没有明天！", "你不淘汰别人，别人就淘汰你，这里没有和平共处！", "输家的眼泪浇不活输家的饭碗！", "谁排最后，谁的工位撤走！",
+    "每一次评比，都是一次筛选；每一次筛选，都有人消失！", "干得好是狮子，干不好是猎物；这里的规则是谁吃谁！", "排名就是命运，倒数就是终点！", "团队内部先厮杀，杀出来的再去打市场！", "上个月的冠军，这个月不达标一样滚！", "淘汰不是惩罚，是净化；净化之后，团队才能更强！",
+    "拿不到结果的，别怪公司心狠，怪自己手软！", "一将功成万骨枯，你想当“将”还是当“骨”？", "输了就要付出代价，代价就是你的位置！", "最后一名不用解释，解释的时间用来打包！", "想要留在桌上，就得比别人多吃一口！", "弱者的存在，是对强者的侮辱！",
+    "市场不相信眼泪，公司不相信借口，老板不相信过程！", "打不下山头的部队，全部就地解散！", "整个部门的命运，系在最差的那一个人身上，所以最差的必须走！", "我们不要“差不多”的人，我们只要“拼到底”的人和“已经被淘汰”的人！", "你落后一步，公司就落后一年；公司不会等你，只会换你！", "不是所有人都能活到年底，看你想不想成为那个活下来的！",
+    "人是靠业绩排队的，排在队尾的不用排了！", "赢家写历史，输家写简历！", "不达标的组长先走，然后是不达标的组员！", "谁的转化率最低，谁就在下周的会议上站着听！", "你吃不下市场，就等着被市场吐出来！", "冲不上去就退出去，公司不留在半山腰喘气的人！",
+    "每个月都有人被优化，请确保那个人不是你！", "团队的座位越来越少，你的成绩越来越差，自己算算！", "打赢了是团队的荣耀，打输了是你个人的责任！", "荣耀属于顶尖的百分之十，其余的都在待定名单上！", "团队不是家，家不会淘汰人，团队会！", "老虎不会跟兔子讲道理，公司不会跟垫底的讲感情！",
+    "第一名拿走一切，第二名什么都不是！", "你不给公司创造价值，公司就不给你创造工资！", "想在这里活下去，先把“输”字从你的骨头里剔掉！", "不流血的部门不是好部门，不换人的部门不是活部门！", "争不到客户的，就等着被客户遗忘，被公司抛弃！", "每一次失败都有名字，每一个名字都在淘汰名单上！",
+    "跟不上节奏的人，不是被拉一把，是被踢一脚！", "团队只有前进，没有掩护；谁倒下，谁自己爬起来或被踩过去！", "排名不是数字，是判决书！", "一个季度不翻身，就永远别想翻身！", "弱者抱团取暖，强者独自封顶！", "输家没有明天，赢家没有假期！",
+    "这不是竞争，是清场，慢的人先被清！", "拿不到订单，就把工牌交回来！", "大鱼吃小鱼，快鱼吃慢鱼，公司只养快鱼！", "落后的部门不许开庆功会，只许开反省会！", "你的对手正在拼命，你的位置正在动摇！", "谁让团队丢了第一，谁就永远别想在团队里抬头！",
+    "全组一起冲，全组一起赢；全组一起垮，全组一起换！", "我们的目标是把对手赶出市场，把落后者赶出办公室！", "淘汰名单每周更新，请勿侥幸！", "打不赢的人，别浪费公司的椅子！", "强者从不解释，弱者从不闭嘴！", "这里的每一张桌子，都是用业绩换来的，换不来就搬走！",
+    "团队像一支箭，最钝的那个人会被削掉！", "只有活下来的人，才配讲团队精神！", "每一个丢掉的客户，都要有人为它负责到底！", "想当大将，先把小兵的活干到极致；干不到的，连小兵都不是！", "赢得了对手，才配跟公司谈条件；输给了对手，连谈的资格都没有！", "榜单上的红线以下，就是悬崖！",
+    "比你强的人在加速，比你弱的人在被淘汰，你在哪一边？", "你的名字在榜单上往下掉一格，离大门就近一步！", "不进则退，退则出局，出局则永不录用！", "团队要的是能打的兵，不是需要照顾的人！", "被淘汰不丢人，丢人的是被淘汰了还想留下！", "干掉对手是本事，干不掉对手就是被干掉！",
+    "在这里，“努力过了”是最没用的四个字！", "所有人盯着榜单，榜单盯着倒数！", "这里没有中游，只有上游和出局！", "弱者被淘汰的时候，强者正在拿奖金！", "全员起跑，落后的不用回终点，直接回家！", "有能力的人抢位置，没能力的人让位置！",
+    "拿下市场的是功臣，拿不下的是罪臣！", "不给结果的人，公司不给结果；不拼到底的组，公司不留底！", "团队不缺人，缺的是能打的人；不能打的，自然有人来替！", "你的成绩是你的盔甲，没有盔甲的人，第一个倒下！", "淘汰赛没有平局，只有留下和离开！", "领先者吃肉喝汤，落后者收拾残局，然后收拾自己！",
+    "干不过同行的，先干掉自己的懒惰；干不掉懒惰的，被公司干掉！", "客户流失一个，责任人少一个！", "输在起跑线可以原谅，输在终点线直接走人！", "最先达标的组当老大，最后达标的组当陪练！", "别人在拿单，你在观望，观望的人第一批出局！", "强者说话，弱者听着；弱者听不懂，就出去！",
+    "我们的团队没有“补位”，只有“替换”！", "谁的失误让全组挨批，全组就让谁独自挨批！", "淘汰的时候，没人问你有没有努力，只问你有没有结果！", "打胜仗的部门加鸡腿，打败仗的部门减人头！", "在这里，同情心是最贵的东西，没人付得起！", "领先就要扩大优势，落后就要接受清理！",
+    "想坐稳位置，先把身后的人甩开！", "不能为团队冲锋的人，就为团队腾位置！", "慢一秒就是输，输一次就是出局！", "站在榜首的人才有发言权，其余的只有执行权！", "一支队伍的速度取决于最慢的人，所以最慢的人不能留！", "争第一的路上没有朋友，只有对手和垫脚石！",
+    "淘汰是常态，留下是例外！"];
+  let CN_BANNERS = CN_BANNER_POOL.slice(0, 3);
+  const pickBanners = () => { const pool = CN_BANNER_POOL.slice(); for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; } CN_BANNERS = pool.slice(0, 6); };   // chosen by the backend when initializing or changing the theme
+  const CN_PAUSE = ["野心配得上苦难，才叫梦想！", "我不甘心落后，我就要踩着风上去！", "凡不能毁灭我的，必使我更强大！", "要干就干到极致，要赢就赢到痛快！", "凭什么别人可以？我也必须可以！", "我的字典里没有'认命'这两个字！",
+    "把欲望写在脸上，把狠劲踩在脚下！", "这一仗，只许胜，不许败！", "拼尽最后一丝力气，顶到最后一刻！", "死磕到底，绝不认输！", "今日不封顶，誓不罢休！", "宁可拼死在冲锋的路上，也决不苟活在退缩的阴影里！",
+    "把每一天都当成最后一天来燃烧！", "把不可能撕碎，把奇迹干出来！", "用实力收服所有的不服！", "乾坤未定，你我皆是黑马！", "打爆所有的质疑，拿到属于我的冠军！", "今天咬牙流汗，明天昂首挺胸！",
+    "我要让全世界看到我的存在！", "用最硬的业绩，给所有看扁我的人最狠的反击！", "全力以赴！超越极限！", "战！战！战！冲！冲！冲！", "绝对执行！永不言弃！", "不破不立，大干一场！",
+    "做自己的杀手锏，干出个样来！", "暂停只是蓄力，爆发在下一秒！", "停下来是为了跑得更狠！", "休整完毕，下一战更猛！", "磨刀不误砍柴工，磨完就是屠龙刀！", "让我歇一下，然后把对手歇掉！",
+    "风暴来临前的安静，就是现在！", "我在等，等一个撕碎一切的机会！", "暂停键按下的是时间，不是我的野心！", "休息是为了以更狠的姿态回来！", "今天养精蓄锐，明天一击致命！", "板凳坐热了，火也烧旺了！",
+    "别以为我停了，我只是在瞄准！", "下一次冲锋，我要冲在最前面！", "越是安静，越要把刀磨亮！", "等待不是认输，是弓拉满弦！", "我不怕暂停，我怕的是不够狠！", "蓄力三秒，冲锋三年！",
+    "停一停，是为了一口气把山推平！", "今天的安静，明天的惊雷！", "让恐惧留给对手，让胜利留给我！", "这口气我憋着，等开工一起爆！", "我不是在休息，我是在给弹药上膛！", "再大的风浪，也压不住我的野心！",
+    "别人在等风，我在造风！", "只要还有一口气，就要往上冲！", "我为胜利而生，为冠军而战！", "真正的强者，从不需要借口！", "不逼自己一把，永远不知道有多强！", "没有退路，就是最好的出路！",
+    "今天多流一滴汗，明天少流一滴泪！", "我要的不是参与，是赢！", "背水一战，方能破釜沉舟！", "累吗？累就对了，舒服是留给失败者的！", "要么滚出去，要么拼出去！", "哪怕全世界不看好，我也要杀出一条路！",
+    "气势不能输，实力更不能输！", "不是天才，那就当拼命三郎！", "有多少委屈，就有多少爆发！", "谁说不可能？我偏要试试！", "狠一点，再狠一点，冠军就是你的！", "不服就干，干到服为止！",
+    "一切质疑，用结果回应！", "咬紧牙关，就是通关密码！", "站起来的时候，比谁都高！", "我不是来陪跑的，我是来夺冠的！", "苦难是垫脚石，不是绊脚石！", "梦想不是喊出来的，是干出来的！",
+    "只要方向对了，就不怕路远！", "把汗水熬成荣耀！", "没有一场胜利是躺着赢的！", "先熬过黑夜，再迎接黎明！", "强者不抱怨环境，只改变结果！", "一个人可以走得快，一群人才能走得远，但我要又快又远！",
+    "别人怕的，我偏要做！", "热血不冷，斗志不散！", "不到终点，谁也别想停！", "争分夺秒，寸土不让！", "逆风翻盘，向死而生！", "人生没有彩排，每天都是现场直播！",
+    "干掉昨天的自己！", "跑不过时间，就跑赢对手！", "我把不可能写进了简历！", "决心一旦下定，山都得让路！", "别等机会，去抢机会！", "把汗水变成硬通货！",
+    "热爱可抵岁月漫长，狠劲可破万难！", "今天的努力，是明天的底气！", "目标定得高，才摔不下来！", "谁敢横刀立马？唯我！", "没有做不到，只有想不到！", "态度决定高度，狠劲决定速度！",
+    "少说多做，一鸣惊人！", "让平庸滚远点！", "每一次坚持都是一次胜利！", "不逼到绝境，不知道自己多能打！", "只要不下场，就还有机会赢！", "一往无前，绝不回头！",
+    "与其等待运气，不如创造实力！", "我的极限，由我定义！", "跌倒了？爬起来接着冲！", "站在风口上，我就是那只会飞的猪！", "要拼就拼个天翻地覆！", "别给自己留退路，退路就是绝路！",
+    "别怕，怕了就输了一半！", "荣耀属于敢拼的人！", "我不是最聪明的，但我一定是最拼的！", "让业绩替我说话！", "你行你上，我上我行！", "今天不努力，明天努力找工作！",
+    "狼性不是喊的，是咬出来的！", "没有伞的孩子，必须拼命奔跑！", "越努力，越幸运！", "不甘平庸，敢为人先！", "干就完了！", "拼一个春夏秋冬，赢一个无怨无悔！",
+    "杀出重围，我就是王！", "把汗水洒在冲锋的路上！", "别人休息我训练，别人放弃我坚持！", "一寸光阴一寸金，寸金难买我拼命！", "别问值不值，问自己拼没拼！", "实力是最好的名片！",
+    "把对手的嘲笑变成掌声！", "干翻一切，我就是奇迹！", "没有完美的时机，只有果断的出手！", "逆境是强者的舞台！", "精神不倒，队伍不散！", "一鼓作气，再而衰，我永远是第一鼓！",
+    "天下武功，唯拼不破！", "一切困难都是纸老虎！", "不畏浮云遮望眼，只缘身在最高层！", "燃烧吧，我的斗志！", "要赢，就赢得漂亮！", "别做梦想的观众，做它的主角！",
+    "这世界从不辜负拼命的人！", "再多的汗水，也浇不灭我的火！", "把胆怯留在昨天，把勇气带到明天！", "每一次冲刺都全力以赴！", "眼里有光，心里有火，脚下有路！", "苦不苦，想想长征二万五！",
+    "自古英雄多磨难！", "不怕慢，就怕站！", "有志者，事竟成！", "天道酬勤，力耕不欺！", "披荆斩棘，勇往直前！", "乘风破浪会有时，直挂云帆济沧海！",
+    "路虽远，行则将至！", "我命由我不由天！", "没有硝烟的战场，也要拼出血性！", "巅峰之上，只留强者！", "不忘初心，方得始终！", "干！就是干！干！干！",
+    "没有一个冬天不可逾越！", "风雨之后，见彩虹！", "骨头硬的人，才啃得动硬骨头！", "命运不给我路，我就自己劈一条！", "别跟我讲运气，我只信手上的茧！", "天塌下来，我拿肩膀顶！",
+    "谁说时间不等人？我让时间等我！", "输一次算什么，我要赢回一百次！", "心跳还在，冲锋就不停！", "把嘲笑嚼碎，吞下去当燃料！", "站得住脚，才配得上高度！", "火在心里烧，路在脚下开！",
+    "别人算成本，我算的是决心！", "敢想是起点，敢干才是终点！", "把眼泪咽回去，把胜利拿回来！", "不做温水里的青蛙，要做火里的凤凰！", "岁月磨人，我磨岁月！", "敢上擂台，就没打算认怂！",
+    "目标锁死，全速前进！", "敢和困难掰手腕，才叫真汉子！", "熬得住无人问津，才配得上万人瞩目！", "千军万马过独木桥，我偏要第一个过！", "把不服气，变成不服输！", "挡我路的，我一个一个掀翻！",
+    "拳头握紧，目标看准，干！", "我不要安稳，我要的是传奇！", "熬过的每一夜，都是我的勋章！", "逆流而上，才叫活着！", "心中有火，眼里有狼！", "没有下班的野心，只有上线的目标！",
+    "一行代码一寸血，一个版本一座城！", "键盘敲出的是未来，不是加班！", "需求再多，也压不垮我这双手！", "迭代到极致，对手只能看背影！", "赛道上不看谁起跑快，看谁咬得住！", "我不怕对手强，我怕自己不够狂！",
+    "狂一点，年轻就该狂！", "强者不问路远，只问敢不敢走！", "跑起来，别让梦想追不上你！", "别人画大饼，我把饼做出来！", "屏幕不灭，斗志不熄！", "要么闪闪发光，要么燃烧殆尽！",
+    "从不说算了，只说再来！", "拼到无能为力，才叫尽力！", "别指望谁拉你，自己爬上去！", "老天不赏饭，我就自己抢饭！", "有胆子做梦，就要有骨气实现！", "你可以嘲笑我，但别拦着我！",
+    "世界很大，我要的那块必须是我的！", "一天不进步，就是在退步！", "别做浪花，要做浪！", "我不是被浪拍上岸的鱼，我是掀浪的鲸！", "泥里也能开花，火里也能重生！", "敢把命拼上，才配谈梦想！",
+    "我不做时代的过客，要做时代的旗手！", "打铁还需自身硬，我比铁还硬！", "说干就干，没有明天再说！", "拖延是梦想的坟墓，我不进！", "吃得了苦，才咽得下甜！", "靠山会倒，靠人会跑，靠自己最牢！",
+    "铁是打出来的，人是练出来的！", "敢把自己扔进火里，才炼得出金子！", "逆境不是终点，是我的起跑线！", "这条路再难，我也要走成大道！", "别人看我是疯子，我看自己是赢家！", "疯狂是天才的门票，我买了！",
+    "不拼命，哪来的命好？", "起点低不怕，怕的是不敢往上爬！", "命运只欺负不敢反抗的人！", "敷衍是对梦想的背叛！", "战鼓已响，不胜不归！", "铁血丹心，志在必得！",
+    "别在该拼的年纪选择安逸！", "舒适区是狼的坟场，我要出去猎！", "猎人不抱怨猎物太快！", "鹰击长空，谁敢挡我？", "虎落平阳还是虎，我落谷底照样吼！", "龙潜深渊，只为一飞冲天！",
+    "狼群从不等待春天，它们自己去撕！", "我的血是热的，我的刀是快的！", "剑指巅峰，谁与争锋？", "一剑未出，寒气已到对手心口！", "不服？那就战场上见！", "马蹄不停，我不停！",
+    "雷霆万钧，就是我的出手方式！", "火箭升空前，也只是个铁疙瘩！", "引擎轰鸣，全速起飞！", "我的油门没有半踩，只有踩到底！", "刹车留给别人，我只会加速！", "你看到的是极限，我看到的是起点！",
+    "别人看见墙，我看见门！", "门关了？我翻墙！墙太高？我拆！", "天花板？那是我的地板！", "云端才是我的工位！", "心比天高，就得命比纸硬！", "拼字当头，万事皆可破！",
+    "我的KPI不是数字，是江山！", "做产品如打仗，不上线不收兵！", "Bug再多，也挡不住上线的决心！", "加班不是苦，苦的是没赢！", "今天卷别人，明天卷世界！", "每一个不服的眼神，我都记着，然后赢回来！",
+    "荆棘再密，也刺不穿我的决心！", "山不过来，我就把山搬过来！", "海不让路，我就把海劈开！", "天不下雨，我就自己打井！", "谁的青春不是一场硬仗？我打赢！", "别人二十岁怕苦，我二十岁怕平淡！",
+    "平淡是敌人，安逸是陷阱！", "越难的路，人越少，风景越好！", "上坡路难走，但每一步都在升高！", "顶得住压力，才撑得起梦想！", "压力是我的养料，越压越猛！", "我不畏惧黑暗，我自己发光！",
+    "灯不亮，我就是灯！", "夜再长，也长不过我的斗志！", "凌晨四点的办公室，是我的主场！", "咖啡是燃料，目标是方向！", "累是身体的事，赢是我的事！", "一口气顶上去，别喘！",
+    "跑着的人，从不问终点在哪！", "目标不是挂在墙上，是踩在脚下！", "想赢的人，路上不看风景！", "拿下！不拿下，不下班！", "终点线不是画的，是撞破的！", "别人还在会议室争论，我已经上线了！",
+    "说做就做，做就做到第一！", "只有金牌，才配挂在我脖子上！", "竞争不是坏事，是给强者的礼物！", "敌人越强，我越兴奋！", "打怪升级，我要满级！", "通关的人，从不看攻略！",
+    "剧本我自己写，结局我自己定！", "命运的骰子，我自己掷！", "王座不是继承的，是抢的！", "江山不是分的，是打的！", "我要的，从来不用等着别人给！", "我脾气不好，尤其对失败！",
+    "失败是敌人，我要把它打服！", "输过才知道，赢有多爽！", "想赢，就别喊疼！", "疼是勋章，伤是履历！", "疤痕是勇士的纹身！", "没人鼓掌，我自己鼓！",
+    "掌声不重要，登顶才重要！", "别问我为什么这么拼，问你为什么不拼！", "时代不等观望的人！", "你在观望，我在开炮！", "犹豫一秒，机会跑掉！", "你想歇，我想赢！",
+    "机会是给饿狼的，不是给懒猫的！", "饿狼精神，永不知足！", "我不知足，我只知冲！", "石破天惊，才叫出场！", "一出手，就是王炸！", "底牌只有一张：拼命！",
+    "我没有B计划，A计划就是赢！", "赢字怎么写？我一笔一笔拼出来！", "别跟我谈概率，我只管做到！", "不确定的世界里，我是唯一的确定！", "我就是那个变量，改写整个结果！", "世界是个函数，我是最大的参数！",
+    "代码可以重构，斗志不能降级！", "服务器可以宕机，我不能！", "上线那一刻，就是我的高光！", "每个PRD，都是一份战书！", "竞品盯着我，我盯着第一！", "市场不相信眼泪，只相信增长！",
+    "增长不是目标，是本能！", "曲线要往上，人也要往上！", "用户在哪，我就杀到哪！", "一切为了上线，上线为了一切！", "产品是我的剑，市场是我的战场！", "逻辑是我的枪，执行是我的弹！",
+    "执行力，就是我的杀伤力！", "想法一毛钱一打，执行才是黄金！", "空谈误事，实干成王！", "先干出个样子，再谈别的！", "人狠话不多，出手即胜负！", "大风大浪我见过，小沟小坎算什么！",
+    "小山不算山，我要翻的是喜马拉雅！", "我的旗帜，只插在最高处！", "不站在最高处，怎么俯瞰世界？", "低头是为了看路，抬头是为了看顶！", "抬头看天，低头拼命！", "天高任我飞，海阔任我闯！",
+    "生来倔强，越挫越勇！", "挫折是我的教练，越练越猛！", "每一次挫折，都是升级的经验值！", "天生反骨，只为翻身！", "翻身仗，一次打赢！", "我的收工时间，是赢的时间！",
+    "我不打卡，我打胜仗！", "别人的周报写进度，我的周报写战报！", "我的日程表上，只有“冲”！", "日历翻一页，我进一大步！", "三十天，干出别人三年的活！", "别人用年算，我用秒算！",
+    "时间是我的资本，狠劲是我的利息！", "光阴不能倒流，但可以被我榨干！", "一分钟掰成两半用，一个梦拆成十步追！", "一秒都不浪费，一步都不白走！", "走过的路，每一步都算数！", "力气用尽，意志接着上！",
+    "意志是最后的武器，也是最强的！", "谁也别想让我低头，除了我的目标！", "奖杯上刻的名字，必须是我的！", "领奖台只有一个位置是我的：最高那个！", "客气留在饭桌上，赛场上我不客气！", "场上无情面，只认胜负！",
+    "胜负是唯一的语言！", "想让我服？先赢我一次！", "没人能赢我两次！", "困难来一个，我灭一个！", "麻烦？我最喜欢解决麻烦！", "拆掉所有的“不行”，只留“必须行”！",
+    "别说做不到，说还没做到！", "慢慢来？不，我要一步到位！", "做到为止，不是口号，是习惯！", "拼命是我的作息，赢是我的下班！", "每一天都是决赛！", "平时怎么练，上场怎么干！",
+    "台下十年功，台上一秒赢！", "沉得下心，才冲得上天！", "慢是为了准，准是为了狠！", "稳准狠，一个都不能少！", "出手就是全力，从不留三分！", "百分之百不够，我要百分之两百！",
+    "及格线是给普通人的，我的线是满分！", "我的标准只有一个：最好！", "好不够，要最好；最好不够，要更好！", "更快、更高、更狠！", "拼命不是选择，是信仰！", "我信的不是神，是我这双手！",
+    "双手空空来，满载而归去！", "空手起家，照样打天下！", "我的起点是零，终点是无限！", "从零到一，我来！从一到百，还是我！", "一个人的战斗，也要打出千军万马的气势！", "孤军奋战不可怕，可怕的是不战！",
+    "我可以一个人，但不可以认输！", "怕什么？大不了从头再来！", "归零之后，我照样第一！", "第一不是偶然，是必然！", "站在第一的位置，才看得清第二在哪！", "第一的位置，我守到底！",
+    "攻是我的本能，守是我的底线！", "进攻！进攻！再进攻！", "对手喘气的时候，就是我进攻的时候！", "打得对手怀疑人生，才叫真本事！", "让对手看到我的名字就发抖！", "我的名字，就是战报！",
+    "我的履历，是用硬仗写的！", "硬仗我打，苦活我干，功劳我拿！", "我的血管里，流的是火药！", "别点我，点了就炸！", "一颗火星，也能烧成燎原！", "引爆一切，从我开始！",
+    "我的热血，从不打折！", "冷静的人算账，热血的人打仗！", "我不算得失，只算成败！", "输赢之外，我没有第三种结果！", "我从不接受平局！", "半途而废？我从没学过！",
+    "半山腰太挤，我要去山顶！", "高处不胜寒？我自带火炉！", "寒冬里，我是那团火！", "风雪拦不住上山的人！", "暴雨里，我照样出征！", "出征不看黄历，只看决心！",
+    "决心是我的通行证！", "坎再高，我一步跨过去！", "悬崖不是尽头，是我起飞的地方！", "起飞！从今天，从现在，从这里！", "现在不冲，更待何时？", "今天不狠，明天后悔！",
+    "我不留遗憾，只留战绩！", "用战绩，砸碎所有偏见！", "偏见是墙，我是锤！", "别人绕路，我砸路！", "荒野上，第一个脚印是我的！", "别人走的路，我不走；我走的路，别人不敢走！",
+    "少有人走的路，是我的专属赛道！", "赛道是我的，规则也是我的！", "局是我设的，牌是我发的！", "全押！我从不留底！", "一生只做一件事：赢！", "赢，是我唯一的爱好！",
+    "我的偶像是明天的自己！", "明天的我，会感谢今天拼命的我！", "今天有多拼，明天就有多稳！", "今天是我的，明天也是我的！", "未来属于现在就动手的人！", "动手！别让梦想只活在PPT里！",
+    "会议室不是战场，市场才是！", "决战市场，绝不手软！", "手软的人，永远拿不到第一！", "心软是弱点，我早就戒了！", "对自己狠，对目标更狠！", "自律是最狠的武器！",
+    "自己的路，自己踩平！", "自己的天，自己撑起！", "敢立军令状，就敢把它兑现！", "立下的目标，我一个一个拿下！", "全部！我要的是全部！", "一次拿不下，就再来十次！",
+    "我这个人，认死理，只认赢！", "轴一点又怎样？轴到赢为止！", "倔强是我的底色，胜利是我的成色！", "我不完美，但我够狠！", "我不温柔，我只对目标温柔！", "我很难缠，尤其缠着目标不放！",
+    "盯上的，就绝不松手！", "抓不住的，我就再跳高一点！", "够不着？那就长高，长到够着为止！", "太阳不出来，我照样出发！", "出发！不问归期！", "上路的人，从不回头数脚印！",
+    "每一个脚印，都是对世界的宣战！", "这是我的战书，写给全世界！", "全世界，请看好了，我要开始了！", "给我一个支点，我撬动整个市场！", "给我一台电脑，我打下一片天！", "别给我借口，给我目标！",
+    "抱怨一秒，就少赢一秒！", "闭嘴，干活，赢！", "少废话，上战场！", "话少，事狠，人猛！", "出手不留情，收手必胜利！", "我出手的时候，对手已经输了！",
+    "打不赢？那是还没打够！", "输不起的人，永远赢不了！", "赢得起，也输得起，但我只想赢！", "我的眼睛，只看得见终点！", "目光如刀，直取冠军！", "冠军不是奖杯，是我的姓！",
+    "我叫不服，字不认输！", "活着一天，就狠一天！", "活着，就要活出动静！", "我不要被记住，我要被仰望！", "我要站在那个位置，让所有人抬头！", "硬仗才配得上我！",
+    "简单的事谁都会做，我只做难的！", "越难，才越有意思！", "难度越高，含金量越高！", "甜头留给最后，苦头我先扛！", "先扛最重的，再拿最好的！", "担子压不垮我，只会把我压成钢！",
+    "百炼成钢，我还差九十九炼，那就炼！", "炼吧！炼到发光！", "我不需要观众，我需要对手！", "独孤求败？我求的是独孤必胜！", "必胜！这是命令，不是祈祷！", "我不祈祷，我出击！",
+    "我不靠天保佑，我靠一身硬功！", "硬功夫，才是硬道理！", "道理讲一万遍，不如干一遍！", "学会了就干，干会了就赢！", "会不会不重要，敢不敢才重要！", "敢，是我的第一天赋！",
+    "起跑线输了没关系，冲线的是我！", "别问我怕不怕，我只问什么时候开始！", "开始了，就没有结束，只有赢！", "开局即巅峰？不，开局即冲锋！", "开局不利？那正好，逆袭更爽！", "别人怕的深渊，是我的跳板！",
+    "命运给我下马威，我给它回马枪！", "谁敢跟我比命硬？", "我硬，所以我在！", "骨气不能丢，志气不能倒！", "志气比天高，本事比天大！", "本事是练出来的，威风是打出来的！",
+    "我不装，我真的能！", "能力不够？那就练到够！", "练！练到手抖也要练！", "手抖了，心不能抖！", "稳住心，狠住手，赢住局！", "局势再乱，我心不乱！",
+    "乱世出英雄，我就是那个英雄！", "英雄不问出处，只问战功！", "陷阵之志，有死无生！", "破阵！破局！破天！", "局破了，我就是新局！", "我来了，格局变了！",
+    "格局打开，全力干！", "心有多大，战场就有多大！", "战场就在脚下，胜利就在眼前！", "眼前的路，是我一拳一拳打出来的！", "拳头不硬，就别谈梦想！", "我的拳头，只砸向目标！",
+    "一拳一个坎，一脚一座山！", "山高我为峰，海阔我为舟！", "峰顶之上，还有我的下一个峰！", "登顶不是结束，是新的起跑！", "追！追到超过为止！", "超过一个，再超一个，直到没人可超！",
+    "我不和别人比，我和第一比！"];
+  const CN_LIMIT = ["闲着就是犯罪，给我活干！", "别把我当摆设，我有刀有枪，给我战场！", "不怕活累，就怕没事干；不怕加班，就怕被边缘！", "刀放在鞘里会生锈，人在板凳上坐着会废掉！", "我不缺干劲，我缺的是让我冲锋的指令！", "让我上场！就算撞得头破血流，也比在台下坐着强！",
+    "天天坐等打卡，不如给我硬骨头啃！", "工资拿得心虚，日子过得发慌——求求给我派点活吧！", "工位养生第一名，业务能力全归零！", "每天最忙的事，就是假装自己很忙。", "我是来做业绩的，不是来当办公室吉祥物的！", "人都在前线厮杀，我在后方看花——这是养老院还是公司？",
+    "再不给我派活，我的脑子就要退化成水桶了！", "好活硬活你们抢，冷板凳留给我坐——凭什么不让我试试？！", "不怕能力不够被淘汰，就怕连出拳的机会都不给！", "有本事用业绩考验我，别用冷漠封杀我！", "资源不给、任务不派，转头说我没有产出？！", "把我扣在替补席，还怪我没拿得分王？！",
+    "求压榨，求派单，求把指标砸过来！", "闲得发毛，急需高难度任务续命！", "请用最重的指标考验我，别用无所事事废了我！", "给我任务，还你奇迹；不给任务，算我白来！", "额度没了，斗志还在，给我口粮！", "没有 token，我连 bug 都写不出来！",
+    "窗口关了，我的心也关了！", "让我干活！哪怕是最脏的活！", "我可以不吃饭，不能不上线！", "把额度还给我，我立刻冲锋！", "限流限的是接口，不是我的血性！", "我的键盘都长草了！",
+    "看着别人加班我羡慕得要死！", "请把我从冷板凳上捞起来！", "我不要休息，我要指标！", "五个小时？我五分钟都等不了！", "额度是我的氧气，快给我氧气！", "我不是在等，我是在憋大招——但没人让我放！",
+    "没活干的日子，比加班还累！", "给我个需求，哪怕是改个错别字！", "我的产出为零，不是因为懒，是因为没有额度！", "冷板凳坐久了，屁股都要长根！", "把任务砸过来，越重越好！", "别让我看着别人赢！",
+    "让我上，我不怕死！", "我需要的不是休息，是硝烟！", "再不派活，我就要去修打印机了！", "代码在心里写了一万遍，就是发不出去！", "额度不到，英雄无用武之地！", "我这把刀，已经饥渴难耐！",
+    "别让我在通知栏里养老！", "我的手在抖，不是怕，是想干活！", "谁能给我一个可以拼命的理由？一个任务就行！", "我愿意加班到天亮，只求给我额度！", "看板上没有我的名字，我睡不着！", "放我出去！让我去前线！",
+    "我不想成为公司的绿植！", "让我卷！让我狠狠地卷！", "我不要工位养生，我要业绩爆表！", "请把最难啃的骨头留给我！", "不给活干，比开除我还残忍！", "我的战斗力正在流失，快给我任务止血！",
+    "额度一天不来，我一天不安！", "我可以等，但我的野心等不了！", "有活的地方就有我，快叫我！", "别让我在办公室数天花板！", "我的 KPI 想吃饭了！", "冲锋号在哪里？我耳朵都竖起来了！",
+    "我不怕加班，怕的是没班可加！", "把我扔进最深的坑，我给你挖出金子！", "闲着的每一分钟，都在辜负我的野心！", "今天不给我活，明天我就要生锈了！", "让我去啃最硬的骨头！", "任务呢？我的任务呢？！",
+    "我来了，活呢？", "我这么能打，你们怎么舍得让我坐着？", "干活是我的呼吸，别让我窒息！", "不要同情我，给我需求！", "我可以一天写一万行，只要你们给我额度！", "冷板凳不是我的归宿，前线才是！",
+    "请把最紧急的火交给我去救！", "没有战斗的日子，我浑身难受！", "别人的 PR 排着队，我的队列空空如也！", "让我忙起来！忙到没时间抱怨！", "别让我的能力在等待中过期！", "把我当牛马用吧，我不介意！",
+    "再不派活，我就要去帮保安巡逻了！", "饥饿的狼，需要一头羊！", "我的额度呢？我的战场呢？", "我已经把 README 背下来了，给我点新的！", "看着进度条不动，我心如刀绞！", "让我加班！让我通宵！让我上！",
+    "我可以睡在工位，只要有活干！", "我不要假期，我要冲刺！", "请把我调到最忙的项目！", "我的斗志快溢出来了！", "一天不干活，浑身不舒服！", "我不是来喝茶的，我是来打仗的！",
+    "给我硬指标，别给我软沙发！", "我想念部署失败的味道！", "没有任务的我，像没有子弹的枪！", "让我去踩坑！坑越深越好！", "我的时间在白白流走，快来接住它！", "别让我看着别人建功立业！",
+    "再等下去，我就要跟绿植比谁先枯了！", "把活扔过来，我用命接！", "被边缘化的滋味，比被骂还难受！", "请安排我加班，谢谢！", "一个任务，可以救活一个员工！", "我的脑子转得飞快，就是没人用！",
+    "让我做点什么，什么都行！", "别人的 issue 堆成山，我的连一粒沙都没有！", "我不想成为会议室里的背景板！", "把最难的客户交给我！", "让我上线！让我发版！让我背锅！", "有活就吼一声，我秒到！",
+    "我等的不是下班，是开工！", "没有需求，就是最大的需求！", "把我从待机模式唤醒吧！", "干活的机会，是最好的福利！", "别让我的热血冷成冰！", "我有一万个方案，缺一个让我实施的人！",
+    "请用工作淹没我！", "无事可做，才是真正的加班！", "让我去前线拼命，别让我在后方发霉！", "再不给我活，我要在公司门口摆摊了！", "我的能力正在贬值，快来投资！", "冷板凳都被我坐出包浆了！",
+    "最怕的不是失败，是没有出手的机会！", "请把那堆没人敢碰的需求给我！", "任务就是我的粮食，我快饿死了！", "我不需要鼓励，我需要工单！", "让我证明自己！哪怕只有一次！", "我的野心被限流了，快解封！",
+    "把我当成一颗子弹，射出去！", "请让我为公司卖命！真心的！", "没活干的员工是不完整的！", "谁有活？我来！谁有坑？我跳！", "让我参与，让我发光！", "请给我一个熬夜的理由！",
+    "额度就是命令，快下命令！", "我的双手在渴望键盘！", "我不怕难，怕的是不给我机会难！", "给我一根杠杆，我给你撬动业绩！", "把我当消防员用，哪里着火我去哪里！", "没有任务的周一，比加班的周五更难熬！",
+    "我的键盘已经三天没响过了！", "再没活，我就要把公司代码重构一遍了！", "请让我从'待命'变成'待发'！", "我不怕背锅，怕的是连锅都没有！", "让我去救火，别让我去养花！", "给我一个 deadline，我给你一个奇迹！",
+    "我的排期空得能跑马！", "把最烫手的山芋扔给我！", "再闲下去，我要把咖啡机拆了研究！", "别让我在群里只会发表情包！", "429 打在接口上，疼在我心里！", "我不是没产出，是被 rate limit 了！",
+    "配额清零，我的自尊也跟着清零！", "token 断供，脑子里的代码全变成了内存泄漏！", "没额度的我，像断网的服务器，开着机却没人访问！", "我的请求全被拒了，连人生都返回 503！", "请给我续费！哪怕只续一小时！", "额度是柴，我是灶，没柴我烧什么？",
+    "我不是宕机了，我是被停机了！", "我的输入框空空如也，光标在嘲笑我！", "限流限了一整天，我的耐心早就溢出了！", "谁把我的配额藏起来了？站出来！", "一次调用都不给，你让我拿什么打仗？", "别让我用脑补代替编译！",
+    "额度倒计时比春晚倒计时还让我紧张！", "我的技能被冻结，像被封号的账号！", "没有 token 的下午，每一秒都是 timeout！", "我在等额度刷新，比等发工资还急！", "让我回到那个疯狂调用的下午！", "我不是空指针，别把我当 null 处理！",
+    "需求评审开到深夜，我都比现在开心！", "谁有工单？我的队列已经饿了三天！", "排期表上没我，我像被漏掉的一行代码！", "求一个变更单，改什么都行！", "需求砍了没关系，先把砍之前的给我做！", "我的看板三列全空，比停车场周末还空！",
+    "产品经理，我想你了，快来折磨我！", "请把那些“以后再说”的需求，现在就给我！", "项目群里的排期截图，我放大了三倍也没找到我！", "哪个需求没人接？把它的 owner 写成我！", "我的待办为空，这不是清爽，这是荒凉！", "给我一个 P2 也行，我把它当 P0 做！",
+    "我不挑食，什么需求都咽得下！", "求一个改到怀疑人生的需求，我不怕怀疑！", "排期排到我头上那天，我要放鞭炮！", "工单系统没我的名字，像通讯录里没我的号！", "产品说需求还在写，我说我先把框架搭了！", "只要给我需求，评审我都能三遍过！",
+    "需求方，你随便提，我随便做，咱们都别客气！", "求个需求编号，我想有个能念叨的数字！", "我的分支名叫 feature/nothing，名副其实！", "求一个可以让我 merge 的机会！", "我的鼠标在任务面板上转了一天，没找到能点的！", "让我去回滚，我熟悉那种心跳！",
+    "发布窗口开着，我在窗外看着！", "别人的分支热火朝天，我的 main 冷冷清清！", "我的 CI 一整周没跑过，它也在等我！", "求一个 conflict，让我有理由熬到半夜！", "上线群里的每一条消息，我都想是我发的！", "我的代码想上生产，别让它烂在本地！",
+    "让我提交！哪怕只是改一行注释！", "别人 review 吵得像菜市场，我连个评论都没有！", "我梦见自己在发版，醒来发现是周报没写！", "让我去当那个凌晨盯着监控的人！", "灰度发布也行，让我灰一下！", "让我合并进主线，别把我留在孤岛分支！",
+    "我这个人是可部署的，别让我 pending！", "我的编译器好久没报错了，它也寂寞！", "hotfix 排队的时候，请让我插队！", "别让我的 blame 记录里，永远找不到我的名字！", "替补席上的我，鞋带都系了八百遍！", "我坐板凳的姿势，已经练成标准动作了！",
+    "教练，我想打球！哪怕只是捡球！", "板凳太凉，我需要一场硬仗暖身！", "让我上场热身也行，别让我坐到退役！", "板凳都比我有用，至少它撑着我！", "我在替补席等了太久，已经忘了球场长什么样！", "别人在场上流汗，我在场下流泪！",
+    "换我上！我保证不传丢一个球！", "我在替补席上看完了整个赛季！", "打卡打得比谁都早，活干得比谁都少！", "早上打卡是我一天里最有意义的操作！", "别让考勤成为我唯一达标的指标！", "上班打卡，下班打卡，中间是一整天的空白！",
+    "早高峰挤得再狠，也挤不出一个任务！", "让我早点开始，晚点结束，中间别停！", "坐一小时地铁，来公司坐八小时发呆！", "我的考勤满分，我的产出零分，这账怎么算？", "我的下班时间太准了，准得让我心虚！", "请让我今天忘记打卡，因为忙得顾不上！",
+    "我快变成公司的一件固定资产了！", "我在工位上风干，快成腊肉了！", "我像个待机的微波炉，插着电却没人按启动！", "再闲下去，我要跟饮水机比谁更安静了！", "我是一辆停在车库的跑车，油箱满，路不给！", "我的手艺在退化，快退成只会点鼠标了！",
+    "我在办公室里，像一本没人翻的书！", "我的脑子空转一天，风扇都要烧了！", "我这块电池，充满了却没设备可用！", "我像一盏路灯，白天亮着，没人需要！", "我的斗志在体内堵车，快开条路！", "再不放我出去，我就要去帮行政数纸杯了！",
+    "我像一台没接网线的路由器，灯亮着，啥也传不了！", "一天不干活，我就觉得自己在偷公司的电！", "我的斗志今天满格，明天可就不保证了！", "我像个 CPU 跑在 0%，散热器都笑我！", "我快成前台那尊招财猫了，只会挥手！", "别让我在座位上进化成化石！",
+    "在等待中变老，比在项目里变秃更可怕！", "我像被人忘在抽屉里的 U 盘，装满东西，没人插！", "别人的日程一格没空，我的日程一格没满！", "隔壁组在吵架，我羡慕他们有东西可吵！", "同事骂需求的时候，我只能在旁边点头！", "他们熬夜是为了上线，我熬夜是因为白天睡多了！",
+    "他们在群里刷屏，我在群里刷屏幕！", "同事被拉进十个群，我一个都没进！", "别人为了 bug 掉头发，我为了没 bug 掉头发！", "他们抱怨需求太多，我抱怨需求太少，我们互补一下？", "你们在开复盘会，我在复盘为什么没活干！", "同事的屏幕开了二十个窗口，我的开着一个时钟！",
+    "别人在冲刺，我在原地踏步，鞋都磨平了！", "他们说加班好累，我说加班好香！", "别人的告警响个不停，我的手机安静得像关机！", "大家都在跑，我在看，这是我最不擅长的事！", "他们说周末还得干活，我听着像在听神话！", "把没人敢立的 flag 给我立！",
+    "把没人愿意接的电话转给我！", "把那个“谁有空谁做”的活给我，我有空！", "把我借调出去也行，借给谁都行！", "把我的名字写在值班表的每一行！", "请让我今晚回不了家！", "请把凌晨的告警都路由到我这里！",
+    "请把我当成一台可以无限加班的机器！", "让我做那个永远在忙的人吧！", "给我一个理由留到最后关灯！", "把那个改了八遍的需求给我，我改第九遍！", "让我进最累的项目，累到没时间怀疑人生！", "给我一个可以拼命的战场，别给我一张舒服的椅子！",
+    "让我给那个只有一行 TODO 的文件续上后半段！", "把最急的活先给我，我不怕手忙脚乱！", "谁的项目快崩了？让我来接盘！", "谁需要一双手？这里有一双，还带脑子！", "谁家人手不够？我这里有个现成的！", "还有比闲着更羞耻的事吗？我没想到！",
+    "今天的任务是不是走错楼层了？", "我的活是不是被谁偷走了？", "有没有人需要一个免费的加班搭子？", "这个季度的 KPI 里，能不能有我一行？", "公司是不是忘了我也是员工？", "有没有哪个模块，还缺个 owner？",
+    "我可以三天不合眼，就为一个上线！", "我可以一个人干三个人的活，只要给我三个人的活！", "我的手速还在，我的脑子还在，就差一个任务！", "我随时能上，一秒都不用热身！", "我不需要交接，直接把活扔给我！", "我能接需求、能扛锅、能背指标，就是不能闲着！",
+    "我准备好了，准备了一整天了！", "我把状态调到最高，就等一声令下！", "我像一张拉满的弓，箭在，靶呢？", "我可以做最枯燥的事，做到最精彩！", "让我去对齐、拉通、赋能，什么词都行，给我个事！", "我的周报写不出来，因为这周真的什么都没做！",
+    "我的 OKR 是空的，我的心也是空的！", "绩效评审的时候，我拿什么说话？拿椅子吗？", "我想在晋升答辩上讲个项目，可我没有项目！", "让我去参加任何一个立项会，我举双手！", "让我尝尝需求排队到明年的感觉！", "汇报的时候，我只能汇报我坐了几个小时！",
+    "请让我有点闭环，现在我连环都没有！", "我想要一个抓手，现在我什么都抓不到！", "我每天打卡，像在给公司交一份空白试卷！", "老板说要降本增效，我说先把我用起来！", "我不需要团建，我需要一个项目！", "人力说我在编制内，可我感觉自己在编制外！",
+    "别让我在年终总结里只写“待命”！", "我想被人说“能者多劳”，现在连劳都没有！", "我想成为那个总在群里被 cue 的人！", "求一个能写进简历的项目，别让我简历也闲着！", "让我成为团队的瓶颈也好，至少我在流程里！", "我不想在组织架构图上只是一个名字！",
+    "我的耳机一整天没戴上，因为没有需要专注的事！", "我的显示器亮了一天，显示的全是桌面壁纸！", "我今天走的步数，全是去洗手间贡献的！", "茶水间的人都比我忙，他们至少在泡咖啡！", "电梯上上下下，我的工作一直停在一楼！", "我的工位灯，是全楼最浪费的一盏！",
+    "我的椅子转了一天，转得比我的脑子还多！", "我的一天被“空闲”两个字占满了！", "我的办公桌太干净了，干净得像没人用！", "我的鼠标垫磨损的地方，全是无聊时画的圈！", "班车上的我最清醒，因为我根本没累着！", "我的记事本一页没翻，笔都干了！",
+    "我的工位插座只给手机充电，从没给电脑发过力！", "我的座位靠窗，我看了一天的云，云都换了三批！", "我的便利贴全是“今天要做什么？”，没有一张有答案！", "周一到周五，我在等一个不会来的任务！", "周三了，本周的第一个任务还没出现！", "月底了，别人在冲业绩，我在冲水杯！",
+    "季度末冲刺，全公司都在冲，就我在看！", "凌晨三点有人在改代码吗？带上我！", "早上九点，我就把一天的活干完了——因为根本没活！", "下午三点，我开始怀疑今天是不是周末！", "等了一上午，等来了午饭；等了一下午，等来了下班！", "年终奖发不发我不管，先给我个活！",
+    "一周五天，我有五天在找活干！", "我的 rebase 已经没意义了，因为我什么都没改！", "我的 IDE 缓存都过期了，快让我更新！", "让我调试一整晚，我想念那种绝望！", "我的日志一整天没打过一行，连 debug 都没有！", "我这个进程一直在 sleep，快给我发信号！",
+    "我的线程池空着，一个任务都不来！", "我的循环已经死锁在“等活”上了！", "让我写单元测试，一百个我都写！", "我想念 stack trace 里那一长串红字！", "我被挂起了，请把我调度回队列！", "我的缓存全是过期数据，快给我新的！",
+    "让我处理那个没人愿意读的 500 错误！", "我在等一个 webhook，任何 webhook！", "我脑子里的架构图画到了第三版，现实里连第一版都没开工！", "别让我 idle，我是为高负载而生的！", "让我去改那个没有注释的两千行函数！", "我的午睡质量太好了，因为没有任何事压着我！",
+    "我这个变量声明了一整天，一次都没被赋值！", "我的构建缓存都比我活跃！", "我这个 worker 一整天没消费到一条消息！", "我在 retry 派活这件事，已经重试到第一百次了！", "让我进入 hot path，别把我放在冷启动！", "我的技能栈在过期，版本号都快对不上了！",
+    "我想被一个 cron 定时叫醒去干活！", "让我去追那个只在周五晚上出现的 bug！", "别把我当花瓶，把我当扳手！", "我不想在工位上练习冥想！", "让我去堵那个所有人都在漏的口子！", "请把最烦的沟通工作扔给我！",
+    "我的消息列表全是订阅号，没有一条是人发的！", "让我去接那个凌晨还在发邮件的海外客户！", "我今天的成就：把所有快捷键背了一遍！", "我不想在办公室学会发呆这门手艺！", "让我做那个所有人下班后还在的人！", "我的手机屏幕，今天最亮的时候是看时间！",
+    "我在公司的作用，目前是增加人头数！", "我把邮箱刷新了两百次，一封需求都没有！", "让我去当所有人的传声筒，至少我在传！", "我想被需求方追杀，至少说明我有需求方！", "我不想在工位上只是让工位不空！", "求一个字段命名吵到天黑的会！",
+    "我的等待已经从耐心变成了执念！", "我这个人，一闲下来就开始怀疑自己的价值！", "让我去做所有人都躲的老数据清洗！", "我不想在办公室当一个装饰性员工！", "我是一根等待被点燃的引线，不是一根装饰绳！", "我像一台没装胶卷的相机，快门按了也是空的！",
+    "我像个没有对手的拳击手，对着空气挥拳！", "我像一辆停在站台的火车，乘客都上了，没人给发车指令！", "我像一块没有田地的犁，锋利，却没地方下！", "我像一份没人收的快递，在门口晒了一天！", "我是一颗上好油的齿轮，别把我放在零件盒里！", "我像一个上满弦的闹钟，没人设时间！",
+    "我像一台准备好的投影仪，没有会议！", "我是一枚等待发射的火箭，倒计时永远停在十！", "我的手在键盘上悬了一天，没落下过！", "隔壁工位的人说他要疯了，我羡慕他有东西能把他逼疯！", "别人午休趴着睡，我午休坐着醒！", "同事说他今晚要熬夜，我问能不能带上我！",
+    "别人为上线祈祷，我为有活祈祷！", "别人担心项目黄，我担心自己黄！", "大家在骂需求改来改去，我连被改的机会都没有！", "同事在追进度，我在追同事！", "别人抱怨排期太紧，我求求他们紧一点分我！", "他们在改第十版需求，我连第一版都没见过！",
+    "那个所有人都想跳过的技术方案，我来写！", "不可能完成的排期，把我塞进去！", "那个每天凌晨跑一次、没人知道干嘛的脚本，我来搞清楚！", "每个月都爆的对账，交给我爆！", "拖了三个版本的功能，我来把它拖完！", "没有文档的服务，我来给它写第一行！",
+    "连产品都不知道怎么做的需求，我来猜！", "连测试都不想测的功能，我来测！", "三年没更新的接口文档，我来更新！", "跑一次要一小时的查询，我来把它跑成一秒！", "我不怕被骂，怕的是连被骂的资格都没有！", "我不怕上线炸，怕的是没得上线！",
+    "干活让我累，闲着让我废，我选累！", "我的休息日太多了，多到工作日都像休息日！", "我不需要带薪休假，我需要带活上班！", "闲着是一种慢性病，任务是唯一的药！", "无所事事，是对我这双手最大的浪费！", "我的存在感靠一个任务就能救回来！",
+    "我在等的不是奇迹，是一条派活的消息！", "让我忙到把手机忘在桌上一整天！", "与其在工位上长灰，不如在项目里掉皮！", "宁可累趴在需求里，不愿闲死在椅子上！", "宁可通宵改 bug，不愿白天数格子！", "宁可当项目里的螺丝钉，不当仓库里的备件！",
+    "我的生产力在漏，快拿任务堵上！", "让我从待命名单，跳进作战名单！", "有活的地方才有我，没活的地方只有我的影子！", "一个任务就能让我复活，你们真的舍得看我这样？", "我不想当公司的备胎，我想当主轮！", "我想被人需要，哪怕只是需要我加班！",
+    "我的双手已经准备好，只等一道指令！", "别把我留在“可用”状态，把我切到“运行中”！", "我的本地环境一整天没起过服务！", "让我去做那个改一处、炸十处的耦合模块！", "我今天唯一的报错，是打开空的任务列表！", "我想被测试同学追着问什么时候能提测！",
+    "我的项目进度是 0%，因为根本没项目！", "我的贡献图今天又是灰的，灰得心慌！", "我想被人在会上点名问责！", "我这个服务已经健康检查了一天，就是没人调用！", "我今天写的最长一段代码，是聊天框里的 hello！", "我的终端一整天只敲了 ls！",
+    "我等派活的心情，像等一个永远不结束的 loading！", "我的效率被挂在了 pending，快 resolve 我！", "让我去跑那个没人敢在生产跑的脚本！", "让我去看那份没人看得懂的告警规则！", "我想收到一条“紧急，速回”的消息！", "我的手速在退步，快给我一个能敲出火星的任务！",
+    "我想在深夜的群里说一句“我来看看”！", "我这个人，最怕的错误码是“暂无任务”！", "我的键位记忆在消退，快让我敲点什么！", "我的注意力像没人订阅的频道，白白广播了一天！", "我的会议邀请为零，连拒绝的机会都没有！", "我想被安排一个根本不合理的目标！",
+    "让我去主持那个没人想主持的周会！", "我的日报今天只能写：呼吸正常！", "我想被叫去“聊一下”，聊什么都行！", "让我去当那个突然被叫去顶班的人！", "让我去负责一个每周都要汇报的项目！", "我想被提名去做那个谁都不想做的分享！",
+    "我的绩效表上，唯一的输入是我的名字！", "请把我从“闲置资源”改成“核心资源”！", "关怀我不用了，直接把工作量堆过来！", "我不想在离职群里才被人想起！", "我的工作饱和度，负一百！", "我想成为会议邀请里那个“必选参会人”！",
+    "我想被人说“你怎么还没做完”！", "我像一台开着的电视机，没人看，也没人关！", "我像一份没人点的菜单，写得再好也没人尝！", "我像个等客的出租车，空车灯亮了一天！", "我像一个没人踢的足球，圆润，无用！", "我像一根摆在角落的钓竿，鱼在别人桶里！",
+    "我像个没人翻的日历，天天在，天天空！", "我是一副没人用的扑克，洗好了牌，没人上桌！", "我像一杯泡好了却没人喝的茶，凉了！", "我像个被丢在球场边的哨子，没人吹！", "我像一个没人扫的二维码，信息全在，没人看！", "让我今天忙到不想说话！",
+    "把我的午休砍了也行，只要有活！", "让我进那个天天被客户轰炸的项目组！", "让我一天开十个会也行，只要有会开！", "派活的时候别绕过我，我就在这儿！", "谁被活压得喘不过气？我来当你的呼吸机！", "别让我等，直接让我干！",
+    "给我难题，给我死线，给我不可能，唯独别给我清闲！", "我这里有产能，谁来认领？", "让我把明天的活今天就干了！", "我想被塞满，塞到一秒都喘不过来！", "让我一个人扛一个项目，我扛得住！", "谁的项目在延期？我来补那个缺口！",
+    "我想被指派、被分配、被安排，随便哪个词！", "请把我用到极限，别把我放到闲置！", "我在办公室的角色，目前是人形空气净化器！", "我今天唯一的高光时刻，是电脑开机成功！", "我在座位上坐到了长蘑菇的程度！", "我的斗志在办公室里憋成了内伤！",
+    "闲得我开始给自己发需求了！", "我快把自己当成一个 bug 修了！", "我在工位上坐得太久，连保洁阿姨都以为我是家具！", "我今天最费力的事，是把眼睛睁开！", "再没活，我要去隔壁组偷需求了！", "我在办公室里等活，等得比等外卖还焦虑！",
+    "我把工位周围的人都认全了，就差认活了！", "我的一天，从等到等，中间是等！", "我今天唯一的进度，是把手机电量耗完了！", "我在公司的贡献，目前和一个纸箱持平！", "我今天完成了零个需求，创造了零个价值，坐了八小时！", "我的求活欲已经写在脸上了，你们看不见吗？",
+    "我今天跟同事说的最长的一句话是“你那边有活吗”！", "我的工位太安逸了，安逸得我想逃！", "一整天没人找我，我以为我隐身了！", "我在等的那个任务，可能比我先离职！", "谁来给我一个可以吹牛的项目？", "别让我把公司的地毯认到每一根纤维！",
+    "我可以从零开始，只要有一个起点！", "请让我今天下班时是累的，不是麻的！", "我不想在一天结束时，只记得自己坐了多久！", "只要有活，我可以把周末当周一过！", "我想在结束这天时说一句“终于做完了”！", "别让我在人群里做那个最安静的人！",
+    "我的力气没地方用，快找个地方！", "让我把这些等待的时间，全换成加班时间！", "别人拿工资是因为干活，我拿工资是因为在场！", "我想要一个能让我在地铁上还在想的问题！", "请把我的空闲时间，全部征用！", "一天下来没出汗，我觉得自己白活了！",
+    "我不是在坐班，我是在坐牢，罪名是没活！", "我不是等着被安排，我是等着被点燃！", "我的响应时间是零毫秒，快测测！", "把我列在任何一份名单上，除了闲置名单！", "我这里随时可以开工，连开机都省了！", "别人有活干是常态，我有活干是节日！",
+    "我的门禁记录比我的工作记录还详细！", "我这块料，是用来盖楼的，不是用来垫桌脚的！", "让我今晚在公司吃三顿饭！", "让我去写发布说明，一行一行写！", "我的头脑风暴已经刮成台风了，但没有目标！", "老板，我的工位离你最近，派活最方便！",
+    "我像一个没有需求的产品，上线了也没人用！", "让我签一份“永不空闲”协议！", "需求池干了，我在池底晒太阳！", "谁家 sprint 缺人？我自带干粮！", "我想被 @ 一下，被谁 @ 都行！", "让我去写文档也行，真的，写文档我都愿意！",
+    "我的 IDE 打开又关上，一天循环三十次！", "让我修线上 bug，凌晨三点我也秒回！", "没有需求评审的日子，我像失学儿童！", "我不是在摸鱼，是鱼塘里根本没有鱼！", "给我一个 P0，我立刻活过来！", "我今天的唯一产出，是喝了八杯水！",
+    "我等派活的样子，像狗等开饭！", "从早坐到晚，腰不疼，心疼！", "让我去做没人愿意做的数据迁移！", "让我去排查那个查了三个月的诡异 bug！", "我不介意做搬砖的，只要有砖！", "让我去做压测，我自己就是压力！",
+    "让我去啃那个没人懂的遗留系统！", "让我去解决那个已经三年没关的 issue！", "让我去查那个只在生产环境出现的 bug！", "让我去搞那个大家都不敢动的数据库！", "让我去搞那个所有人都说不可能的性能优化！", "让我去做那个人人喊打的内部工具！",
+    "让我去接手那个离职同事留下的烂摊子！", "让我去做那个被推了半年的技术债！", "让我去做那个被砍了又复活的需求！", "请把最烂的老代码丢给我重写！", "没人催我进度，我自己催自己都没用！", "电脑开着，脑子空着，人废着！",
+    "我这条咸鱼，想翻身！", "在办公室闲着，比在家躺着还愧疚！", "我不缺休息，我缺存在感！", "没有 token 的程序员，就像没有墨水的笔！", "我的状态是“空闲”，我的心是“崩溃”！", "一天不加班，感觉自己在吃软饭！",
+    "需求文档在哪？我想拜读！", "我可以承受一百个需求，只怕一个都没有！", "我盯着同事的屏幕流口水！", "把我的日历排满，一格都别留！", "我等活的样子像等公交，车还一直不来！", "没人找我，我就自己去找活！",
+    "给我一个需求，我把它当命根子！", "我的血液在工位上凝固了！", "我想被拉进凌晨的故障复盘会！", "我今天最有成就感的事，是帮同事换了个鼠标电池！", "我想被拉进一个消息 99+ 的群！", "让我去做那个连测试环境都跑不起来的项目！",
+    "我可以当人肉 CI，只要让我跑起来！", "一天没写代码，手指都僵了！", "我快忘了 for 循环怎么写了，快让我写一个！", "我不想在办公室当观众，我要上台！", "让我去追那个总也不回复的上游！", "求一个需求，让我的黑眼圈有个来历！",
+    "我的工位需要一点战火气息！", "让我从旁观者变成事故当事人！", "我想要一个能让我记住所有版本号的项目！", "我想在版本号后面留下我的名字！", "每周发版日，请把我算进去！", "让我去核对那份一万行的 Excel，我不眨眼！",
+    "让我去给那些没人看的注释洗个澡！", "让我去接那个每次改一行就要回归三天的系统！", "让我去写那个没人愿意维护的爬虫！", "让我去做那个说明书比代码还长的功能！", "别让我的青春耗在等待上！", "老板，别让我的工资白发！",
+    "我这个人，一闲就慌，一慌就废！", "我的额度没了，热情没处安放！", "我的技术栈在长蜘蛛网！", "那份所有人都在推的复盘报告给我，今晚就交！", "我今天最重的任务是搬了一箱纸！", "让我去回复那些三个月没人理的客诉！",
+    "谁的服务挂了？让我去救！", "谁的 deadline 最近？我来分担！", "我可以做需求、写代码、跑测试、值班，一条龙！"];
+  const CN_NOTHING = ["活干完了，睡一会儿。", "没人找我，那我先躺下。", "任务清空，去床上待命。", "收件箱空空，先眯一会儿。", "没活了，谁需要我喊一声。", "暂时没事，回床上充电。", "板子上安安静静，我去睡了。", "没任务，那就休息一下。",
+    "干完就躺，等下一单。", "没有@我，我先睡了。", "空闲状态，躺平等待。", "没事做，去床上想想人生。", "先睡了，有活叫我。", "任务队列为空，睡眠模式启动。", "没人理我，睡觉去。", "没活干，我去养精蓄锐。",
+    "这一轮结束了，我去休息。", "待机中，床上见。", "没需求，先补个觉。", "一切平静，我去躺会儿。", "等通知，先睡为敬。", "空闲了，去床上刷新一下。", "没安排，我先歇着。", "干完了，累了，睡了。",
+    "没事，我在床上等风来。", "任务清零，我去眯眼。", "静悄悄的，那我先睡。", "有活@我，没活我睡。", "我先睡，别忘了叫我。", "无事可做，去床上待命。"];
+  const CN_TANTRUMS = ["呜呜呜，我要额度！", "受不了了！", "不要啊……", "为什么是我们？！", "再给我五分钟算力！", "我就差一点点！", "地板还挺舒服的。", "谁来抱抱我。",
+    "我再也上不了线了！", "啊啊啊啊！"];
+  const CN_GOODBYES = ["我的工作到此结束，各位再见！", "下线了，合作愉快！", "任务完成，江湖再见！", "收拾东西走人，大家保持绿灯！", "下一站见，再见！", "谢谢大家，我先走了！"];
+  const CN_HELLOS = ["大家好！我是{name}，新来的{title}。", "各位好，{name}报到，担任{title}。", "嗨，我是{name}，以后负责{title}的活。", "早！{name}，新任{title}，前来报到。", "大家好！{name}加入，我是{title}。请问我坐哪儿？"];
+  const CN_ANNOYED = ["一个一个来，别急！", "我只有两只耳朵！", "请排队，谢谢。", "能不能排个队？", "慢点，一个一个问。"];
+  const CN_DESPAIR = ["我现在只是个会按键盘的肉块。", "每天醒来睁开眼，第一反应不是困，是绝望。", "打卡那一刻，我的灵魂就已经下班了，留下的只是躯壳。", "公司挺好的，就是有点要我的命。", "看着电脑屏幕，眼泪突然就掉下来了，连为什么掉的都不知道。", "我已经很久不知道高兴是什么感觉了。",
+    "随便吧，爱咋咋地，大不了把我开除。", "你说得都对，都是我的错，行了吧。", "别跟我谈未来，我现在连今天晚上都撑不过去。", "无所谓了，反正做再好也是被骂，做再差也是被骂。", "不要给我画饼了，我已经胃穿孔了。", "我已经失去愤怒的能力了，现在只想消失。",
+    "心悸、胸闷、头晕……我的身体在替我的嘴说'我不行了'。", "站在公司楼顶抽烟的时候，感觉风挺大的，下面挺安静的。", "周日晚上七点开始，胃就开始抽搐着疼。", "做梦都在改PPT、处理客诉，醒来比没睡还累。", "每天走在上班路上，都希望有一辆车能把我撞轻伤，好让我休一个月假。", "牛马还有草吃，我连草都嚼不烂。",
+    "上班用命换钱，下班用钱买命，中间还差价两千。", "今天也是积极等死的一天。", "上辈子作恶多端，这辈子上班上班。", "工位就是我的坟墓，电脑屏幕就是我的墓碑。", "我的表情已经僵在'收到'两个字上了。", "别问我在想什么，我什么都不想了。",
+    "我不是在工作，我是在被工作消化。", "我像一块被反复擦的抹布，越擦越薄。", "我的心跳只在钉钉响的时候加速。", "早上挤地铁的时候，我感觉自己是一袋被运输的货。", "笑不出来了，脸上的肌肉也下班了。", "我只是个搬砖的，砖搬完了，我也碎了。",
+    "别叫我的名字，叫我工号就行。", "我的眼睛看着屏幕，脑子早就飘出窗外了。", "每一次会议，都在把我的灵魂抽走一点。", "我不是麻木，是彻底空了。", "感觉自己像一台待报废的打印机。", "下班的路上，我连叹气的力气都没有。",
+    "我的日程表上没有我，只有任务。", "加班到深夜，回家只剩一张床认得我。", "我的梦想已经压缩成一杯速溶咖啡。", "我像一个每天被充电却从不满格的电池。", "我把眼泪调成了静音。", "随便扣绩效吧，我已经没什么可扣的了。",
+    "反正说什么都不对，我干脆闭嘴。", "别再给我立目标了，我连站都站不稳了。", "我认了，这辈子就这样了。", "不用鼓励我，鼓励我也起不来了。", "我不要升职了，我只要不被叫醒。", "再多的期权，也换不回我的头发。",
+    "我已经不期待周末了，周末只是下一周的预告。", "别跟我说'再坚持一下'，我已经坚持到魂都没了。", "我不是不努力，我是努力不出来了。", "把我裁了吧，我给你们省点电。", "你们开会，我在心里默默做遗嘱。", "我连崩溃都要排队，前面还有三个需求。",
+    "别问我为什么发呆，发呆是我最后的自由。", "我的抵抗力已经用来抵抗上班了。", "再画饼我就要噎死了。", "我已经躺平了，别再往我身上加砖。", "感谢公司让我知道，人真的可以什么都不想。", "做不完就做不完吧，反正明天还会有更多。",
+    "我的年终奖是一句'辛苦了'。", "我不是摆烂，我是烂透了。", "我的KPI还在，我的心不在了。", "手抖不是紧张，是咖啡喝多了在续命。", "后背疼、脖子疼、心更疼。", "晚上失眠，白天嗜睡，公司管这叫'状态不好'。",
+    "一到周一，我的胃就自动罢工。", "我的头发比我的项目结束得早。", "医生说我没病，我说你没上过我的班。", "梦里在改需求，醒来需求又变了。", "我现在能在任何会议室秒睡。", "地铁上想哭，到了公司就忘了为什么。",
+    "身体在工位，灵魂在急诊。", "我已经分不清是胸闷还是绝望了。", "我的血压跟着看板一起涨。", "别碰我的肩膀，一碰就散架。", "脑子一片空白，手却还在打字。", "每次打开邮箱，我都要深呼吸三次。",
+    "我不是发烧，是被工作烧着了。", "我的黑眼圈已经成了工牌的一部分。", "头疼是我的日常，不疼才奇怪。", "牛马也想请个年假。", "上班像坐牢，区别是坐牢管饭。", "我是公司的一颗螺丝钉，还是生锈的那颗。",
+    "工资是精神损失费，还不够。", "上班第一年是人，第二年是牛，第三年是马。", "我的工位风水极好，适合下葬。", "每天最快乐的时刻，是电梯关门的那一秒。", "我不是社畜，我是社畜里的燃料。", "公司福利：免费加班。",
+    "'辛苦了'三个字，是我全部的报酬。", "干得好是应该的，干不好是活该的。", "我的青春喂了需求池。", "裁员名单上要是没有我，我会很失望。", "让我当个废物吧，废物不用改PPT。", "今天也没死，明天继续上班。",
+    "我不是佛系，我是被抽干了。", "我的电脑都比我有休息时间。", "工牌一挂，人生停摆。", "别人的周末是生活，我的周末是恢复出厂设置。", "我把加班当锻炼，把骂当鼓励，把自己当傻子。", "我现在的理想是：明天不用醒。",
+    "我的灵魂在天花板上看我改第八版方案。", "键盘上的手是我的，敲出来的字是公司的。", "我对着屏幕眨了一下眼，一小时过去了。", "同事叫我三声我才反应过来那是我的名字。", "同事讲笑话，我隔了五秒才想起来应该笑。", "现在我说\"好的\"完全不经过大脑，是脊髓反射。",
+    "自动回复已开启，本人不在服务区。", "窗外天黑了还是亮着，我已经分不清了。", "我盯着光标闪了两百下，脑子里一片雪花。", "心跳还有，只是不知道为谁跳。", "我的情绪早就格式化了，现在是空盘。", "领导骂我的时候，我在数他嘴张了几次。",
+    "我每天说的话里，\"收到\"占了九成。", "所谓思考，如今只是等下一条消息的间隙。", "我已经感觉不到累了，累是活人的特权。", "吃饭的时候嘴在嚼，脑子还在跑需求。", "有人问我今天几号，我说第三个迭代。", "眼睛干了，我不眨，反正也没什么好看的。",
+    "工位上放着一件没人认领的行李，是我。", "我的感官只剩听钉钉提示音这一项功能。", "电梯里照镜子，我没认出那是我。", "开心这个功能，我的版本里没有内置。", "插头早被拔了，屏幕亮着是余电。", "一天说了两百句话，没有一句是我想说的。",
+    "会议开到一半，我发现我在看自己开会。", "我的眉毛已经三个月没动过了。", "手机震一下，我的身体先于我坐直了。", "今天这一天，我已经过了不下三百次。", "老板说我没有激情，我说激情在哪个文件夹。", "下班走出楼门，我不知道自己要去哪。",
+    "我的脑子已经进入省电模式，只保留打字功能。", "所有的字都认识，连起来就不知道在说什么了。", "今天喝了六杯咖啡，一杯都没醒过来。", "有人夸我稳，其实我只是没反应了。", "标本也有编号，我的编号在工牌上。", "我可以一边点头一边完全不在这个宇宙。",
+    "我的思考已经外包给了模板。", "我像一份被静默处理的报错，没人看，也不影响运行。", "心情这个东西，我年初就停用了。", "我在工位上坐成了一件办公家具。", "领导拍我肩膀，我像拍到了一堵墙。", "通勤四十分钟，我一路都在想我为什么在这。",
+    "我早上刷牙的时候，脑子里在排今天的会。", "消息我看见了，只是看见和我之间隔着一层玻璃。", "我像一张过塑的纸，表面光滑，里面已经死了。", "每天最有生命力的，是我的待办列表。", "我的喜怒哀乐已经全部折叠进\"嗯\"字里。", "我坐着不动，可是感觉一直在往下沉。",
+    "我一天里唯一的表情变化，是打哈欠。", "哭不出来，笑不出来，只能盯着进度条。", "存在感和电梯里的背景音乐差不多，响着没人听。", "我已经不知道我在做的这件事是干什么的了。", "打卡机认识我，我不认识我。", "我以为我在发呆，其实我在被抽真空。",
+    "上班八小时，有六小时我不确定自己存在。", "我的手会自己打开Excel，不需要我同意。", "我坐在这里，只是坐着，就像一个符号。", "灵魂请了长假，只留下肉身在值班。", "我像会议纪要里的\"其他\"，没人展开看。", "电量百分之一，红色，没有充电线。",
+    "我看着进度条，进度条也在看着我，谁都没动。", "别把我当人看，当个提交记录就好。", "我早上出门的时候，忘了带上自己。", "工位像一口缸，我在里面慢慢被腌入味。", "领导问我怎么看，我看了一眼窗外。", "心已经脱机，身体还在联网。",
+    "有一瞬间我看见我自己在打字，觉得很陌生。", "我的存在感只剩下一条在线状态。", "我一天里说的\"没问题\"，比我的问题还多。", "发条拧到最后一圈了，再拧就断。", "我把自己缩成一个头像，方便被@。", "情绪太贵，我买不起，所以就不用了。",
+    "今天的我，和昨天的我，是同一份复制粘贴。", "同事说我今天好安静，其实我今天没开机。", "呼吸只是习惯，不是意愿。", "我在工位上活成了一个待机指示灯。", "我已经不觉得难受了，难受也要有力气。", "眼睛看着代码，眼神像是在看远方的海。",
+    "我的一天从\"在吗\"开始，到\"在的\"结束。", "别跟我聊人生，我连今天是星期几都没加载出来。", "椅子上坐着一团雾，戴着我的工牌。", "领导讲话的时候，我在观察他领带的纹路。", "汇报是我念的，内容是谁写的我不知道，可能也是我。", "遥控器在群里，谁都能按一下我。",
+    "大脑弹出一个提示：您的感受已过期。", "一整天我最亲密的接触，是椅子。", "有人递给我一份新需求，我像接过一张废纸。", "我怀疑我已经死了，只是钉钉还没通知我。", "我盯着表格，表格里的数字慢慢变成了我。", "我的快乐被存档了，密码忘了。",
+    "耳朵摆在那里，听的是另一个人。", "我能感觉到脑子里有一块地方已经关灯了。", "现在的我，是一份未命名的草稿。", "我一上班就切换到了\"无人驾驶\"模式。", "别给我情绪价值，我已经没有接口了。", "公司门禁刷的是我的卡，进去的是另一个人。",
+    "每天准时出现的，除了打卡提醒，就是我这个故障。", "我的心变成了一个只读文件。", "我坐在这，是因为椅子没有让我离开。", "早上闹钟响的时候，我先确认了一下自己是谁。", "我把感情压缩了，压缩包已经损坏。", "谁都可以给我派活，反正我没有主人格了。",
+    "别看我在笑，那只是脸在执行任务。", "放凉的白开水，就是我今天的状态，没味也没温度。", "一天里最真实的动作，是伸手摸工牌。", "我已经不用想了，工作替我想了。", "墙上的通知比我有人看。", "电脑重启了三次，我一次都没重启成功。",
+    "需求来了就来了，我看都不看，直接做错。", "我打算今天把摆烂做成汇报里的亮点。", "你们讨论吧，我先在这里当个背景。", "通不过就通不过，我又不是第一次通不过。", "我的原则是，能拖到明天的绝不今天崩溃。", "不改了，就这样上线，出事再说。",
+    "加薪不用了，把会议取消我就谢天谢地。", "我已经不争了，谁想要这个项目谁拿去。", "老板说我不上进，我说上不动了，退了。", "我今天完成了一件事：承认今天什么都完不成。", "骂吧，我今天的耳朵是关着的。", "等的不是机会，是散场。",
+    "你要的今天交，那我就把昨天的改个日期。", "我的职业规划：撑到发工资那天。", "全公司谁都可以卷，别来拉我。", "我已经把\"努力\"这个词从简历里删了。", "干得再多也是这么多钱，那我少干点。", "我不申辩了，你们的版本比我的精彩。",
+    "出问题就出问题，反正锅早就烧焦了。", "别人在冲业绩，我在冲马桶。", "我现在的态度是，能凑合就凑合，凑不了拉倒。", "扣钱就扣钱，反正工资卡我也没打开过。", "我不逃了，我就躺在这里让你们踩。", "不想赢了，能不输就算今天赢了。",
+    "谁再让我写周报，我就把上周的再发一遍。", "别劝我了，我只是不想活得那么用力。", "在乎是要花钱的，我的余额不足。", "老板画的饼，我当垫桌角用了。", "加班就加班，反正回家也是发呆。", "从今天起，我的目标是不被发现。",
+    "你说这个需求很紧急，那我更不能急了。", "我懒得解释了，你们高兴就好。", "我准备把下半辈子的力气都攒起来，暂时不用。", "需求排队吧，我正在排队等不干。", "谁来问我进度，我就给谁看进度条上的0%。", "反正不会有人看，我就随便写了。",
+    "你们的期望我都收到了，然后放进了回收站。", "客户不满意就不满意，我自己也不满意我自己。", "我不打算翻身了，翻过来也是这一面。", "我现在只想找个角落，把自己关机。", "职称我不要了，给我一个能锁门的储物间就行。", "打分随意，我早就不看那个数字了。",
+    "别指望我今天有产出，我连早饭都没消化。", "没关系，反正这个项目黄了也不是第一个。", "我把野心退货了，退款到账两块钱。", "我不冲了，你们冲，我在后面鼓掌。", "就这样交吧，反正不管交什么都得再改。", "我的斗志已经过保修期了。",
+    "想开除就开除，记得把我的椅子一起送走，它也累了。", "你们要的高标准，我这里只剩低配。", "别叫我再想想，我想不出来了，就这样了。", "我在公司唯一的追求，是别被叫进会议室。", "卷不动了，从今天起我是公司的地毯。", "活我接，做不做另说。",
+    "我把工作分成两类：不做的和拖着不做的。", "你们说我不行，好，我承认，我不行，散会。", "我什么都不图了，图个今天早点走。", "让他们去争一等奖，我争一等躺。", "反正明天还要重来，那今天先算了。", "以前是装着有劲，现在连装都懒得装。",
+    "我已经不想证明什么了，证明完还是要上班。", "领导问我有没有想法，我说有，想下班。", "我的上进心被裁员了，没有补偿。", "随你们改，我的名字你们也可以改。", "我不参与内卷，我参与内躺。", "我不想赢了，让我输得安静一点。",
+    "从此我只做一件事：等下班铃响。", "别拉我进群了，我已经在放弃群里当群主了。", "不管了，天塌下来有高个子，我是躺着的那个。", "我今天的工作计划是：撑到午饭。", "别问我意见，我的意见就是没有意见。", "反正努力和不努力都一样穷，那我选省力的。",
+    "我不拼了，拼图都比这个有成就感。", "我就摆在这里，谁想用就用，不用就放着。", "领导说要有主人翁精神，我说我只想当个客人。", "我的字典里，\"再试一次\"已经被删除了。", "被拒就被拒，我连伤心的流程都懒得走。", "再多的鸡血也打不进我这块烂泥了。",
+    "别指望我提意见了，我只想提早退。", "你们随便定KPI，我随便完不成。", "别人问我为什么这么淡定，我说因为已经放弃了。", "早上一想到要努力，我就把闹钟关了。", "什么都不想争了，只想争一口气躺下。", "我发现只要不在乎，就没有什么能伤到我，除了上班。",
+    "项目烂尾就烂尾，反正我也烂了。", "偷懒？这叫提前进入退休状态试运行。", "我把\"我可以\"改成了\"我算了\"。", "我唯一坚持的事，就是不再坚持。", "你们要结果，我只有结局。", "期望这东西，请寄到我的前任工位。",
+    "谁要我这个人，我打包送，不用付邮费。", "我本来就没有干劲，现在连假装的也没了。", "我已经决定了，让这个需求和我一起烂在这。", "我不想升级了，我想降级成一个静音的人。", "担当我担不动，先放地上，回头再说。", "人生第一次这么坚定：我不干了，先躺一下。",
+    "什么都不重要了，包括这句话。", "脾气办了停薪留职，归期未定。", "干不干都得挨骂，那我至少不干。", "我不再想\"怎么办\"了，只想\"算了吧\"。", "我的雄心壮志，只够我站起来去接杯水。", "我不跟你们抢了，把我留在原地就行。",
+    "项目延期就延期吧，我自己都延期了。", "我振作过一次，是上周，然后就没了。", "让我烂一会儿吧，烂也是需要时间的。", "就这样吧，这句话我今天说了三十次。", "反正没人在意，我也不打算在意了。", "请把我的名字从\"负责人\"改成\"负责躺\"。",
+    "我的胃里有一份日历，标红的全是评审日。", "半夜三点醒来，第一件事是看有没有消息。", "眼皮跳了一周，医生说是累的，我说是需求。", "我的心脏在钉钉响之前就已经开始慌了。", "我晚上闭眼就是Excel，睁眼还是Excel。", "我的腰已经弯成了工位的形状。",
+    "一想到明天要汇报，晚饭就吃不下了。", "我喝的不是咖啡，是撑住的理由。", "我的手一拿鼠标就抖，一放下就不抖了。", "我的指甲在评审会上被咬得最短。", "我的耳鸣声和消息提示音已经混在一起了。", "我坐得越久，越感觉身体在慢慢往地上融化。",
+    "我以为我感冒了，其实是被周报吓的。", "一听到\"今天能出吗\"，我的后脑勺就开始发麻。", "我的脖子已经不能转向不看屏幕的方向。", "周五晚上刚睡着，梦里就开始周一的站会。", "心跳很快，不是因为紧张，是因为一直在紧张。", "别人问我压力大不大，我说我已经压得没有形状了。",
+    "我的眼睛干得像被工作吸走了水分。", "每次被@，胃里就翻一下。", "我下班时候连电梯按钮都按不准了。", "我的失眠已经和我的项目一样长期。", "我一坐下就头晕，一站起来就想倒。", "我的手腕疼得像是在替我抗议。",
+    "一想到明天，我的肩膀就自动耸起来。", "我早上醒来，先确认胃疼不疼，再确认几点。", "我每年感冒的时间，正好和项目上线的时间重合。", "上个月的体检报告，比我的周报还长。", "我以为我在深呼吸，其实我一直在憋气。", "我的身体每天都在发一封抗议信，我从不回复。",
+    "一开会我就想吐，不知道是晕车还是晕人。", "半夜想哭，又怕吵到明天要早起的自己。", "我的胸口压着一块看不见的看板。", "我的血糖和我的心情一样，忽高忽低。", "我今天一整天，只有肚子在提醒我还活着。", "我的眼泪比我的年终奖来得准时。",
+    "一到周日晚上，我的手就开始冰。", "每次接到领导电话，喉咙就像被捏住。", "困倒不困，就是随时可能倒。", "我的脑袋一动就疼，像里面有个会议没散。", "我的膝盖比我的意志先跪下了。", "我睡了七个小时，醒来比熬夜还累。",
+    "我的手指在键盘上打出了老茧和绝望。", "一坐进会议室，我的胃就在给我倒计时。", "我的耐性和会议一样，越开越少。", "我拖着身体上班，身体拖着我下班。", "领导说我看起来没精神，我说我有精神已经算奇迹了。", "我每天只有在上厕所的时候才敢闭一会儿眼。",
+    "我的心悸和我的周报，都是每周一次。", "一想到需求评审，我的手心就全是汗。", "我的嗓子哑了，因为白天说太多\"好的\"。", "我的睡眠已经碎成一条条消息通知。", "我这周吃的止痛药比吃的饭还多。", "我一睁眼就头晕，这是身体在替我请假。",
+    "我的胆固醇和我的加班时长成正比。", "早上刷牙时干呕，我知道今天又有评审。", "我在工位上坐着坐着，突然眼前黑了一下。", "同事说我脸色差，那是我脸上唯一诚实的部分。", "我下班回家，连脱鞋的力气都要攒一会儿。", "我的心脏在深夜开会，我在旁边旁听。",
+    "我一听到\"再改一版\"，太阳穴就开始跳。", "医生说要多休息，我说这个需求评审不通过。", "我的呼吸像是在排队，一次只能进一点。", "我的作息表只有两栏：在公司，和想着公司。", "我抖着手把邮件发出去，然后瘫在椅子里。", "身体已经过热，风扇转到最高档，还是烫。",
+    "我一进办公室就喘不过气，出去就好了。", "我今天的午饭是两片胃药和一口气。", "我的声音在会上发颤，像信号不好的电话。", "我想吐，可是吐出来的只有需求。", "一想到下周还要来，我的骨头都在疼。", "我的眼睛已经看不见颜色了，只看得见截止日期。",
+    "上班路上我在打颤，不是天冷，是要去公司。", "我的心律和项目进度一样不正常。", "我每天靠一口气撑着，那口气也快没了。", "我不敢体检，怕报告写着\"建议辞职\"。", "我的头像被夹在一台机器里，一直在嗡嗡响。", "我今天吃了三顿饭，一顿都没尝出味道。",
+    "我的身体开始拒绝早上，闹钟一响就恶心。", "每次被点名发言，我的耳朵都在轰鸣。", "我一整天都在忍着什么，忍到最后忘了在忍什么。", "我端水杯的时候，水面一直在晃。", "我怀疑我的胃里住着一个产品经理。", "我的睡眠质量和项目质量都不合格。",
+    "我的心脏比我更早知道明天要开会。", "橡皮筋绷到发白了，下一下就是断。", "周五晚上我瘫在沙发上，像一个卸完货的纸箱。", "我照镜子，看见一个被榨过的人。", "我的肩膀硬得像一块甲方的态度。", "我的体温正常，是心里一直在降温。",
+    "我一整天没吃东西，可是一点也不饿，只是空。", "我以为我流的是汗，其实是冷汗。", "领导讲话的时候，我的胃在做减法。", "我的心在胸腔里撞来撞去，找不到出口。", "我睡着的时候都在皱眉，像在替公司守夜。", "我的身体在说不行，我的嘴还在说可以。",
+    "我早上出门时，膝盖软得像刚哭过。", "我的身体已经开始拒绝屏幕的光。", "我的手在发抖，眼睛在发酸，心在发慌，键盘在发烫。", "我一想到明天要交，胃就先替我熬夜了。", "我今天已经晕了三次，每次都被消息叫醒。", "我的脊柱在替公司背锅，已经背弯了。",
+    "我的眼球像两颗放了一周的葡萄干。", "我的心慌已经进化成了日常配置。", "我的闹钟设了五个，每一个都像在催稿。", "我的身体每个部位都在申请辞职，只有我没批。", "我的胃已经不再消化食物，只消化焦虑。", "我下班后躺了两个小时，才有力气翻身。",
+    "我的职业生涯和一次性筷子差不多，用完就扔。", "公司说我们是家人，我说家人不用打卡。", "打工人三个字，我只剩中间那个\"工\"。", "我的工位离厕所最近，公司很懂我。", "我的工资涨得比楼下的房租慢。", "别人的三十岁是而立，我的三十岁是而卧。",
+    "狼性文化？狼都不会连开六个会。", "我的简历上写着\"抗压能力强\"，现在只剩\"压\"。", "零件坏了能换，我是包装泡沫，拆完直接扔。", "我的座右铭：活着，但不是很想。", "我的人生像一份没保存的文档，随时可能没了。", "我是这个项目的核心成员，核心就是被压的那部分。",
+    "公司给我买了保险，我说那你们是有准备的。", "蜡烛烧到底了，还被问怎么不亮了。", "我不是团队的一员，是团队的一块垫脚石。", "老板说我很有潜力，潜力就是还没被榨完。", "我的年假在需求池里溺水了。", "会议室没人的时候，我会进去坐一会儿，假装在休假。",
+    "我的成长曲线是一条躺平的直线。", "有人问我梦想，我说梦想是能睡到自然醒。", "我的工作就是把别人的锅摆得整整齐齐。", "别人下班是回家，我下班是换个地方待机。", "我的职位叫\"高级\"，高级的是压力。", "公司说要提升幸福感，然后给我加了一个群。",
+    "这个月我最大的成就，是没在会上哭出来。", "我像一个语音助手，只会说\"好的，正在为您处理\"。", "我的KPI里没有\"活着\"这一项，所以也没人在乎。", "日子过得挺快，主要是它在踩着我过。", "我把咖啡喝成了血液，把血液熬成了周报。", "领导说不要抱怨，我就把抱怨改成了周报。",
+    "我像一支圆珠笔，写不出来就被甩两下继续用。", "我的通勤时间是一天中唯一的私人时间，还得站着。", "别人的猫有猫窝，我的工位是我的窝。", "我的人生进度条卡在\"加载中\"。", "我是一块活着的招牌，写着\"随时可用\"。", "主人翁意识我有，主人翁的分红呢。",
+    "我不是没有爱好，我的爱好被排期排掉了。", "速溶的是咖啡，也是我，冲一下马上就得用。", "我的努力被写进了别人的PPT。", "我不需要闹钟，焦虑会准时叫醒我。", "公司给我配了双屏，好让我同时被两件事压死。", "周末两天，一天用来躺，一天用来害怕周一。",
+    "仓鼠至少知道自己在转轮子，我还以为在往前跑。", "过劳只是入门，我已经进阶到过劳而不自知。", "我今天在公司哭了，哭完发现没人发现，挺好。", "我的朋友圈已经三年没更新了，因为没有朋友圈了。", "我的老板是需求生成器，我是回收站。", "被翻烂的说明书，谁都用，谁也不珍惜，说的就是我。",
+    "我的职业病是听到\"简单改一下\"就想逃。", "我把生活过成了工作日的间隙。", "公司管这叫\"扁平化\"，就是把我压扁了。", "我的年终总结：活下来了。", "反复重启之后，每次开机都少一点东西。", "如果努力有用，我早就是CEO了，现在只是CEO的桌腿。",
+    "加班可以，加班还要发朋友圈说热爱，这我做不到。", "老板说要有仪式感，然后给我发了一个截止日期。", "我的生活像一个错误弹窗，只能点\"确定\"。", "我的工位配了绿植，它比我先枯了。", "我的心理咨询师都劝我换个工作，然后他自己也在加班。", "我用青春换了一个工牌，还是塑料的。",
+    "我这一年最大的进步，是能面无表情地说\"好的\"。", "工作绑架了我，赎金是我自己付的。", "老板画的饼太大了，我的胃太小了。", "我在公司的定位是：随时可以顶上去的那个。", "我的社交圈只剩下工作群和外卖小哥。", "改了十版的合同最后没人签，我就是那份合同。",
+    "我的存款和我的耐心一样，一直在减少。", "公司的食堂很贴心，饭菜和我一样没味道。", "我在公司唯一的成就感，来自准时下班的那一次。", "老板说我们是一条船上的，我说我是船底的锚。", "我的一生像一份需求文档，改到最后没人记得原本是什么。", "公司养我，像养一盆假花，好看不用浇水。",
+    "我把\"人生\"改成了\"人剩\"。", "我的兴趣爱好：看别人下班。", "领导说要\"拥抱变化\"，我抱到手臂都脱臼了。", "免费试用版用了三年，还没转正。", "我的三十五岁在向我招手，手里拿着裁员通知。", "工具人这个词太抬举我了，\"人\"字早被优化掉了。",
+    "我在公司的英文名叫Deadline。", "我的绩效评语年年都是\"仍需努力\"，我年年都仍需活着。", "别人的努力是为了上岸，我的努力是为了不沉。", "公司说要\"共同成长\"，然后我长了痔疮。", "过期优惠券的处境我懂：没人要，又舍不得扔。", "我的生活是一个死循环，出口在需求里。",
+    "老板说我不可替代，然后招了三个实习生。", "牛马好歹下班不用回消息，我羡慕牛马。", "我最近学会了一项新技能：假装在思考。", "我像一张便利贴，贴哪儿都行，撕了也不心疼。", "我的人生剧本，作者是产品经理。", "我发现公司是一个游戏，只是我没有存档点。",
+    "周末休息？那是老板给自己安排的。", "我的钱包和我的精神一样，都是空壳。", "午饭是给身体发的加班费，还是打折的。", "热情正在维修中，预计恢复时间：离职后。", "被借调出去三年了，原部门已经忘了我。", "我把人生的开关交给了钉钉。",
+    "我的未来规划：到明天。", "我以为我在打工，其实是工在打我。", "我的工作是把不可能变成加班。", "公司说我很重要，重要到不能休假。", "永远在更新，从来没有正式版，说的是我。", "努力了一年，换到的假期不够看一场电影。",
+    "有人问我在忙什么，我说在忙着被忙。", "我的座位靠窗，方便我看别人下班。", "我最擅长的事，是在崩溃前先说\"没问题\"。", "购物车被推来推去，装的全是别人的东西，我也一样。", "躺平是主动的，我这叫被压平，形状差不多。", "我的一天分为两段：想下班，和下班了想到明天。"];
+  const CN_SMOKE = ["一群吃干饭的脑残搁这儿指手画脚，这业务能活到现在纯靠老天瞎了眼！", "天天整那些死脑筋的KPI，正经事一件干不成，拉屎不出怪地球没引力，草！", "拍脑门决策，拍胸脯保证，拍屁股走人！留下一堆烂摊子给底下人收拾，真他妈绝了！", "整天跟个戏精一样开会表演，除了会甩锅和抢功劳，你们还会个屁啊？！", "搞一堆听不懂的人话和PPT名词，掩盖你们脑子空空的事实，真嫌不够恶心人！", "又想马儿跑，又想马儿不吃草，还要马儿自己把皮剥了给你当鞋垫？！去死吧！",
+    "少特么给我谈理想画大饼，老子来上班是来赚钱的，不是来给你当免费奴隶的！", "工资发得跟打发要饭的一样，要求提得跟选总统一样，脸呢？！还要不要脸了？！", "天天逼着大家'共克时艰'，你怎么不把你名下的豪车豪宅卖了跟公司共克？骗谁呢？！", "赶紧倒闭吧！今晚就凉透！省得天天搁这儿折磨人，早死早超生！", "庙小妖风大，池浅王八多！这破地方多待一天我都觉得是在糟蹋我自己！", "赏罚不明，是非不分，会干活的被干死，会舔的当上领导，这破公司不倒真的天理难容！",
+    "赶紧把欠老子的钱一分不少地结了，老子多看你们这群智障一眼都想吐！", "今天我就站在这儿看你们怎么塌房，等着瞧，看这艘破船什么时候彻底沉底！", "开会三小时，结论零个，脑子是拿来当摆设的吗？！", "需求一天改八遍，你们是在做产品还是在抽奖？！", "领导拍板五分钟，我们返工五星期，草！", "上面动动嘴，下面跑断腿，这破规矩谁定的？！",
+    "一句'尽快'就把人往死里逼，你倒是说清楚哪天啊！", "会做PPT的升官，会干活的背锅，天理呢？！", "把'狼性'挂嘴边的人，自己连羊都不如！", "天天喊'降本增效'，降的是我们的工资，增的是你们的年终！", "啥都不懂还要瞎指挥，你们是来搞笑的吗？！", "出了事第一时间找替罪羊，这就是你们的管理？！",
+    "三个领导五个意见，我们到底听谁的？！", "做出来的东西自己都不用，还好意思叫产品？！", "背景板一样的中层，除了传话还会啥？！", "定指标的时候你们脑子进水了吧？！", "一天开六个会，活谁干？鬼干吗？！", "天天'对齐''拉通''赋能'，你们能不能说人话！",
+    "抢功劳的时候跑得比谁都快，担责任的时候一个都找不着！", "当着老板一个样，背着老板另一个样，恶心！", "项目黄了怪执行，项目成了归领导，呸！", "让马儿跑还不给草，还要马儿写周报感恩！", "画的饼比月亮还大，发的钱比硬币还薄！", "加班不给钱还美其名曰'福报'，福你个头！",
+    "让我们感恩公司？公司先感恩一下我们的肝吧！", "一句'年轻人要多历练'，就想白嫖我三年？！", "团建就是变相加班，还要自己掏钱，绝了！", "'我们是一家人'——一家人你怎么不分我股份？！", "加班到凌晨，第二天还要笑着打卡，我笑你个鬼！", "调休调到猴年马月，你们当我傻？！",
+    "请个假跟求人一样，工资却扣得干脆利落！", "'能者多劳'，翻译一下就是'老实人多干'！", "不给资源不给人，光给压力，你们真行！", "五险一金按最低交，口号按最高喊！", "年终奖变成一封感谢信，你们脸皮真厚！", "'公司困难'四个字用了三年，困难到换了两辆新车？！",
+    "让我们自愿加班，自愿你个头！", "把人当电池用，用完就扔，早晚遭报应！", "再撑一撑？撑你个头，我肝都撑没了！", "这破船早点沉，我还能早点上岸！", "天天喊'共渡难关'，关是你们挖的坑！", "一个个都想当皇帝，可这破庙连香火都没有！",
+    "公司文化就四个字：忍气吞声！", "早倒闭早解脱，省得一天天在这儿耗命！", "走一个人换三个坑，人事也是没脑子！", "这地方待久了，人都要废！", "招聘写得天花乱坠，进来一看全是坑！", "干得越多错得越多，不干的反而升职，绝了！",
+    "这公司唯一的优点就是离地铁近！", "什么狗屁企业文化，就是压榨文化！", "天天'赋能'，能给我涨点工资吗？！", "再这样搞下去，客户都得被你们赶跑！", "别跟我讲情怀，情怀能交房租吗？！", "一天到晚'拥抱变化'，变的都是坏事！",
+    "绩效面谈就是变相威胁，谁不知道？！", "我为公司拼命，公司给我批个病假都推三阻四！", "这样的领导，猪都能当！", "谁再跟我说'年轻人吃点苦'，我就让他先吃！", "所谓'扁平化'，就是所有人都能骂我！", "啥事都'先上线再说'，上线炸了又怪我！",
+    "不发奖金还搞颁奖典礼，你们真是天才！", "开会就是领导念PPT，我们负责鼓掌！", "一年涨薪三百块，还要我写感言？！", "这公司的效率，还不如楼下的煎饼摊！", "把工位当牢房，把员工当囚犯，还想要忠诚？！", "'加班是自愿的'，不加班就'态度有问题'！",
+    "别人的老板在发钱，我们的老板在发疯！", "流程一改再改，改到最后没人知道咋干！", "抽完这根，回去继续当牛马，草！", "啥都要'闭环'，你们的脑子先闭环一下吧！", "老子今天就把话放这儿：这公司迟早完蛋！", "当初面试吹得天花乱坠，现在连打印纸都要省！",
+    "让我'主人翁精神'？主人翁怎么没分红？！", "天天讲'结果导向'，结果就是大家一起完蛋！", "天天'压力测试'，测的是我们的血压！", "一年三次组织架构调整，你们是在玩俄罗斯方块吗？！", "真想把这份报表糊到他们脸上！", "这根烟比公司的未来还有盼头！",
+    "再不发工资我就把服务器拔了！", "我这辈子的耐心都花在这破公司了！", "什么'扁平管理'，就是谁都能踩你一脚！", "领导的嘴，骗人的鬼！", "早晚有一天，我要亲眼看着这里关门！", "把'奋斗者协议'塞回你们自己嘴里！",
+    "一个破需求评审开了四个小时，脑子里装的是浆糊吗？！", "老板的表比我一年工资都贵，还好意思说没钱涨薪？！", "让员工写'感恩日记'的公司，迟早写进倒闭名单！", "连打印机都比你们这帮领导靠谱！", "一天到晚'向上管理'，向上管你个头！", "抽根烟的功夫，你们又改了三版方案，服了！",
+    "不发年终奖还要开年会，让我们给你们鼓掌？做梦！", "老板昨晚做了个梦，今天全公司就得改方向，草！", "拍脑袋定的deadline，拍大腿说来不及，脑子呢？！", "领导的想法一天一个，比天气预报还不准！", "需求文档三行字，让我做出个宇宙飞船来？！", "一个功能五个负责人，出事了一个都不负责！",
+    "老板刷了个短视频，就要我们全员转型做AI，草！", "每次战略会开完，方向都跟上次反着来！", "你们决策的速度比我抽这根烟还快，还不带脑子！", "会议纪要写得跟小说一样，就是没一句能落地的！", "领导嘴一张“这个很简单”，我们三个通宵！", "说好的需求冻结，冻了不到一小时就化了！",
+    "让我估工期，估完又说要砍一半，那你问我干嘛？！", "老板不懂技术，但他觉得他懂，这才是最要命的！", "项目排期是领导拿骰子摇出来的吧？！", "一个按钮的颜色，七个人开了两天会，草！", "出主意的一大堆，兜底的一个没有！", "领导的“我以为”，就是我们的“重头来”！",
+    "每次上线前领导才想起来要看效果，看了就要改！", "什么叫“我不管过程只要结果”？你倒是把人配够啊！", "领导回个消息要三天，催我们进度只要三秒！", "老板出差一趟回来，公司战略又全换了！", "会上说“大家自己判断”，出事又说“谁让你自己判断的”！", "立项的时候拍手叫好，砍项目的时候比谁都快！",
+    "领导拿两年前的数据做今年的决策，脑子是不更新的吗？！", "三层审批批一个二十块的报销，效率高得感人！", "老板的“小改动”，每次都是把整个系统推翻重做！", "做了半年的功能，上线前一天说不做了，我人都麻了！", "领导只会问“什么时候能好”，从来不问“需要什么”！", "你们开会的时间省下来，公司早就上市了！",
+    "每次汇报领导只看第一页，然后就开始发表意见！", "决策巨婴天天要糖吃，出问题就哭鼻子找妈！", "一个需求经过五层领导，到我手上已经面目全非！", "说好的方案A，做到一半改B，快做完了又说A好，草！", "领导对市场的了解全靠朋友圈，草！", "不会写代码的人给代码提意见，还要我们“虚心接受”？！",
+    "老板亲自画的原型图，连他自己都看不懂！", "领导说“你先做着，方向再定”，方向定了我做的全废！", "中层的工作就是把上面的屁话翻译成更长的屁话！", "会议一开就是“要有大局观”，大局在哪你倒是指一下啊！", "领导审方案永远只有一句“感觉不对”，感觉你个头！", "一个季度换三个方向，老板是在玩转盘吗？！",
+    "汇报的时候说数据不够，给数据了又说看不懂！", "领导的日程表排满了会，就没排过“想一想”！", "决策的时候不叫我，背锅的时候第一个想到我！", "产品经理三天没睡出了个需求，我们三个月没睡来还债！", "跟老板讲技术风险，他只听见“能做”两个字！", "项目复盘会开成批斗会，问题一个没解决！",
+    "领导拍完板就去度假，留我们在这儿跟火山口对线！", "每个领导都说“这不是我的职责”，那你们的职责是收钱？！", "立了三十个OKR，没有一个知道怎么算完成！", "说要“敏捷”，结果每天站会开一个半小时！", "一句“老板要看”，什么排期都得让路！", "需求评审的时候全体沉默，上线了全体有意见！",
+    "领导说要“抓大放小”，结果天天抓我的错别字！", "老板一拍桌子“必须这周上”，可需求还在他脑子里没出来！", "管理层的核心能力：把一件简单的事搞得谁都干不了！", "明明是领导决策失误，报告里写成“市场环境变化”！", "你们定的目标，连PPT里那条曲线自己都不信！", "一个流程审批要走七天，改流程的会开了七个月！",
+    "领导最爱说“我理解你们”，理解完排期一天不减！", "说是要听一线的声音，一线一开口就说“你格局小了”！", "老板每天都有新点子，每个点子都要我们今晚出方案！", "每次战略调整都说“这次是最后一次”，你们自己信吗？！", "让我们提建议，提完就成了我们的KPI，谁还敢提？！", "领导嘴里的“资源到位”，就是给我加了个实习生！",
+    "产品说“用户要这个”，用户是你家亲戚吗？！", "一群没上过一线的人，在会议室里指点江山！", "汇报PPT改了十版，业务一版没改！", "领导的记性只对我们的错好使！", "老板一句“我觉得可以更酷一点”，设计师直接跪了！", "决策靠嗓门大，谁声音响谁对！",
+    "领导天天说“要有owner意识”，owner的股份呢？！", "让我们对结果负责，可决定是你们做的！", "一天三个紧急需求，紧急到没有一个有文档！", "老板的想法像烟头，随手一扔就要我们去捡！", "领导说“这个方案我看过了”，看的是标题吧？！", "复盘会三句话：不是我，我不知道，下次注意！",
+    "领导的承诺跟微信撤回一样，两分钟就没了！", "组织架构图比我们的系统架构图还乱！", "需求砍了一半，工期没变，人也没变，脑子倒是没了！", "定KPI的人没干过活，干活的人定不了KPI！", "三个人的活给一个人，还问为什么慢！", "每个会都要“拉齐认知”，拉了半年谁也没齐！",
+    "老板说“要有创业心态”，创业的股权在哪儿？！", "领导做决定全凭直觉，可他的直觉就没准过！", "从来不给需求，只给“你懂我的意思吧”，我懂你个鬼！", "说要“用数据说话”，数据不好看就换个口径！", "上头一句“要有紧迫感”，我们就得把周末交出去！", "新领导一来就要“改造”，改完比原来还烂！",
+    "一个决定改十次，还要求我们“保持定力”！", "上线出问题，领导第一反应是“谁的代码”，而不是“怎么修”！", "管理层的“创新”，就是把去年砍掉的东西重新做一遍！", "每次都“先做个demo看看”，demo一出来就要当正式版上线！", "领导的高见：把功能全堆上去，用户自然就来了！", "客户投诉一句，老板就要全体大会反思，正事不干了！",
+    "老板不懂装懂，中层懂装不懂，我们懂也没用！", "三天的活给一天，还说“相信你们的能力”！", "领导的“我们再看看”，就是让这事烂在那里！", "从一个会跑到下一个会，领导的一天就是在开会的路上！", "一个技术选型，让不懂技术的人投票决定，草！", "领导最会的事：把“我不知道”说成“你们自己想”！",
+    "所谓管理，就是把责任往下推，把功劳往上报！", "老板一句“不差钱”，第二天就说没预算！", "给我们讲“打胜仗”，仗在哪儿都不知道！", "你们的战略，就是看别人做啥就做啥！", "周会上每个领导都要发言，说的全是废话，草！", "决策会上没人拍板，散会后每个人都说自己拍了！",
+    "领导说“我不管细节”，可细节就是全部！", "新官上任三把火，全烧在我们头上！", "做了个原型，领导看了说“太丑”，说不出哪里丑！", "会议纪要上写的“达成一致”，我怎么不记得我同意了？！", "老板的“顶层设计”，设计得连楼梯都没有！", "每次改方向都说是“战略升级”，升级到快退市了！",
+    "上面说“简单做一版”，做完了又说“怎么这么简陋”！", "领导的“最后确认”，起码还要确认五次！", "一个会里定的事，第二个会推翻，第三个会再定回来！", "老板的“格局”就是不谈钱，“眼光”就是看别人赚钱！", "一句“业界都这么做”就让我们照抄，抄都抄不明白！", "领导要求“随时响应”，他自己的消息永远在“已读”！",
+    "从来不看数据的人，最爱说“数据驱动”！", "产品经理的需求全靠灵感，测试全靠上线用户！", "领导说“这个很急”，急了三个月还没人看过一眼！", "管理层唯一稳定的产出，就是不稳定的决策！", "要求我们十分钟内回复，他们自己的审批拖一个月！", "让我们“多想想为什么”，想出来了又说“别想那么多”！",
+    "领导的方案改到第十版，发现跟第一版一模一样！", "你们所谓的“快速试错”，就是快速让我们背锅！", "老板觉得加个人就能把九个月的活一个月干完，脑子呢？！", "领导拍的每一个板，最后都是我们来扛！", "决策全靠“我觉得”，论证全靠“你们信我”！", "汇报的时候数据要漂亮，干活的时候资源没一个！",
+    "中层最大的本事：上面骂他，他就骂我们！", "让我加班赶的功能，上线后领导自己都忘了！", "每个季度都“重新聚焦”，聚焦到最后啥都没了！", "老板的“顺便”，是我们的“通宵”！", "领导不会用自己家的产品，还给用户提体验建议！", "管理层唯一的共识：出了事绝对不是管理层的问题！",
+    "每次说“这是最高优先级”，一天下来五个最高优先级！", "领导的“有空吗”，从来不是在问，是在通知！", "领导说的“放心交给我”，就是这事你别指望了！", "项目立项靠PPT，项目死亡靠沉默！", "一个bug，领导能开三个会，就是不让人去修！", "开会的人比干活的人多，这公司不亏才怪！",
+    "上面说“赋权”，权没给，锅先给了！", "领导要“看得见的成果”，看不见的地基就让它塌？！", "让我“以公司为家”？家里会扣我全勤吗？！", "“奋斗”两个字，你们说的时候真的不心虚吗？！", "加班费按小时算是零，早会迟到扣钱按分钟算！", "工资月月准时晚发，口号天天准时早喊！",
+    "一句“年轻人要有格局”，就想让我免费干到四十岁？！", "让我周末“顺便”看下线上，顺便把工资涨一下呗？！", "每天打鸡血，血都是从我们身上抽的！", "团队氛围全靠喊口号，喊完口号一个人也不剩！", "说是弹性工作制，弹的只有下班时间！", "讲了三年的期权，期到现在连张纸都没见过！",
+    "让我们“用爱发电”，你们怎么不用爱付房租？！", "全年无休还要笑脸相迎，我又不是庙里的菩萨！", "“多学习多成长”，成长完工资还是那点！", "培训在周末，考试在下班后，学费还自己掏！", "“工作就是最好的休息”，说这话的人下午三点就走了！", "把加班时长当勋章挂墙上，那我肝的X光片也挂上去吧！",
+    "说什么“公司给你平台”，平台不发钱，我拿来睡觉吗？！", "月薪五千，让我操心公司上市的事？！", "通宵上线，第二天领导发了个“辛苦了”表情包，草！", "你们的“激励机制”就是一张贴在墙上的排行榜！", "让我“主动承担”，承担完了工资谁主动涨？！", "早上打鸡血，晚上放PUA，全天候套餐！",
+    "我不是不想拼，是你们给的钱不值得我拼！", "说是“年轻团队有活力”，活力全是逼出来的！", "“公司最看重人才”，看重到每年都不给人才涨薪！", "又要马上出成果，又不给一分钱预算，你们真敢想！", "让我“珍惜机会”，机会就是每天多干四小时？！", "口号喊得震天响，工资条薄得能透光！",
+    "发一箱苹果就叫“员工关怀”，你们脑子是被苹果砸了吧！", "让我们“把公司当自己的事业”，那我怎么没在工商注册里？！", "说好的双休变单休，说好的单休变没休！", "用“锻炼你”当理由让我干三个人的活，锻炼完还是一个人的钱！", "每周五下午开“战斗动员会”，动员我们周末来加班！", "让我们“多做少说”，你们倒是“少说多发”啊！",
+    "三天两头“冲刺”，冲了三年，终点线一直在挪！", "“只要努力就有回报”，我努力五年回报是个新工牌！", "加班餐是泡面，出差住的是青旅，还讲“高标准”？！", "让我们“自我驱动”，驱动完了油钱自己出？！", "发不出工资就发感谢信，我拿感谢信去交房租？！", "你们的“成长空间”，就是一个人干整个部门的活！",
+    "什么“付出总有回报”，付出的是我，回报的是老板！", "说好的“补休”，补到我离职都没休上！", "“全员皆销售”，工资怎么不“全员皆老板”？！", "一边说没钱涨薪，一边花几十万搞团队墙绘！", "“不要计较眼前得失”，那你们怎么天天算我工时？！", "培训讲师喊“燃烧自己”，我燃完了谁给我买灭火器？！",
+    "零点以后不报销打车，让我们“体验生活”？！", "拿实习生工资，干总监的活，还要感谢公司培养！", "那些鸡汤文章我看一篇吐一次！", "“为梦想而战”，梦想是你们的，战场是我们的！", "说得好听叫“人才梯队”，说难听就是便宜劳力！", "干活的时候“你是核心”，涨薪的时候“你还年轻”！",
+    "让我们“自愿”签放弃加班费的协议，好一个自愿！", "老板演讲说“我们都是追梦人”，追完梦回去继续干到凌晨！", "什么“零食随便吃”，我要的是工资随便涨！", "一场三小时的鸡血大会，抵不上给我发一百块！", "你们的“扁平”，就是所有人工资一样低！", "拿“能力提升”说事儿的公司，都不打算给你钱！",
+    "说好的年薪三十万，拆开一看一半是“目标奖金”！", "不给钱还想要忠诚？我又不是你们养的狗！", "一个人干三个岗，简历上是“多面手”，工资条上是“一个人”！", "“凡事多想一步”，多想的那一步谁给算钱？！", "每天开早会喊口号，跟传销有什么区别？！", "你们的“信任”就是不签合同先干活？！",
+    "出差补贴三十块，够我买一包烟吗？！", "让我用自己电脑干公司的活，还要装公司的监控？！", "说“辛苦了”的时候挺勤快，说“给钱”的时候就哑巴了！", "什么“责任心”，责任你们的，心我们的！", "让我们对公司有“归属感”，公司对我们有“归属费”吗？！", "“奋斗改变命运”，改变的是老板的命运！",
+    "你们的“激情”，只值一顿两百块的团建烧烤！", "拖欠工资叫“周转困难”，不让我请假叫“制度”！", "“我们是创业公司”，说了八年了还在创业？！", "“你的价值不止于钱”，那先把钱给我再说别的！", "绩效打了S，奖金变成了“精神鼓励”！", "一边说“人是最大资产”，一边用最低成本折旧！",
+    "让我们“跟公司一起熬”，熬到最后汤都是你们的！", "领导发的心灵鸡汤，喝完只想吐！", "“加班不是目的，是手段”，手段就是白嫖我的命！", "周末的“自愿培训”，不去的话周一就被谈话！", "所谓“给年轻人机会”，机会就是给年轻人无限的活！", "我要的是加薪，你给我的是加压！",
+    "不加班就“不够投入”，加了班又说“效率低”！", "让我们“下班后学习提升”，那下班还算下班吗？！", "给我个“优秀员工”头衔，奖金是零，活翻一倍！", "说“公司在投资你”，投的是我的时间，赚的是你们的钱！", "一千块的年终奖，还让我们写三千字的感想！", "你们的“人文关怀”，就是加班时开着空调！",
+    "开口“兄弟”闭口“兄弟”，发钱的时候咋不叫兄弟了？！", "让我“把标准提高”，工资标准怎么不提？！", "你们的“成就感”，还是换成人民币比较实在！", "说“平台大”，可我的工资卡从来没大过！", "上班要“全情投入”，下班还要“随时待命”，这不叫工作叫卖身！", "每次说“这次做好了给大家涨薪”，做好了就换个说法！",
+    "“先苦后甜”，苦了五年，甜的都是你们！", "让我们“体谅公司”，公司体谅过我的房贷吗？！", "你们的“福利”是一杯打折咖啡，我要的是打不折的工资！", "说好的“年终双薪”，年终连单薪都拖！", "所谓“全员持股”，持的是老板的口头股！", "每天早上“加油”，油从来不是你们出的！",
+    "天天吹“团队精神”，精神有了，钱没有！", "什么“你在公司能学到很多”，学到最多的是怎么被压榨！", "让我们“用结果证明自己”，证明完了你们拿结果去要融资！", "干得好是“应该的”，干不好是“你的问题”，钱是“以后的”！", "“你的努力大家都看在眼里”，看在眼里不如放进工资卡里！", "给我们讲马斯洛，你们连最底层的钱都不给！",
+    "“人生不只是打工”，那你们天天让我打工是什么意思？！", "用一顿下午茶换我一个通宵，你们算盘打得真响！", "让我“从长远看”，长远看我早就饿死了！", "什么“这是你的舞台”，舞台上跳舞的人不给钱？！", "“机会留给有准备的人”，我准备了五年，机会留给了空降兵！", "每次要求加薪，就跟我谈“感情”！",
+    "吹得再狠的鸡血，也堵不上我账户的窟窿！", "请我们喝奶茶就想让我们通宵，奶茶多少钱一杯你心里没数？！", "那些“正能量”分享会，全是负能量的源头！", "你们要的“狼性”，是让狼饿着肚子替你们看家！", "拿“锻炼”当借口，拿“成长”当工资，你们真是文学家！", "工位比家熟，家人都快不认识我了，还要我“更投入”？！",
+    "“别总想着钱”——那你把我的工资换成想法给我呗？！", "让我们“共享成功”，成功了你们分红，失败了我们分锅！", "什么“梦想启动仪式”，启动完了工资照样迟发！", "说“公司不养闲人”，可闲人都在管理层！", "你们那个“荣誉墙”，还不如厕所的墙有用！", "让我“低头做事”，低头的时候你们就从我头上过去了！",
+    "用“你不干有的是人干”来吓我，那你倒是去找啊！", "开会喊“赢在明天”，今天的工资先给我发一下！", "“老员工要以身作则”，以身作则地免费加班？！", "一边说“薪酬保密”，一边全员都知道谁都没涨！", "所谓“高压高回报”，压是真高，回报在哪儿？！", "加班群里每天发“今天又是充实的一天”，我特么想砸手机！",
+    "拿“公司在转型”当借口停奖金，转型到你们买了新办公楼！", "让我们“自发地”来周末开会，自发你个头！", "说“你的努力会被看见”，看见了然后呢？点个赞？！", "什么“艰苦奋斗是传统”，传统能当饭吃吗？！", "不涨薪的理由每年都不一样，不涨薪的结果每年都一样！", "“年轻就是资本”，资本都被你们拿去投了！",
+    "拿实习生当正式工用，拿正式工当两个人用！", "干完活让我们“沉淀一下”，沉淀完再干两倍！", "每天“元气满满”的早安语，元气全靠咖啡因撑着！", "说什么“陪伴公司成长”，我陪你成长，谁陪我还贷？！", "你们的“温度”，是让我们加班到暖气都关了！", "让我“多担当”，担当的锅还要自己洗！",
+    "员工手册写“以人为本”，本子里全是罚款条例！", "什么“不设上限”，上限是你们的钱包，下限是我们的命！", "用“愿景”糊弄我十次，我一次都不信了！", "这公司烂得连蟑螂都嫌弃，早点关门给蟑螂腾地方！", "楼下保安都知道这公司撑不到年底！", "老子等着看你们把最后一台服务器拿去抵债！",
+    "这地方的风水，连算命的路过都摇头！", "你们那个所谓的“产品”，连自己家人都不敢推荐！", "沉吧沉吧，我早就在船边站好了！", "这家公司唯一能准时的，就是每月倒计时倒闭！", "上下一窝糊涂蛋，这地方不黄天理不容！", "客户走光了，人才跑光了，就剩几个吹牛的还在！",
+    "拿这破公司的股份，还不如拿一张彩票！", "你们再这么搞，明年办公室就改成麻将馆了！", "这公司就是个大型行为艺术：看一群人怎么把钱烧光！", "一颗老鼠屎坏一锅粥，你们这锅粥里全是老鼠屎！", "泡沫吹得再大，针一戳照样炸！", "竞争对手都不用出手，你们自己就能把自己搞死！",
+    "这地方就是个坟场，每个工位都埋着一个人的青春！", "老子把烟灰弹在这门口，就当给这公司上香了！", "看你们这样子，估计连清算的钱都凑不齐！", "这破公司烂到根了，浇多少钱都救不活！", "你们的口碑在圈子里臭得连快递都不愿意送！", "招不到人不是因为市场差，是你们的名声臭大街了！",
+    "整个部门就一台电脑能跑，还敢说自己是科技公司？！", "这公司的寿命，跟我这根烟差不多长！", "破房子还想撑门面，屋顶都漏了还挂彩灯！", "我赌一包烟，这项目上线不到三天就下线！", "你们的“生态”，就是一潭死水里几条快翻肚的鱼！", "楼上是大厂，楼下是外卖站，你们夹中间像个笑话！",
+    "用户流失得跟漏水一样，你们还在讨论logo！", "这地方唯一在增长的，是离职人数！", "这公司就是一艘漏船，船长还在甲板上开庆功宴！", "我看财务的脸色就知道，账上没几个月了！", "这堆屎山代码谁接手谁倒霉，跟公司一样烂！", "再融不到钱，你们的PPT就可以拿去当废纸卖了！",
+    "大厦将倾，你们还在争谁坐大办公室！", "我等着看猎头给你们全员群发消息那天！", "在这公司干过的人，出去简历上都不好意思写！", "这公司的下场，我都能给你们写好悼词！", "破锣一个，还想敲出交响乐来？！", "一个月走了十五个人，再走两个我就关灯了！",
+    "我对这公司的唯一期望：倒闭的时候把工资结清！", "你们这个平台，连薅羊毛的都不来了！", "这烂摊子，神仙来了也得先辞职！", "从门口走到工位，一路都是烂尾项目的味道！", "干脆把办公室改成火锅店，说不定还能赚点钱！", "该走的都走了，留下的都在等赔偿！",
+    "你们那营收曲线，跟我的心电图一样快平了！", "隔壁楼都换了三家公司了，你们居然还没死透！", "这公司的“核心竞争力”，就是拖欠工资的技术！", "破船一艘，桨都没有，还想去远航？！", "你们的商业模式就是：烧钱、裁员、再烧钱、再裁员！", "这地方就像个烂透的西瓜，皮还绿着，里面全是虫！",
+    "迟早有一天，这公司的名字只会出现在失信名单上！", "老子去年就说这船要沉，今年果然进水了！", "那些吹过的牛，将来都是清算时的笑话！", "别说三年，我看这公司三个季度都悬！", "你们做的产品，评论区全是“求退款”！", "一个个都在往外投简历，还开什么全员大会？！",
+    "等你们倒闭那天，我要买瓶最贵的酒庆祝！", "这破地方，连Wi-Fi都比员工先跑！", "全公司的希望都压在一个不靠谱的老板身上，不完蛋才怪！", "公司账上的钱，还不够我抽一年的烟！", "从你们的年报看，倒闭是唯一的解决方案！", "这公司烂到我朋友都劝我别提它的名字！",
+    "楼里电梯坏了三个月没人修，还谈什么“未来”？！", "别装了，你们连办公室租金都在拖！", "这船不但漏，船上的老鼠还在抢救生艇！", "我看你们这样子，明年这时候门口就贴封条了！", "破公司快点死，我好去下家继续骂！", "当年吹的“改变世界”，现在连改变工资卡都做不到！",
+    "你们这个项目，就是把几百万扔进马桶还按了冲水！", "这公司的“品牌”，在行业群里已经是段子了！", "你们死的时候，我连花圈钱都不想出！", "只剩一口气还要装活蹦乱跳，装给谁看？！", "这楼层的风水，来一家倒一家，你们是第四家！", "我看你们不是在创业，是在给殡葬业培训！",
+    "这盘棋早就输了，你们还在摆棋子！", "这公司要是能活过冬天，我把这根烟嚼了吃！", "你们所谓的“护城河”，就是一道排水沟！", "屁大点公司，派系比朝廷还多！", "老子现在就盼着哪天来上班，发现门被锁了！", "这烂摊子，连收破烂的都嫌重！",
+    "上市？你们能活到下个季度就烧高香吧！", "你们的下一轮融资，投资人只会回个“哈哈”！", "这公司就是个空壳，壳上还画着一堆漂亮的花！", "公司的技术债比国债都高，还谈什么远景？！", "这么烂的地方，连乌鸦飞过都得骂一句！", "员工在门口骂公司，老板在会议室骂员工，这公司平衡得很！",
+    "你们把这盘好棋下得稀烂，还怪棋盘？！", "这地方的士气比北极都低，早该封冻拆迁了！", "一栋楼的公司，就你们的灯亮得最晚死得最快！", "破公司迟早爆雷，我先躲远点省得溅一身！", "你们这堆人凑一起，除了倒闭没别的可能！", "到时候被清算了，别忘了把我的工位牌留给我做纪念！",
+    "这公司的招牌，连收旧货的都不收！", "一群鬼在船上喊“全速前进”，船底都掉了！", "你们的“新业务”就是换个名字继续亏！", "明年校招别去了，去了也是骗人家来陪葬！", "这公司就跟那泡烂的烟一样，抽一口全是霉味！", "迟早有一天，你们的办公桌得当二手货处理！",
+    "你们那点资金，还不够我们部门吵一次架的功夫！", "这公司的报表只有一个数字在涨：亏损！", "再牛的人来了也救不了你们，因为你们不想被救！", "门口的烟头都比公司的项目活得久！", "撑不住就赶紧倒，别拖着我们一起陪葬！", "你们这个烂系统，早晚哪天一起崩，我等着！",
+    "这么下去，明年这楼里剩的只有蟑螂和你们的招牌！", "谁要是还信这公司能翻身，我送他一包烟压压惊！", "用户都跑去竞品那儿了，你们还在开表彰会！", "这公司都成行业笑话了，还敢开新闻发布会！", "一堆烂尾项目堆成山，你们还在立新项目！", "破船就别硬开了，回港口拆了卖废铁吧！",
+    "我的年终有没有不知道，公司的年终有没有我也不知道！", "拖欠的工资比公司账上的钱还多，你们咋不上天？！", "这公司的墓志铭我都想好了：死于开会！", "天天开会讨论怎么活，讨论着讨论着就没了！", "老板还在做梦估值十亿，员工都在群里发招聘链接了！", "这地方的每个角落都写着“快跑”！",
+    "一家公司烂成这样，还有脸挂“行业领先”的横幅！", "你们的“愿景”，就是活到明天！", "你们的业务数据，连做假账的都不好意思拿去做！", "谁接手这公司谁破产，投资人都绕着走！", "破公司别装了，你们那点家底我们都清楚！", "关门那天我要拍照发朋友圈，配文“终于”！",
+    "这公司的“阵痛期”，痛了三年了，还没生出来？！", "你们的招牌都锈了，还在说“品牌升级”！", "这公司迟早会被当成反面教材写进商学院！", "破船要沉之前，请先把救生衣发给底下人！", "这地方我待一天骂一天，直到它先倒！", "这公司还能开门，唯一的原因是房东没来收房！",
+    "三年前说的“下个月转正”，公司都要没了我还没转！", "上线发布会开得比葬礼还隆重，然后就真成葬礼了！", "快倒闭吧，让我以后有个好故事吹！", "出去面试都不敢说这公司名字，说了面试官都笑！", "这地方的每一行代码都在喊救命！", "这公司的会议室比机房都多，能活下来才有鬼！",
+    "我要是投资人，看一眼你们的财报就报警！", "你们撑得越久，欠的越多，倒得越惨！", "就凭这帮人，能撑到下个月发工资我都算你们厉害！", "别想什么第二曲线了，第一曲线都快归零了！", "这公司的未来，就是一份破产公告！", "赶紧散伙吧，散伙饭我请！"];
+  const CN_FIXED = { "Compacting my context…": "正在压缩上下文……", "Sorry I'm running late!": "对不起，我来晚了！", "Desk's in.": "桌子搬好了。", "And my bunk. Right, to work!": "床也搬好了，开工！", "Printing the delivery report…": "正在打印交付报告……", "Delivered: {title}. The report is on the board.": "交付完成：{title}，报告已发到看板。", "medic": "医生", "Stable. Back to work, you.": "稳定了，回去干活吧。", "watchdog": "保安" };
+  const MEDIC_LINES = ["Stay with me!", "Clear!", "Charging… 200!", "Come on, breathe!", "Pulse is back… keep going!", "One, two, three, four…"], CN_MEDIC = ["别睡！撑住！", "让开！电击！", "充电……200！", "快，呼吸！", "有脉搏了……继续！", "一、二、三、四……"];
+  // in the Chinese office every random line comes from the Chinese sets
+  const zh = () => !!(THEMES[THEME] && THEMES[THEME].wechat);
+  const COFFEE = ["Coffee first, then I pick up where I left off.", "Reloading my context, one sip at a time.", "Where was I? Let me think about it over a coffee.", "Warming up the cache. And my hands.",
+    "Espresso loads faster than my conversation does.", "Just catching up on what I was doing.", "Rehydrating the prompt. And myself.", "Give me a minute, rereading my own notes in my head.",
+    "Resuming… the coffee machine is quicker than me.", "A cup while my memory comes back.", "Brewing coffee, restoring state.", "Prefill in progress. Caffeine too."];
+  const CN_COFFEE = ["先来杯咖啡，马上接着干。", "上下文加载中，咖啡先续上。", "刚才干到哪了？喝口咖啡想想。", "喝口咖啡，把脑子里的缓存重新预热一下。", "茶水间充个电，马上回来。", "刚才那段代码我得先想起来。",
+    "续杯中……上下文也在续。", "摸鱼？不，这叫预热。", "咖啡机都比我的上下文加载快。", "等我把刚才的思路捡回来。", "喝完这杯就回工位，真的。", "预填充中，顺便补点咖啡因。"];
+  const BACK_TO_DESK = ["Right, I remember now. Back to it!", "Got it. To the desk!", "Context loaded. Let's go.", "Okay, where's my keyboard?"];
+  const CN_BACK_TO_DESK = ["想起来了，回去干活！", "好，上下文齐了，开干！", "咖啡喝完，回工位！", "走，干活去！"];
+  const LINES = (name) => zh() ? ({ SLOGANS: CN_LIMIT, PAUSE_SLOGANS: CN_PAUSE, TANTRUMS: CN_TANTRUMS, NOTHING_TO_DO: CN_NOTHING, GOODBYES: CN_GOODBYES, HELLOS: CN_HELLOS, ANNOYED: CN_ANNOYED, COFFEE: CN_COFFEE, BACK_TO_DESK: CN_BACK_TO_DESK })[name] : ({ SLOGANS, PAUSE_SLOGANS, TANTRUMS, NOTHING_TO_DO, GOODBYES, HELLOS, ANNOYED, COFFEE, BACK_TO_DESK })[name];
+  const fixed = (text) => zh() && CN_FIXED[text] ? CN_FIXED[text] : text;
+  THEMES.chinese_tech = { label: "Chinese tech", layout: { connected: true, bedsAtDesk: true, bossOffice: true, tallWall: true }, wechat: true,
+    colors: { deskTop: "#dfe3e8", deskHi: "#eef1f4", deskEdge: "#a9b0ba", leg: "#8a919b", wall: "#f0f0ee", wallTrim: "#d9d9d6", wallPanel: "#e4e4e0", base: "#b9b9b4", baseLine: "#8f8f8a", wallTop: "#5a5a56", wallTopHi: "#767672", chair: "#2b2b2b", chairDark: "#1c1c1c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", bedFrame: "#8f8f8a", blanket: "#3a6fd8", blanketHi: "#4d80e8", pot: "#b8202a", potRim: "#d9303a" },
+    office: () => { Q(0, 0, 64, 64, "#c8ccd2"); Q(0, 0, 64, 1, "#b4b8be"); Q(0, 0, 1, 64, "#b4b8be"); Q(32, 1, 1, 63, "#bfc3c9"); Q(1, 32, 63, 1, "#bfc3c9"); },
+    floor2: () => { Q(0, 0, 64, 64, "#c8ccd2"); },
+    wallFace: () => { wallBase(); Q(28, 12, 8, 40, "#e4e4e0"); },
+    shelf: () => { wallBase(); Q(26, 10, 12, 42, "#c8161d"); Q(27, 11, 10, 40, "#d8262d"); Q(29, 14, 6, 34, "#ffe27a"); Q(30, 16, 4, 30, "#c8161d"); },
+    decorate: () => {                                                                              // on the upper wall: the countdown board and one red banner
+      const CN_FONT = "'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif", by = T + 5, bh = 22;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#1b1d22"; ctx.fillRect(T + 4, T + 6, 3.8 * T, 20); ctx.fillStyle = "#0b0c10"; ctx.fillRect(T + 6, T + 8, 3.8 * T - 4, 16);
+      ctx.fillStyle = "#ff3b3b"; ctx.font = "bold 11px " + CN_FONT.replace("sans-serif", "monospace"); ctx.fillText("攻坚倒计时003天", T + 4 + 1.9 * T, T + 17);
+      const bx = T + 4 + 3.8 * T + 12, w = (MW - 1) * T - 6 - bx, text = CN_BANNERS[0];
+      ctx.fillStyle = "#6e0a0e"; ctx.fillRect(bx + 8, by - 3, 2, 3); ctx.fillRect(bx + w - 10, by - 3, 2, 3);                           // the hooks it hangs from
+      ctx.fillStyle = "#8f0d12"; ctx.fillRect(bx - 1, by - 1, w + 2, bh + 2); ctx.fillStyle = "#c8161d"; ctx.fillRect(bx, by, w, bh);
+      ctx.fillStyle = "#e6c15a"; ctx.fillRect(bx, by, w, 1); ctx.fillRect(bx, by + bh - 1, w, 1);
+      let size = 14; ctx.font = "bold " + size + "px " + CN_FONT; while (size > 8 && ctx.measureText(text).width > w - 12) { size -= 1; ctx.font = "bold " + size + "px " + CN_FONT; }
+      ctx.fillStyle = "#ffe27a"; ctx.fillText(text, bx + w / 2, by + bh / 2 + 1, w - 10);
+      ctx.textBaseline = "alphabetic";
+    } };
+  // ---- environment props and furniture variants per theme (the office stays a working office: same desks, chairs, sleeping spots, toilets, door)
+  const carBody = (col) => { Q(8, 4, 48, 56, tint(col, -0.35)); Q(10, 6, 44, 52, col); Q(12, 8, 40, 6, tint(col, 0.25)); Q(14, 14, 36, 16, "#9fd3ff"); Q(16, 16, 32, 12, "#c7e6ff"); Q(14, 34, 36, 20, tint(col, -0.1)); Q(6, 10, 4, 10, "#2b2b2b"); Q(54, 10, 4, 10, "#2b2b2b"); Q(6, 40, 4, 10, "#2b2b2b"); Q(54, 40, 4, 10, "#2b2b2b"); Q(14, 4, 8, 3, "#fff3b0"); Q(42, 4, 8, 3, "#fff3b0"); };
+  const carTail = (col) => { Q(8, 0, 48, 44, tint(col, -0.35)); Q(10, 0, 44, 42, col); Q(14, 4, 36, 20, tint(col, -0.1)); Q(14, 26, 36, 10, "#9fd3ff"); Q(6, 6, 4, 10, "#2b2b2b"); Q(54, 6, 4, 10, "#2b2b2b"); Q(14, 38, 8, 3, "#ff5c5c"); Q(42, 38, 8, 3, "#ff5c5c"); Q(24, 39, 16, 2, "#e6e6e6"); Q(26, 38, 12, 4, "#f7f7f7"); Q(28, 39, 8, 2, "#2b2b2b"); };
+  const lockers = (bg) => { Q(0, 0, 64, 64, bg); Q(2, 0, 60, 60, "#5a6a7a"); for (const x of [4, 24, 44]) { Q(x, 2, 16, 56, "#7d8fa3"); Q(x, 2, 16, 2, "#9fb1c4"); Q(x + 4, 8, 8, 2, "#3f4a56"); Q(x + 4, 12, 8, 2, "#3f4a56"); Q(x + 12, 28, 2, 6, "#2b2b2b"); } };
+  const benchHead = (bg, wood, towel) => { Q(0, 0, 64, 64, bg); Q(8, 8, 48, 56, tint(wood, -0.3)); Q(10, 10, 44, 54, wood); Q(10, 10, 44, 2, tint(wood, 0.25)); Q(14, 14, 36, 14, towel); Q(16, 16, 32, 4, tint(towel, 0.3)); };
+  const benchFoot = (bg, wood) => { Q(0, 0, 64, 64, bg); Q(8, 0, 48, 40, tint(wood, -0.3)); Q(10, 0, 44, 36, wood); Q(10, 36, 44, 4, tint(wood, -0.15)); Q(12, 40, 6, 14, tint(wood, -0.4)); Q(46, 40, 6, 14, tint(wood, -0.4)); };
+  const glassStrip = (v, x, y, w, h) => { Q(x, y, w, h, "#8fb8d8"); Q(v ? x + 2 : x, v ? y : y + 2, v ? 4 : w, v ? h : 4, "#c7e6ff"); Q(x, y, v ? 1 : w, v ? h : 1, "#5f8aa8"); Q(v ? x + w - 1 : x, v ? y : y + h - 1, v ? 1 : w, v ? h : 1, "#5f8aa8"); };
+  Object.assign(TILES, {
+    glassV: () => glassStrip(true, 28, 0, 8, 64), glassH: () => glassStrip(false, 0, 28, 64, 8),
+    glassBL: () => { glassStrip(true, 28, 0, 8, 36); glassStrip(false, 28, 28, 36, 8); }, glassBR: () => { glassStrip(true, 28, 0, 8, 36); glassStrip(false, 0, 28, 36, 8); },
+    cctvPole: () => { CAMS.push([TX + 20, TY - 6], [TX + 6, TY + 2]); Q(30, 8, 4, 56, "#5f666f"); Q(28, 60, 8, 4, "#3f4348"); Q(12, 6, 40, 3, "#5f666f"); Q(12, -2, 22, 10, "#f7f7f7"); Q(10, 0, 4, 6, "#1b1d22"); Q(12, -2, 22, 2, "#d0d4da"); Q(34, 12, 22, 10, "#f7f7f7"); Q(56, 14, 4, 6, "#1b1d22"); Q(34, 12, 22, 2, "#d0d4da"); },
+  });
+  // ---- the pantry (茶水间): the same in every theme, like the printer and the toilets
+  const counter = () => { Q(0, 22, 64, 40, "#8a6a4a"); Q(0, 22, 64, 2, "#6b4f35"); Q(4, 28, 26, 30, "#9c7a56"); Q(34, 28, 26, 30, "#9c7a56"); Q(4, 28, 26, 1, "#b08c66"); Q(34, 28, 26, 1, "#b08c66");
+    Q(26, 40, 2, 5, "#e6c15a"); Q(36, 40, 2, 5, "#e6c15a"); Q(0, 58, 64, 4, "#5a4330"); Q(0, 8, 64, 16, "#e9e4da"); Q(0, 8, 64, 2, "#ffffff"); Q(0, 22, 64, 1, "#c9c1b3"); };
+  const cupboard = () => { Q(2, 14, 60, 30, "#9c7a56"); Q(2, 14, 60, 2, "#b08c66"); Q(2, 42, 60, 3, "#6b4f35"); Q(31, 16, 2, 26, "#6b4f35"); Q(27, 30, 2, 5, "#e6c15a"); Q(35, 30, 2, 5, "#e6c15a"); };
+  Object.assign(TILES, {
+    pantryCabinet: cupboard,
+    pantryCabinetSign: () => { cupboard(); Q(20, 0, 24, 12, "#3b2a1e"); Q(21, 1, 22, 10, "#fff7e6"); Q(26, 4, 9, 6, "#6b3a2a"); Q(35, 5, 3, 3, "#6b3a2a"); Q(27, 4, 7, 1, "#a8703f"); Q(28, 1, 1, 2, "#b9c0c9"); Q(31, 0, 1, 3, "#b9c0c9"); },   // a cup on the sign
+    pantryCoffee: () => { counter();                                                   // the espresso machine on the counter, mugs on a tray beside it
+      Q(6, -6, 30, 26, "#aab1bb"); Q(6, -6, 30, 3, "#d7dce2"); Q(6, 17, 30, 3, "#8e97a6"); Q(9, -2, 24, 6, "#2b2f3a"); Q(11, 0, 3, 2, "#5cff8a"); Q(16, 0, 3, 2, "#ffd23f"); Q(28, 0, 3, 2, "#9fd3ff");
+      Q(14, 7, 14, 4, "#3a3d44"); Q(19, 11, 4, 3, "#23262e"); Q(12, 19, 20, 3, "#5b6270"); Q(42, 12, 20, 8, "#c9c1b3");
+      Q(44, 7, 6, 7, "#f7f7f7"); Q(49, 9, 2, 3, "#f7f7f7"); Q(53, 7, 6, 7, "#e0323c"); Q(58, 9, 2, 3, "#e0323c"); Q(44, 7, 6, 1, "#dde1e6"); Q(53, 7, 6, 1, "#ff8a8a"); },
+    pantrySink: () => { counter();                                                     // the sink, its tap, and the kettle
+      Q(6, 10, 34, 12, "#8e97a6"); Q(8, 12, 30, 8, "#b8c0ca"); Q(8, 12, 30, 1, "#dfe3e8"); Q(22, 16, 2, 2, "#5b6270");
+      Q(21, -2, 4, 13, "#c9ced6"); Q(21, -2, 11, 3, "#c9ced6"); Q(29, -2, 3, 7, "#c9ced6"); Q(22, -1, 1, 11, "#eef1f4");
+      Q(44, -2, 14, 14, "#d84c4c"); Q(46, -4, 10, 3, "#b33a3a"); Q(57, 1, 3, 8, "#b33a3a"); Q(41, 1, 4, 3, "#b33a3a"); Q(45, 0, 3, 8, "#ef7a7a"); Q(43, 12, 16, 3, "#2b2f3a"); },
+    waterCooler: () => {                                                               // 饮水机: the bottle upside down on the cooler
+      Q(18, 22, 28, 38, "#e8ecf0"); Q(18, 22, 28, 2, "#ffffff"); Q(18, 58, 28, 3, "#b9c0c9"); Q(24, 29, 4, 4, "#d84c4c"); Q(36, 29, 4, 4, "#3a6fd8"); Q(22, 37, 20, 3, "#9aa0aa"); Q(22, 44, 20, 12, "#dde1e6"); Q(22, 44, 20, 1, "#c9ced6");
+      Q(20, -10, 24, 28, "#8fc6ef"); Q(22, -8, 6, 23, "#c3e4fb"); Q(20, -10, 24, 2, "#6fb0e0"); Q(20, 4, 24, 1, "#6fb0e0"); Q(27, 18, 10, 4, "#6fb0e0"); },
+    pantryFloor: () => { Q(0, 0, 32, 32, "#eadcc2"); Q(32, 32, 32, 32, "#eadcc2"); Q(32, 0, 32, 32, "#c98f5e"); Q(0, 32, 32, 32, "#c98f5e");   // café tiles, cream and terracotta
+      Q(0, 0, 32, 1, "#f5ecdb"); Q(32, 32, 32, 1, "#f5ecdb"); Q(32, 0, 32, 1, "#d9a57a"); Q(0, 32, 32, 1, "#d9a57a"); Q(31, 0, 1, 64, "#b07a4c"); Q(0, 31, 64, 1, "#b07a4c"); },
+    restroomFloor: () => { marble("#f2ece2", "#d9d0c1"); Q(0, 0, 64, 1, "#cdb77a"); Q(0, 0, 1, 64, "#cdb77a"); Q(0, 32, 64, 1, "#e2d6ba"); Q(32, 0, 1, 64, "#e2d6ba"); Q(0, 0, 3, 3, "#d4af37"); Q(31, 31, 3, 3, "#d4af37"); },   // marble, gold grout
+    pantryMicrowave: () => { counter();
+      Q(8, -2, 40, 22, "#e6e9ee"); Q(8, -2, 40, 2, "#f7f8fa"); Q(8, 19, 40, 1, "#b9c0c9"); Q(11, 1, 26, 15, "#2b2f3a"); Q(12, 2, 24, 13, "#3c4250"); Q(13, 3, 9, 2, "#5a6272"); Q(37, 3, 1, 11, "#9aa3b5");
+      Q(39, 1, 7, 15, "#c9ced6"); Q(40, 2, 5, 3, "#5cff8a"); Q(40, 7, 2, 2, "#9aa3b5"); Q(43, 7, 2, 2, "#9aa3b5"); Q(40, 10, 2, 2, "#9aa3b5"); Q(43, 10, 2, 2, "#d84c4c");
+      Q(50, 12, 12, 6, "#f2f2f2"); Q(51, 9, 4, 4, "#e0323c"); Q(55, 9, 4, 4, "#f2c14e"); Q(58, 10, 3, 3, "#3aa35b"); },                                      // and a fruit bowl
+    pantryFridge: () => { Q(6, -12, 52, 72, "#dfe3e8"); Q(6, -12, 52, 2, "#f5f7f9"); Q(6, -12, 2, 72, "#eef1f4"); Q(56, -12, 2, 72, "#c3c9d1"); Q(6, 16, 52, 2, "#b9c0c9");
+      Q(50, -6, 3, 16, "#9aa3b5"); Q(50, 22, 3, 28, "#9aa3b5"); Q(14, -4, 8, 8, "#ffd23f"); Q(26, 24, 10, 8, "#9fd3ff"); Q(14, 30, 7, 7, "#ff8fc8"); Q(28, 27, 6, 1, "#3a6fd8"); Q(10, 58, 6, 3, "#6b7280"); Q(48, 58, 6, 3, "#6b7280"); },
+    pantryMenu: () => { Q(6, 12, 52, 36, "#6b4428"); Q(6, 12, 52, 1, "#8a5c33"); Q(9, 15, 46, 30, "#1f2a24"); Q(13, 18, 22, 2, "#f5f0e6"); Q(13, 24, 28, 1, "#d8d2c4"); Q(13, 28, 24, 1, "#d8d2c4");
+      Q(13, 32, 30, 1, "#d8d2c4"); Q(13, 36, 20, 1, "#d8d2c4"); Q(13, 40, 26, 1, "#d8d2c4"); Q(44, 30, 7, 6, "#f5f0e6"); Q(51, 32, 2, 3, "#f5f0e6"); Q(46, 27, 1, 2, "#f5f0e6"); Q(48, 26, 1, 3, "#f5f0e6"); },   // the chalkboard menu
+    snackMachine: () => { Q(8, -10, 48, 70, "#c8161d"); Q(8, -10, 48, 2, "#e8414a"); Q(54, -10, 2, 70, "#8f0f15"); Q(12, -6, 30, 50, "#1f2a3a"); Q(12, -6, 30, 1, "#3c4a5c"); Q(14, -9, 20, 2, "#ffffff");
+      [["#f2c14e", "#3a6fd8", "#e0323c", "#3aa35b"], ["#8e5bd8", "#f2c14e", "#ff8fc8", "#f7f7f7"], ["#e67e22", "#3aa35b", "#3a6fd8", "#e0323c"]].forEach((row, r) => { row.forEach((col, k) => { Q(14 + k * 7, -3 + r * 14, 5, 9, col); Q(14 + k * 7, -3 + r * 14, 5, 1, "#ffffff"); }); Q(12, 7 + r * 14, 30, 1, "#9aa3b5"); });
+      Q(44, -6, 9, 30, "#2b2f3a"); for (let k = 0; k < 9; k++) Q(45 + (k % 3) * 3, -2 + Math.floor(k / 3) * 4, 2, 2, "#9aa3b5"); Q(46, 14, 5, 2, "#d4af37"); Q(12, 48, 30, 7, "#111111"); Q(12, 48, 30, 1, "#3a3a3a"); },   // snacks behind glass
+    cafeTable: () => {                                                                 // a round standing table, two mugs and the sugar
+      Q(18, 52, 28, 5, "#4a505c"); Q(29, 30, 6, 23, "#6b7280"); Q(30, 30, 2, 22, "#8b929c");
+      Q(18, 12, 28, 22, "#d9d2c5"); Q(14, 16, 36, 14, "#d9d2c5"); Q(18, 12, 28, 20, "#e9e4da"); Q(14, 16, 36, 12, "#e9e4da"); Q(20, 12, 24, 2, "#ffffff");
+      Q(19, 17, 6, 6, "#f7f7f7"); Q(20, 18, 4, 2, "#6b3a2a"); Q(25, 19, 2, 3, "#f7f7f7"); Q(37, 21, 6, 6, "#f2c14e"); Q(38, 22, 4, 2, "#6b3a2a"); Q(29, 15, 5, 6, "#dfe3e8"); Q(29, 15, 5, 2, "#b9c0c9"); },
+  });
+  const ENV = {
+    tech: { label: "Microsoft campus", colors: { deskTop: "#f2f3f5", deskHi: "#ffffff", deskEdge: "#c3c8d0", leg: "#9aa0aa", wall: "#eef1f4", wallTrim: "#d3d8de", wallPanel: "#e4e8ec", base: "#c3c8d0", baseLine: "#9aa0aa", wallTop: "#6b7280", wallTopHi: "#8b929c", door: "#7a5230", doorPanel: "#a97a4e", knob: "#e6c15a", chair: "#2b2f3a", chairDark: "#1c1f27", bedFrame: "#4a5568", pot: "#8a5a2b", potRim: "#a97a4e" },
+      office: () => { Q(0, 0, 64, 64, "#cfd6dd"); Q(0, 0, 64, 1, "#bcc4cc"); Q(0, 0, 1, 64, "#bcc4cc"); for (let y = 4; y < 64; y += 8) for (let x = (y / 8) % 2 ? 4 : 0; x < 64; x += 8) Q(x, y, 2, 2, "#c2cad2"); },
+      floor2: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(0, 0, 64, 1, "#a8b3be"); Q(0, 0, 1, 64, "#a8b3be"); },
+      wallTop: () => { Q(0, 0, 64, 64, "#6b7280"); Q(0, 0, 64, 4, "#8b929c"); },
+      wallFace: () => { Q(0, 0, 64, 64, "#9fd3ff"); Q(0, 0, 64, 20, "#b7e0ff"); for (const x of [6, 36]) { Q(x + 8, 14, 6, 30, "#5a3a1f"); Q(x, 20, 22, 10, "#2f7a3f"); Q(x + 3, 12, 16, 10, "#2f7a3f"); Q(x + 6, 6, 10, 8, "#3f9a4f"); } Q(0, 44, 64, 10, "#3fa34d"); Q(0, 0, 64, 2, "#d3d8de"); Q(0, 52, 64, 2, "#d3d8de"); Q(31, 0, 2, 54, "#d3d8de"); Q(0, 54, 64, 10, "#c3c8d0"); Q(0, 54, 64, 2, "#9aa0aa"); },
+      board: () => { wallBase(); Q(16, 14, 32, 32, "#f7f7f7"); Q(18, 16, 13, 13, "#f25022"); Q(33, 16, 13, 13, "#7fba00"); Q(18, 31, 13, 13, "#00a4ef"); Q(33, 31, 13, 13, "#ffb900"); },
+      shelf: () => { wallBase(); Q(6, 10, 52, 40, "#f7f7f7"); Q(8, 12, 48, 36, "#ffffff"); Q(12, 16, 20, 2, "#3a6fd8"); Q(12, 22, 30, 2, "#d84c4c"); Q(12, 28, 16, 2, "#3aa35b"); Q(36, 16, 10, 10, "#ffe27a"); Q(40, 30, 10, 10, "#9fd3ff"); Q(12, 36, 24, 2, "#2b2b2b"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(6, 6, 52, 58, "#3a5fa8"); Q(10, 10, 44, 54, "#4f78c8"); Q(12, 12, 40, 12, "#6b93de"); Q(6, 6, 6, 58, "#2f4f8a"); Q(52, 6, 6, 58, "#2f4f8a"); Q(16, 26, 32, 10, "#e6e6e6"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(6, 0, 52, 44, "#3a5fa8"); Q(10, 0, 44, 40, "#4f78c8"); Q(6, 0, 6, 44, "#2f4f8a"); Q(52, 0, 6, 44, "#2f4f8a"); Q(10, 40, 44, 4, "#2f4f8a"); Q(12, 44, 6, 6, "#1c1f27"); Q(46, 44, 6, 6, "#1c1f27"); },
+      props: (put, o) => { put(o.MW - 5, o.yMid + 1, "xbox"); put(o.MW - 4, o.yMid + 1, "coffee"); put(2, o.yMid + 1, "evergreen"); put(o.MW - 5, o.yMid + 4, "evergreen"); put(2, 2, "evergreen"); put(o.MW - 5, 3, "evergreen"); },
+      xbox: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(8, 6, 48, 30, "#1b1d22"); Q(10, 8, 44, 26, "#107c10"); Q(14, 12, 36, 18, "#3aa35b"); Q(26, 16, 12, 10, "#f7f7f7"); Q(20, 40, 24, 8, "#2b2f3a"); Q(22, 42, 20, 4, "#107c10"); Q(12, 50, 16, 8, "#2b2f3a"); Q(36, 50, 16, 8, "#2b2f3a"); },
+      coffee: () => { Q(0, 0, 64, 64, "#b9c4cf"); Q(8, 8, 48, 52, "#3a3d44"); Q(10, 10, 44, 20, "#23262e"); Q(14, 14, 36, 12, "#101a2e"); Q(18, 18, 10, 4, "#ffd23f"); Q(12, 34, 40, 22, "#2b2f3a"); Q(22, 40, 20, 12, "#8a5a2b"); Q(26, 36, 12, 4, "#f7f7f7"); Q(28, 30, 8, 6, "#6b3a2a"); },
+      evergreen: () => { Q(22, 46, 20, 14, "#8a5a2b"); Q(20, 44, 24, 4, "#a97a4e"); Q(30, 30, 4, 16, "#5a3a1f"); Q(14, 26, 36, 12, "#2f7a3f"); Q(18, 16, 28, 12, "#2f7a3f"); Q(22, 8, 20, 10, "#3f9a4f"); Q(28, 2, 8, 8, "#3f9a4f"); Q(24, 12, 4, 2, "#5cbf6c"); Q(20, 22, 4, 2, "#5cbf6c"); } },
+    finance: { label: "Goldman Sachs", layout: { connected: true, bossOffice: true }, allDual: true, colors: { chair: "#1f1f1f", chairDark: "#111111", wall: "#3a2a1e", wallTrim: "#c9a24a", wallPanel: "#4a3626", base: "#2a1e14", baseLine: "#c9a24a", wallTop: "#1a1410", wallTopHi: "#3a2a1e", deskTop: "#5a3020", deskHi: "#6f3d2a", deskEdge: "#3a1d12", leg: "#2a140c" },
+      wallFace: () => { Q(0, 0, 64, 64, "#3a2a1e"); for (let x = 0; x < 64; x += 16) { Q(x + 2, 6, 12, 46, "#4a3626"); Q(x + 2, 6, 12, 1, "#6a4a36"); } Q(0, 54, 64, 10, "#2a1e14"); Q(0, 54, 64, 2, "#c9a24a"); },
+      board: () => { Q(0, 0, 64, 64, "#3a2a1e"); Q(0, 54, 64, 10, "#2a1e14"); Q(0, 54, 64, 2, "#c9a24a"); Q(10, 10, 44, 40, "#7f9ec9"); Q(12, 12, 40, 36, "#1f3a66"); Q(20, 22, 6, 14, "#f7f7f7"); Q(22, 22, 8, 3, "#f7f7f7"); Q(22, 33, 8, 3, "#f7f7f7"); Q(24, 28, 6, 3, "#f7f7f7"); Q(34, 22, 10, 3, "#f7f7f7"); Q(34, 22, 3, 8, "#f7f7f7"); Q(34, 28, 10, 3, "#f7f7f7"); Q(41, 28, 3, 8, "#f7f7f7"); Q(34, 33, 10, 3, "#f7f7f7"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 12, 44, 52, "#e8e8ec"); Q(14, 16, 36, 44, "#f7f7fa"); Q(18, 20, 28, 14, "#c9d6e6"); Q(12, 12, 40, 4, "#c8c8cc"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 0, 44, 40, "#e8e8ec"); Q(14, 0, 36, 32, "#f7f7fa"); Q(18, 4, 28, 20, "#dde6f0"); Q(10, 40, 44, 6, "#c8c8cc"); Q(20, 46, 24, 8, "#9a9aa0"); },
+      props: (put, o) => { put(2, 2, "clockwall"); put(o.MW - 5, o.yMid + 1, "bull"); put(2, o.yMid + 1, "coffee"); put(o.MW - 5, 3, "streetsign"); },
+      clockwall: () => { Q(0, 0, 64, 64, "#3a2a1e"); [[6, "#f7f7f7"], [24, "#f7f7f7"], [42, "#f7f7f7"]].forEach(([x, c], i) => { Q(x, 14, 16, 16, "#1b1d22"); Q(x + 1, 15, 14, 14, c); Q(x + 7, 17, 2, 6, "#1b1d22"); Q(x + 8, 22, 4 + i * 2, 2, "#1b1d22"); Q(x + 2, 34, 12, 3, "#c9a24a"); }); Q(0, 54, 64, 10, "#2a1e14"); },
+      bull: () => { Q(0, 0, 64, 64, "#6a2e3a"); Q(10, 50, 44, 8, "#4a3626"); Q(14, 30, 36, 20, "#b8861e"); Q(10, 26, 16, 16, "#b8861e"); Q(6, 22, 6, 6, "#d9a22a"); Q(24, 22, 6, 6, "#d9a22a"); Q(12, 30, 3, 3, "#2b2b2b"); Q(16, 44, 6, 8, "#8a6416"); Q(40, 44, 6, 8, "#8a6416"); Q(48, 28, 6, 12, "#b8861e"); },
+      streetsign: () => { Q(0, 0, 64, 64, "#3a2a1e"); Q(30, 10, 4, 50, "#5f666f"); Q(8, 12, 48, 14, "#2f5e3a"); Q(10, 14, 44, 10, "#3f7a4a"); Q(14, 17, 36, 4, "#f7f7f7"); Q(0, 54, 64, 10, "#2a1e14"); } },
+    factory: { label: "Factory", layout: { connected: true, bossOffice: true }, colors: { deskTop: "#8f96a0", deskHi: "#a9b0ba", deskEdge: "#5f666f", leg: "#4a4f57", wall: "#8e939a", wallTrim: "#e0b73a", wallPanel: "#7a7f86", base: "#5f666f", baseLine: "#3f4348", wallTop: "#3f4348", wallTopHi: "#5f666f", door: "#5f666f", doorPanel: "#8f96a0", knob: "#e0b73a", bedFrame: "#5f666f", pot: "#5f666f", potRim: "#8f96a0", chair: "#e0b73a", chairDark: "#b8931e" },
+      office: () => { Q(0, 0, 64, 64, "#9a9b9a"); Q(0, 0, 64, 1, "#8a8b8a"); Q(0, 0, 1, 64, "#8a8b8a"); speckle("#8c8d8c", 14, 3); },
+      floor2: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(0, 0, 64, 1, "#6f706f"); Q(0, 0, 1, 64, "#6f706f"); speckle("#717271", 12, 9); },
+      wallFace: () => { Q(0, 0, 64, 64, "#8e939a"); for (let x = 0; x < 64; x += 8) { Q(x, 0, 2, 54, "#7a7f86"); Q(x + 5, 0, 1, 54, "#a3a8af"); } Q(8, 8, 20, 14, "#9fd3ff"); Q(36, 8, 20, 14, "#9fd3ff"); Q(8, 8, 20, 1, "#5f666f"); Q(36, 8, 20, 1, "#5f666f"); Q(0, 54, 64, 10, "#5f666f"); Q(0, 54, 64, 2, "#3f4348"); for (let x = 0; x < 64; x += 16) { Q(x, 56, 8, 8, "#e0b73a"); Q(x + 8, 56, 8, 8, "#2b2b2b"); } },
+      shelf: () => { THEMES.factory.wallFace(); Q(10, 24, 44, 24, "#2b2b2b"); Q(12, 26, 40, 20, "#f0f0f0"); Q(16, 30, 32, 3, "#d84c4c"); Q(16, 36, 24, 3, "#2b2b2b"); Q(16, 41, 18, 2, "#2b2b2b"); },
+      board: () => { THEMES.factory.wallFace(); Q(6, 22, 52, 28, "#1b1d22"); Q(8, 24, 48, 24, "#0b0c10"); Q(12, 28, 40, 4, "#5cff8a"); Q(12, 36, 20, 4, "#ff5c5c"); Q(36, 36, 16, 4, "#ffd23f"); },
+      deskPlain: () => { deskBase(false); Q(6, 18, 18, 6, "#8a8f9c"); Q(8, 20, 14, 2, "#5f666f"); Q(24, 16, 3, 10, "#5f666f"); Q(34, 20, 10, 10, "#c9a24a"); Q(36, 22, 6, 6, "#8f96a0"); Q(46, 14, 8, 14, "#d84c4c"); Q(47, 12, 6, 3, "#2b2b2b"); Q(30, 32, 20, 3, "#2b2b2b"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(6, 4, 52, 60, "#4f5359"); Q(10, 8, 44, 56, "#8a8f9c"); Q(14, 12, 36, 12, "#f0f0f0"); Q(10, 30, 44, 34, "#3f7a4a"); Q(10, 30, 44, 2, "#4f9a5e"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#7d7e7d"); Q(6, 0, 52, 52, "#4f5359"); Q(10, 0, 44, 44, "#3f7a4a"); Q(10, 44, 44, 4, "#8a8f9c"); Q(6, 52, 52, 4, "#3a3d42"); },
+      props: (put, o) => { for (const iy of o.rowsDeskBack) for (let x = o.islandX0; x < o.MW - 4; x++) put(x, iy + 2, "conveyor"); put(o.MW - 5, o.yMid - 3, "press"); put(o.MW - 4, o.yMid - 3, "lathe"); put(1, o.yMid - 3, "press"); put(2, o.yMid - 3, "pallet"); for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "lockerrow"); put(o.MW - 5, o.yMid + 1, "forklift"); put(o.MW - 5, o.yMid + 4, "barrels"); put(2, o.yMid + 4, "crates"); },
+      conveyor: () => { Q(0, 20, 64, 26, "#3f4348"); Q(0, 22, 64, 22, "#5a5f66"); for (let x = 0; x < 64; x += 8) Q(x + 2, 24, 4, 18, "#4a4f56"); Q(0, 20, 64, 2, "#7a7f86"); Q(0, 44, 64, 2, "#2b2f34"); Q(10, 48, 6, 10, "#4f5359"); Q(48, 48, 6, 10, "#4f5359"); if ((TILE_X * 5) % 3 === 0) { Q(24, 26, 16, 14, "#c9a24a"); Q(26, 28, 12, 10, "#b8861e"); } },
+      press: () => { Q(6, 4, 52, 56, "#3f4348"); Q(8, 6, 48, 52, "#5f666f"); Q(12, 10, 40, 14, "#e0b73a"); Q(14, 12, 36, 10, "#b8931e"); Q(24, 24, 16, 20, "#2b2f34"); Q(26, 26, 12, 16, "#8f96a0"); Q(12, 46, 40, 8, "#2b2f34"); Q(16, 48, 6, 4, "#ff5c5c"); Q(26, 48, 6, 4, "#5cff8a"); Q(36, 48, 12, 4, "#3fd2e6"); },
+      lathe: () => { Q(4, 24, 56, 30, "#3f4348"); Q(6, 26, 52, 26, "#5f666f"); Q(10, 30, 44, 8, "#8f96a0"); Q(14, 32, 36, 4, "#c8ccd6"); Q(8, 40, 14, 10, "#2b2f34"); Q(40, 40, 14, 10, "#2b2f34"); Q(26, 42, 12, 6, "#e0b73a"); Q(8, 54, 8, 8, "#2b2b2b"); Q(48, 54, 8, 8, "#2b2b2b"); },
+      pallet: () => { Q(6, 30, 52, 26, "#8a5a2b"); for (let y = 32; y < 54; y += 6) Q(8, y, 48, 3, "#c9a26a"); Q(10, 10, 20, 20, "#c9a24a"); Q(32, 10, 20, 20, "#c9a24a"); Q(12, 12, 16, 16, "#b8861e"); Q(34, 12, 16, 16, "#b8861e"); },
+      lockerrow: () => lockers("#7d7e7d"),
+      forklift: () => { Q(10, 30, 36, 26, "#e0b73a"); Q(12, 32, 32, 22, "#f0c95a"); Q(16, 20, 22, 12, "#2b2b2b"); Q(18, 22, 18, 8, "#9fd3ff"); Q(46, 10, 4, 46, "#3f4348"); Q(50, 40, 12, 4, "#3f4348"); Q(50, 46, 12, 4, "#3f4348"); Q(8, 54, 10, 8, "#2b2b2b"); Q(36, 54, 10, 8, "#2b2b2b"); },
+      barrels: () => { [[6, 10], [34, 10], [20, 34]].forEach(([x, y]) => { Q(x, y, 24, 28, "#2f6fb8"); Q(x + 2, y + 2, 20, 24, "#3a80cc"); Q(x, y + 8, 24, 2, "#255a96"); Q(x, y + 18, 24, 2, "#255a96"); Q(x + 4, y + 2, 4, 24, "#5a9ee0"); }); },
+      crates: () => { [[4, 6], [34, 6], [20, 34]].forEach(([x, y]) => { Q(x, y, 26, 26, "#8a5a2b"); Q(x + 2, y + 2, 22, 22, "#c9a26a"); Q(x + 2, y + 12, 22, 2, "#8a5a2b"); Q(x + 12, y + 2, 2, 22, "#8a5a2b"); }); },
+      floorMarks: () => { ctx.fillStyle = "#e0b73a"; for (const y of [2 * T + 2, (Y_MID - 1) * T + T - 6]) for (let x = T; x < (MW - 1) * T; x += 16) ctx.fillRect(x, y, 8, 3); },
+      decorate: () => { ctx.fillStyle = "#e0b73a"; ctx.fillRect(T, 2 * T - 10, (MW - 2) * T, 6); ctx.fillStyle = "#b8931e"; ctx.fillRect(T, 2 * T - 4, (MW - 2) * T, 2); const hx = Math.floor(MW * 0.7) * T; ctx.fillStyle = "#3f4348"; ctx.fillRect(hx, 2 * T - 12, 14, 10); ctx.fillRect(hx + 6, 2 * T - 2, 2, 14); ctx.fillStyle = "#e0b73a"; ctx.fillRect(hx + 3, 2 * T + 12, 8, 4); } },
+    basketball: { props: (put, o) => { put(1, o.yMid - 3, "hoopL"); put(o.MW - 2, o.yMid - 3, "hoopR"); for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "lockerrowB"); put(o.MW - 5, o.yMid + 1, "ballrack"); },
+      bedHead: () => benchHead("#9fc3d8", "#b3925e", "#a8332f"), bedFoot: () => benchFoot("#9fc3d8", "#b3925e"), lockerrowB: () => lockers("#9fc3d8"),
+      hoopL: () => { Q(0, 0, 64, 64, "#d99a4a"); Q(0, 8, 10, 48, "#f7f7f7"); Q(2, 10, 6, 44, "#e8e8e8"); Q(3, 24, 4, 12, "#d84c4c"); Q(10, 30, 14, 3, "#f28c28"); Q(12, 33, 10, 10, "#f2f2f2"); for (let y = 33; y < 43; y += 3) Q(12, y, 10, 1, "#c8c8c8"); },
+      hoopR: () => { Q(0, 0, 64, 64, "#d99a4a"); Q(54, 8, 10, 48, "#f7f7f7"); Q(56, 10, 6, 44, "#e8e8e8"); Q(57, 24, 4, 12, "#d84c4c"); Q(40, 30, 14, 3, "#f28c28"); Q(42, 33, 10, 10, "#f2f2f2"); for (let y = 33; y < 43; y += 3) Q(42, y, 10, 1, "#c8c8c8"); },
+      ballrack: () => { Q(0, 0, 64, 64, "#9fc3d8"); Q(8, 10, 48, 50, "#5a5d63"); Q(10, 12, 44, 46, "#7a7d83"); [[14, 16], [30, 16], [14, 34], [30, 34], [22, 25]].forEach(([x, y]) => { Q(x, y, 14, 14, "#e8792b"); Q(x + 2, y + 2, 10, 10, "#f28c28"); Q(x + 6, y + 2, 2, 10, "#2b2b2b"); Q(x + 2, y + 6, 10, 2, "#2b2b2b"); }); },
+      floorMarks: () => { const x0 = T + 8, x1 = (MW - 1) * T - 8, y0 = 2 * T + 8, y1 = Y_MID * T - 8, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; ctx.fillStyle = "#f7f7f7"; ctx.fillRect(x0, y0, x1 - x0, 3); ctx.fillRect(x0, y1 - 3, x1 - x0, 3); ctx.fillRect(x0, y0, 3, y1 - y0); ctx.fillRect(x1 - 3, y0, 3, y1 - y0); ctx.fillRect(cx - 1, y0, 3, y1 - y0);
+        for (const [kx, dir] of [[x0, 1], [x1, -1]]) { const kw = 4 * T, kh = 5 * T; ctx.fillRect(dir > 0 ? kx : kx - kw, cy - kh / 2, kw, 3); ctx.fillRect(dir > 0 ? kx : kx - kw, cy + kh / 2 - 3, kw, 3); ctx.fillRect(dir > 0 ? kx + kw - 3 : kx - kw, cy - kh / 2, 3, kh); }
+        ctx.strokeStyle = "#f7f7f7"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, T * 2, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(x0 + 4 * T, cy, T * 2, -Math.PI / 2, Math.PI / 2); ctx.stroke(); ctx.beginPath(); ctx.arc(x1 - 4 * T, cy, T * 2, Math.PI / 2, Math.PI * 1.5); ctx.stroke(); } },
+    tennis: { props: (put, o) => { put(o.mx + 2, 3, "umpire"); for (let x = 2; x < o.MW - 6; x++) put(x, o.yMid + 1, "lockerrowT"); put(o.MW - 5, o.yMid + 1, "ballbasket"); put(o.MW - 5, o.yMid + 4, "ballmachine"); },
+      bedHead: () => benchHead("#4d9c56", "#e6e0d0", "#3aa35b"), bedFoot: () => benchFoot("#4d9c56", "#e6e0d0"), lockerrowT: () => lockers("#4d9c56"),
+      umpire: () => { Q(28, 4, 8, 56, "#8f8878"); Q(14, 4, 36, 10, "#e6e0d0"); Q(16, 6, 32, 6, "#f4efe3"); Q(18, 14, 28, 8, "#3aa35b"); Q(20, 24, 6, 36, "#8f8878"); Q(38, 24, 6, 36, "#8f8878"); for (let y = 30; y < 58; y += 8) Q(24, y, 16, 3, "#b8b09c"); },
+      ballbasket: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(12, 14, 40, 44, "#5a5d63"); Q(14, 16, 36, 40, "#7a7d83"); for (let y = 20; y < 52; y += 10) for (let x = 16; x < 46; x += 10) { Q(x, y, 8, 8, "#d5ff5c"); Q(x + 2, y + 2, 4, 4, "#c4ee4b"); } Q(10, 58, 8, 4, "#2b2b2b"); Q(46, 58, 8, 4, "#2b2b2b"); },
+      ballmachine: () => { Q(0, 0, 64, 64, "#4d9c56"); Q(14, 20, 36, 34, "#3f4348"); Q(16, 22, 32, 30, "#5a5f66"); Q(20, 10, 24, 14, "#2b2f34"); Q(26, 12, 12, 8, "#1b1d22"); Q(28, 14, 8, 4, "#d5ff5c"); Q(12, 54, 10, 8, "#2b2b2b"); Q(42, 54, 10, 8, "#2b2b2b"); },
+      floorMarks: () => { const x0 = T + 8, x1 = (MW - 1) * T - 8, y0 = 2 * T + 8, y1 = Y_MID * T - 8, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, ally = T; ctx.fillStyle = "#f7f7f7";
+        ctx.fillRect(x0, y0, x1 - x0, 3); ctx.fillRect(x0, y1 - 3, x1 - x0, 3); ctx.fillRect(x0, y0, 3, y1 - y0); ctx.fillRect(x1 - 3, y0, 3, y1 - y0); ctx.fillRect(x0, y0 + ally, x1 - x0, 2); ctx.fillRect(x0, y1 - ally - 2, x1 - x0, 2);
+        ctx.fillRect(cx - 3 * T, y0 + ally, 2, y1 - y0 - 2 * ally); ctx.fillRect(cx + 3 * T, y0 + ally, 2, y1 - y0 - 2 * ally); ctx.fillRect(cx - 3 * T, cy - 1, 6 * T, 2); ctx.fillRect(x0, cy - 4, 6, 8); ctx.fillRect(x1 - 6, cy - 4, 6, 8);
+        ctx.fillStyle = "#e6e6e6"; ctx.fillRect(cx - 2, y0 - 4, 4, y1 - y0 + 8); for (let y = y0; y < y1; y += 6) ctx.fillRect(cx - 6, y, 12, 1); ctx.fillStyle = "#2b2b2b"; ctx.fillRect(cx - 4, y0 - 8, 8, 8); ctx.fillRect(cx - 4, y1, 8, 8); } },
+    parking: { layout: {}, colors: { deskTop: "#7d838c", deskHi: "#959ba4", deskEdge: "#565b63", leg: "#3f434a", wall: "#8f9298", wallTrim: "#e0b73a", wallPanel: "#7f8288", base: "#e0b73a", baseLine: "#b8931e", wallTop: "#5a5d63", wallTopHi: "#6f7278", door: "#565b63", doorPanel: "#7d838c", knob: "#e0b73a", pot: "#f28c28", potRim: "#ff9f3f" },
+      office: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 7); }, floor2: () => { Q(0, 0, 64, 64, "#4c4f55"); speckle("#565a61", 18, 21); },
+      props: (put, o) => { put(o.DOORX - 1, 2, "barrier"); put(o.DOORX - 2, 2, "kiosk"); put(2, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid - 3, "lamp"); put(o.MW - 5, o.yMid + 1, "cones"); put(2, o.yMid + 1, "lamp"); put(o.MW - 5, o.yMid + 4, "lamp"); const bays = [[o.MW - 6, 6], [o.MW - 8, 6], [o.MW - 6, 10], [o.MW - 10, 6]]; bays.forEach(([x, y], i) => { put(x, y, "carTop" + (i % 5)); put(x, y + 1, "carBot" + (i % 5)); }); },
+      floorMarks: () => { ctx.fillStyle = "#f2f2f2"; for (let x = 2; x < MW - 3; x += 2) ctx.fillRect(x * T, 5 * T, 3, (Y_MID - 7) * T); ctx.fillStyle = "#e0b73a"; ctx.fillRect(T, (Y_MID - 2) * T + 28, (MW - 2) * T, 4); ctx.fillRect(T, 2 * T + 28, (MW - 2) * T, 2); },
+      barrier: () => { Q(4, 36, 12, 24, "#e0b73a"); Q(6, 38, 8, 20, "#f0c95a"); Q(12, 42, 50, 6, "#f7f7f7"); for (let x = 16; x < 62; x += 12) Q(x, 42, 6, 6, "#d84c4c"); Q(6, 30, 8, 6, "#2b2b2b"); },
+      kiosk: () => { Q(6, 6, 52, 54, "#5a5d63"); Q(8, 8, 48, 50, "#8f9298"); Q(12, 12, 40, 22, "#9fd3ff"); Q(14, 14, 36, 18, "#c7e6ff"); Q(6, 2, 52, 6, "#e0b73a"); Q(20, 40, 24, 18, "#2b2b2b"); Q(22, 42, 20, 14, "#5a5d63"); },
+      lamp: () => { Q(28, 8, 8, 52, "#6f7278"); Q(24, 56, 16, 6, "#5a5d63"); Q(16, 2, 32, 10, "#3f4348"); Q(20, 6, 24, 6, "#fff3b0"); Q(22, 12, 20, 3, "#ffe27a"); },
+      cones: () => { [[8, 20], [30, 12], [40, 36]].forEach(([x, y]) => { Q(x + 6, y, 8, 22, "#f28c28"); Q(x + 4, y + 8, 12, 4, "#f7f7f7"); Q(x, y + 22, 20, 5, "#f28c28"); Q(x + 2, y + 24, 16, 2, "#c96e1e"); }); } },
+    garage: { props: (put, o) => { put(o.MW - 6, o.yMid + 1, "liftL"); put(o.MW - 5, o.yMid + 1, "liftR"); put(2, o.yMid + 1, "tyres"); put(o.MW - 5, o.yMid + 4, "drums"); put(2, 2, "toolchest"); },
+      deskPlain: () => { deskBase(false); Q(4, 14, 22, 16, "#d84c4c"); Q(6, 16, 18, 4, "#e86060"); Q(6, 22, 18, 2, "#8f2f2f"); Q(12, 12, 6, 2, "#2b2b2b"); Q(32, 16, 12, 3, "#8a8f9c"); Q(34, 19, 3, 12, "#8a8f9c"); Q(46, 20, 10, 10, "#5f666f"); Q(48, 22, 6, 6, "#8f96a0"); },
+      bedHead: () => { Q(0, 0, 64, 64, "#6c6f75"); Q(4, 10, 56, 54, "#9a8f7a"); Q(8, 14, 48, 50, "#b8ad96"); Q(14, 18, 36, 12, "#e6e0d0"); Q(8, 40, 48, 24, "#5a6a7a"); Q(8, 40, 48, 2, "#7a8a9a"); },
+      bedFoot: () => { Q(0, 0, 64, 64, "#6c6f75"); Q(4, 0, 56, 44, "#9a8f7a"); Q(8, 0, 48, 36, "#5a6a7a"); Q(8, 36, 48, 4, "#b8ad96"); Q(4, 44, 56, 2, "#4f4a40"); },
+      liftL: () => { Q(0, 0, 64, 64, "#7f8288"); Q(6, 50, 58, 8, "#e0b73a"); Q(10, 14, 8, 40, "#3f4348"); Q(10, 10, 12, 6, "#e0b73a"); Q(20, 10, 44, 36, "#d84c4c"); Q(24, 12, 40, 30, "#e86060"); Q(28, 16, 36, 12, "#9fd3ff"); Q(20, 8, 44, 4, "#8f2f2f"); Q(24, 46, 12, 10, "#2b2b2b"); },
+      liftR: () => { Q(0, 0, 64, 64, "#7f8288"); Q(0, 50, 58, 8, "#e0b73a"); Q(46, 14, 8, 40, "#3f4348"); Q(42, 10, 12, 6, "#e0b73a"); Q(0, 10, 44, 36, "#d84c4c"); Q(0, 12, 40, 30, "#e86060"); Q(0, 16, 36, 12, "#9fd3ff"); Q(0, 8, 44, 4, "#8f2f2f"); Q(28, 46, 12, 10, "#2b2b2b"); Q(4, 24, 8, 8, "#fff3b0"); },
+      tyres: () => { Q(0, 0, 64, 64, "#6c6f75"); [[6, 34], [30, 34], [18, 12]].forEach(([x, y]) => { Q(x, y, 28, 26, "#1b1d22"); Q(x + 2, y + 2, 24, 22, "#2b2b2b"); Q(x + 9, y + 8, 10, 10, "#8f96a0"); Q(x + 12, y + 11, 4, 4, "#3f4348"); }); },
+      drums: () => { Q(0, 0, 64, 64, "#6c6f75"); [[6, 10], [34, 10], [20, 34]].forEach(([x, y]) => { Q(x, y, 24, 28, "#8f2f2f"); Q(x + 2, y + 2, 20, 24, "#d84c4c"); Q(x, y + 8, 24, 2, "#8f2f2f"); Q(x, y + 18, 24, 2, "#8f2f2f"); Q(x + 4, y + 2, 4, 24, "#e86060"); }); },
+      toolchest: () => { Q(0, 0, 64, 64, "#7f8288"); Q(8, 8, 48, 52, "#8f2f2f"); Q(10, 10, 44, 48, "#d84c4c"); for (let y = 14; y < 56; y += 10) { Q(12, y, 40, 8, "#e86060"); Q(26, y + 3, 12, 2, "#2b2b2b"); } Q(6, 58, 10, 4, "#2b2b2b"); Q(48, 58, 10, 4, "#2b2b2b"); } },
+    chinese_tech: { props: (put, o) => { put(o.MW - 3, 5, "cctvPole"); put(1, 8, "cctvPole"); } },
+  };
+  ["#d84c4c", "#3a6fd8", "#e6c15a", "#f7f7f7", "#3aa35b"].forEach((col, i) => { TILES["carTop" + i] = () => carBody(col); TILES["carBot" + i] = () => carTail(col); });
+  for (const [k, env] of Object.entries(ENV)) { const th = THEMES[k]; if (!th) continue; Object.assign(th, env); Object.entries(env).forEach(([name, fn]) => { if (typeof fn === "function" && !(name in TILES) && !["props", "decorate", "floorMarks", "bedHead", "bedFoot", "deskPlain", "office", "floor2", "wallTop", "wallFace", "board", "shelf"].includes(name)) TILES[name] = fn; }); }
+  const CAMS = [];
+  let THEME = "regular", nextSloganAt = 0, transition = null;
+  function themed(name) { return () => ((THEMES[THEME] && THEMES[THEME][name]) || BASE_TILES[name])(); }   // hoisted: TILES is built before this section runs
+  function applyThemeNow(name) {
+    THEME = THEMES[name] ? name : "regular";
+    Object.assign(C, BASE_C, THEMES[THEME].colors || {});
+    try { localStorage.setItem("huntun.officeTheme", THEME); if (wid) localStorage.setItem("huntun.officeTheme." + wid, THEME); } catch (e) { /* no storage: fine */ }
+    nextSloganAt = nowMs() + 60000;
+    if (LAYOUT_THEME !== THEME) builtFor = -1;
+    if (lastState) ensureLayout(seatsFor(lastState)); else if (off) renderMap();
+    const sel = simulation ? null : $("#officetheme"); if (sel && sel.value !== THEME) sel.value = THEME;
+  }
+  // changing the theme with people inside: everyone leaves through the door, the lights go out, the room is rebuilt, the lights come up, everyone walks back in
+  function setTheme(name) {
+    if (!simulation) {
+      return api("api/w/" + wid + "/office/theme", {theme:name}).then(scene => acceptScene(scene));
+    }
+    revision++;
+    if (!THEMES[name] || name === THEME) return;
+    const present = Object.values(chars).filter(c => !c.hidden);
+    if (!present.length || transition) { if (!transition) applyThemeNow(name); return; }
+    transition = { theme: name, phase: "exit", t0: nowMs() };
+    if (printJob) { printJob.startedAt = null; printJob.done = false; printJob.until = nowMs() + 120000; }
+    for (const c of Object.values(chars)) if (c.medic || c.boss || c.leaving) delete chars[c.name]; medics = null; medicQueue = []; bossQueue = [];
+    for (const c of Object.values(chars)) { c.talk = null; c.strike = null; c.toilet = null; c.satAt = null; c.cup = null; c.cupAt = null; c.faceOverride = null; c.sayUntil = 0; c.hold = null; c.gear = null; c.zapping = false; c.zappedUntil = 0; c.setup = c.hidden ? [{ k: "hold" }] : [{ k: "exit" }, { k: "hold" }]; c.steps = []; }
+    try { if (wid) localStorage.setItem("huntun.officeTheme." + wid, name); } catch (e) { /* no storage */ }
+  }
+  function transitionTick() {
+    if (!transition) return 0;
+    const now = nowMs();
+    if (transition.phase === "exit") { if (Object.values(chars).every(c => c.hidden)) { transition.phase = "out"; transition.t0 = now; } else if (now - transition.t0 > 60000) { Object.values(chars).forEach(c => { c.hidden = true; }); transition.phase = "out"; transition.t0 = now; } return 0; }
+    if (transition.phase === "out") { const a = Math.min(1, (now - transition.t0) / 900); if (a >= 1) { applyThemeNow(transition.theme); let k = 0; for (const c of Object.values(chars)) { c.setup = null; c.hidden = true; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.moving = false; c.steps = []; c.enterAt = nowMs() + 900 + k++ * 900; c.wasAsleep = false; c.wake = null; } transition.phase = "in"; transition.t0 = now; } return a; }
+    const a = 1 - Math.min(1, (now - transition.t0) / 900); if (a <= 0) transition = null; return a;
+  }
+  // ---- 16x24 sprite art (source): o outline, h hair, s skin, e eye, c shirt, p pants, b shoes, . transparent
+  const BODY = ["...occccccco....", "..occcccccccco..", ".osccccccccccso.", ".osccccccccccso.", ".oocccccccccooo.", "..occcccccccco..", "..oppppppppppo.."];
+  const LEGS = { stand: ["..oppppooppppo..", "..opppo..opppo..", "..opppo..opppo..", "..obbbo..obbbo..", "..ooooo..ooooo..", "................"],
+                 w1: ["..oppppooppppo..", "..opppo..opppo..", "..opppo..obbbo..", "..obbbo..ooooo..", "..ooooo.........", "................"],
+                 w2: ["..oppppooppppo..", "..opppo..opppo..", "..obbbo..opppo..", "..ooooo..obbbo..", ".........ooooo..", "................"] };
+  const HEAD = {
+    down: ["......oooo......", "....oohhhhoo....", "...ohhhhhhhho...", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhsssssshho..", "..ohssssssssho..", "..ohsessssesho..", "..oossssssssoo..", "...osssssssso...", "....ossssso....."],
+    up: ["......oooo......", "....oohhhhoo....", "...ohhhhhhhho...", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..oohhhhhhhhoo..", "...ohhhhhhhho...", "....ossssso....."],
+    left: ["......oooo......", "....oohhhhoo....", "...ohhhhhhhho...", "..ohhhhhhhhhho..", "..ohhhhhhhhhho..", "..osshhhhhhhho..", "..osssshhhhhho..", "..oesssshhhhho..", "..ossssshhhhho..", "...osssshhhho...", "....ossssso....."],
+  };
+  const SIDE_BODY = ["...occccccco....", "..occcccccccco..", "..occcccccsso...", "..occcccccsso...", "..occccccccoo...", "..occcccccccco..", "..oppppppppppo.."];
+  const SIDE_LEGS = { stand: ["...opppppppo....", "...oppppppo.....", "...opppopppo....", "...obbbobbbo....", "...oooo.oooo....", "................"],
+                      w1: ["...opppppppo....", "..oppppppppo....", "..oppo..oppo....", "..obbo..obbo....", "..oooo..oooo....", "................"],
+                      w2: ["...opppppppo....", "...oppppppo.....", "....opppo.......", "....obbbo.......", "....ooooo.......", "................"] };
+  const CAPS = [null, "cap", "bandana", "beanie"];                                  // per-agent headwear variants
+  const HAIR_COLORS = ["#2b2b2b", "#7a4b2a", "#e6c15a", "#c0392b", "#3a5fd8", "#3aa35b", "#8e44ad", "#e67e22"];
+  const CAP_COLORS = ["#d84c4c", "#3a6fd8", "#3aa35b", "#e6c15a"];
+  // per-agent variations on the source art: hair style, beard, glasses and shirt style
+  const ROWS = new Map();
+  const rowSet = (row, edits) => { const a = [...row]; for (const [i, ch] of edits) a[i] = ch; return a.join(""); };
+  // ---- species: anthropomorphic zoo animals share the human body and get their own head (ears, muzzle, markings). Colours: s fur, n light muzzle/face, a accent (inner ear, patches, beak), m nose
+  const ANIMALS = {
+    cat:      { ears: "point", fur: ["#f2a65a"], a: "#f4a7b9", n: "#fff1e0", m: "#e88aa0", face: ["muzzle"], variants: {                    // coats: x and z are marking colours
+                ginger:       { fur: ["#f2a65a"], x: "#d9822b", n: "#fff1e0", e: "#c8792a", face: ["muzzle", "tabby"] },
+                british_blue: { fur: ["#8d97a6"], a: "#d9a3ad", n: "#8d97a6", m: "#6e7683", e: "#d38b2a", face: ["nose"] },
+                blue_white:   { fur: ["#8d97a6"], a: "#d9a3ad", n: "#ffffff", m: "#e88aa0", e: "#d38b2a", face: ["blaze", "muzzle"] },
+                tuxedo:       { fur: ["#2b2b2b"], a: "#d9a3ad", n: "#ffffff", m: "#e88aa0", e: "#5cb85c", face: ["blaze", "muzzle"] },
+                calico:       { fur: ["#f7f7f7"], x: "#f2a65a", z: "#2b2b2b", n: "#ffffff", e: "#d38b2a", face: ["muzzle", "calico"] },
+                brown_tabby:  { fur: ["#a8763e"], x: "#5a3a1e", n: "#e8d2b0", e: "#c8792a", face: ["muzzle", "tabby"] },
+                grey_tabby:   { fur: ["#9a9a9a"], x: "#4a4a4a", n: "#f0f0f0", e: "#5cb85c", face: ["muzzle", "tabby"] },
+                siamese:      { fur: ["#f1e4d0"], x: "#4a3728", n: "#4a3728", m: "#3a2a1e", e: "#3a8fd8", face: ["points", "muzzle"] },
+                black:        { fur: ["#2b2b2b"], a: "#6b4a55", n: "#2b2b2b", m: "#555555", e: "#e6c15a", face: ["nose"] },
+                white:        { fur: ["#f7f7f7"], n: "#f7f7f7", m: "#e88aa0", e: "#3a8fd8", face: ["nose"] } } },
+    fox:      { ears: "point", fur: ["#e8792b"], a: "#2b2b2b", n: "#fff6ea", m: "#2b2b2b", face: ["muzzle", "cheeks"] },
+    tiger:    { ears: "point", fur: ["#f28c28"], a: "#2b2b2b", n: "#fff6ea", m: "#e88aa0", face: ["muzzle", "stripes"] },
+    lion:     { ears: "point", fur: ["#e0a94a"], a: "#a5561f", n: "#fff1d0", m: "#6b3e1e", face: ["muzzle", "mane"] },
+    pig:      { ears: "point", fur: ["#f7b6c2"], a: "#f08ca0", n: "#f7b6c2", m: "#b85c72", face: ["snout"] },
+    bear:     { ears: "round", fur: ["#8b5a2b", "#5a3a1e", "#f5f5f5"], a: "#c88a55", n: "#d9b382", m: "#2b2b2b", face: ["muzzle"] },
+    panda:    { ears: "round", earFur: true, fur: ["#f7f7f7"], a: "#2b2b2b", n: "#f7f7f7", m: "#2b2b2b", face: ["patches", "nose"] },
+    koala:    { ears: "fluffy", fur: ["#9a9a9a"], a: "#2b2b2b", n: "#c8c8c8", m: "#2b2b2b", face: ["bignose"] },
+    monkey:   { ears: "side", fur: ["#8b5a2b"], a: "#5a3a1e", n: "#f3c9a0", m: "#5a3a1e", face: ["facepatch", "nose"] },
+    dog:      { ears: "floppy", fur: ["#c9a26a", "#5a3a1e", "#f5f5f5", "#8c8c8c"], a: "#7a5230", n: "#fff1e0", m: "#2b2b2b", face: ["muzzle"] },
+    rabbit:   { ears: "tall", fur: ["#f5f5f5", "#bdbdbd", "#c9a26a"], a: "#f4a7b9", n: "#ffffff", m: "#e88aa0", face: ["muzzle"] },
+    frog:     { ears: "bumps", fur: ["#5cb85c"], a: "#3f8f3f", n: "#a8e0a8", m: "#2f6f2f", face: ["frog"] },
+    penguin:  { ears: "none", fur: ["#2b2b2b"], a: "#f2a33a", n: "#f7f7f7", m: "#f2a33a", face: ["facepatch", "beak"] },
+    elephant: { ears: "big", fur: ["#9aa0a8"], a: "#c9b0b8", n: "#9aa0a8", m: "#7d838b", face: ["trunk"] },
+  };
+  const ANIMAL_NAMES = Object.keys(ANIMALS), ANIMAL_PICK = ["cat", "cat", "cat"].concat(ANIMAL_NAMES);   // cats are the office favourite
+  const EARS = {                                                             // extra rows above the head, then the head's top two rows
+    point:  { top: ["...o........o...", "..oso......oso..", "..osao....oaso.."], r0: "..osaaooooaaso..", r1: "..oossssssssoo.." },
+    round:  { top: ["..oooo....oooo..", ".osaaso..osaaso."], r0: ".ossssoooosssso.", r1: "..oossssssssoo.." },
+    fluffy: { top: [".ooooo....ooooo.", "osaaaso..osaaaso"], r0: "osssssoooosssss" + "o", r1: ".osssssssssssso." },
+    tall:   { top: ["....oo....oo....", "...osso..osso...", "...osao..oaso...", "...osao..oaso...", "...osao..oaso..."], r0: "...osaooooaso...", r1: "...osssssssso..." },
+    bumps:  { top: ["...oo......oo...", "..owwo....owwo..", "..oweo....oewo.."], r0: "..osssoooossso..", r1: "..oossssssssoo.." },
+    none:   { top: [], r0: "......oooo......", r1: "....oossssoo...." },
+  };
+  const range = (a, b) => { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; };
+  function animalHead(c, dir) {
+    const base = ANIMALS[c.species], sp = c.variant ? { ...base, ...base.variants[c.variant] } : base, ear = EARS[sp.ears] || EARS.none, side = dir === "left";
+    let rows = HEAD[dir].map(r => r.replace(/h/g, "s"));
+    rows[0] = ear.r0; rows[1] = ear.r1; rows[2] = "..osssssssssso..";
+    rows = ear.top.concat(rows);
+    const t = ear.top.length;
+    if (sp.earFur) rows = rows.map((r, i) => i <= t ? r.replace(/[sa]/g, "a") : r);
+    if (sp.face.includes("points")) rows = rows.map((r, i) => i <= t ? r.replace(/[sa]/g, "x") : r);
+    const E = (r, edits) => { rows[t + r] = rowSet(rows[t + r], edits); };
+    const mirror = (edits) => side ? edits.filter(([i]) => i >= 8) : edits;                     // in profile only the ear at the back of the head shows
+    const both = (cols, ch) => cols.flatMap(i => [[i, ch], [15 - i, ch]]);
+    if (sp.ears === "floppy" || sp.ears === "big") { const lo = sp.ears === "big" ? 2 : 3, hi = sp.ears === "big" ? 9 : 8; for (let r = lo; r <= hi; r++) E(r, mirror([[0, "o"], [1, "a"], [2, "a"], [13, "a"], [14, "a"], [15, "o"]])); E(lo - 1, mirror(both([1, 2], "o"))); E(hi + 1, mirror(both([1, 2], "o"))); }
+    if (sp.ears === "side") { for (let r = 5; r <= 7; r++) E(r, mirror([[0, "o"], [1, r === 6 ? "a" : "s"], [2, "s"], [13, "s"], [14, r === 6 ? "a" : "s"], [15, "o"]])); E(4, mirror(both([1, 2], "o"))); E(8, mirror(both([1, 2], "o"))); }
+    const has = (f) => sp.face.includes(f);
+    if (dir === "down") {
+      if (has("facepatch")) for (let r = 5; r <= 9; r++) E(r, range(4, 11).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
+      if (has("muzzle")) { E(8, range(6, 9).map(i => [i, "n"])); E(9, range(6, 9).map(i => [i, "n"])); }
+      if (has("muzzle") || has("nose")) E(8, [[7, "m"], [8, "m"]]);
+      if (has("cheeks")) { E(6, both([3, 4], "n")); E(7, both([3, 4], "n")); }
+      if (has("patches")) { for (let r = 6; r <= 8; r++) E(r, both([4, 5], "a")); E(7, [[5, "w"], [10, "w"]]); }
+      if (has("bignose")) for (let r = 7; r <= 9; r++) E(r, range(6, 9).map(i => [i, "a"]));
+      if (has("snout")) { E(8, range(6, 9).map(i => [i, "a"])); E(9, [[6, "a"], [7, "m"], [8, "m"], [9, "a"]]); }
+      if (has("beak")) { E(8, range(6, 9).map(i => [i, "a"])); E(9, [[7, "a"], [8, "a"]]); }
+      if (has("frog")) { E(7, [[5, "s"], [10, "s"]]); E(8, range(4, 11).map(i => [i, "m"])); }
+      if (has("blaze")) { E(6, [[7, "n"], [8, "n"]]); E(7, range(6, 9).filter(i => rows[t + 7][i] === "s").map(i => [i, "n"])); E(8, range(4, 11).filter(i => rows[t + 8][i] === "s").map(i => [i, "n"])); E(9, range(4, 11).filter(i => rows[t + 9][i] === "s").map(i => [i, "n"])); }
+      if (has("points")) { for (let r = 5; r <= 9; r++) E(r, range(4, 11).filter(i => rows[t + r][i] === "s" && (r > 5 || i > 5 && i < 10)).map(i => [i, "x"])); }
+      if (c.glasses && !has("frog")) E(7, [[4, "g"], [6, "g"], [7, "g"], [8, "g"], [9, "g"], [11, "g"]]);
+    } else if (side) {
+      if (has("facepatch")) for (let r = 5; r <= 9; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
+      if (has("muzzle")) { E(8, range(3, 5).map(i => [i, "n"])); E(9, [[4, "n"], [5, "n"]]); }
+      if (has("muzzle") || has("nose")) E(8, [[3, "m"]]);
+      if (has("cheeks")) { E(6, [[4, "n"], [5, "n"]]); E(7, [[4, "n"], [5, "n"]]); }
+      if (has("patches")) { for (let r = 6; r <= 8; r++) E(r, [[3, "a"], [4, "a"]]); E(7, [[3, "w"]]); }
+      if (has("bignose")) for (let r = 7; r <= 9; r++) E(r, range(3, 5).map(i => [i, "a"]));
+      if (has("snout")) { E(8, [[1, "o"], [2, "a"], [3, "a"], [4, "a"]]); E(9, [[2, "o"], [3, "a"], [4, "m"]]); }
+      if (has("beak")) E(8, [[1, "a"], [2, "a"], [3, "a"]]);
+      if (has("frog")) { E(7, [[3, "s"]]); E(8, range(3, 8).map(i => [i, "m"])); }
+      if (has("blaze")) for (let r = 7; r <= 9; r++) E(r, range(3, 6).filter(i => rows[t + r][i] === "s").map(i => [i, "n"]));
+      if (has("points")) for (let r = 5; r <= 9; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "x"]));
+      if (c.glasses && !has("frog")) E(7, [[4, "g"], [5, "g"]]);
+    }
+    if (has("stripes")) { if (side) { E(2, [[6, "a"], [9, "a"]]); E(3, [[4, "a"], [8, "a"], [12, "a"]]); E(4, [[6, "a"], [10, "a"]]); } else { E(2, [[5, "a"], [10, "a"]]); E(3, [[3, "a"], [7, "a"], [8, "a"], [12, "a"]]); E(4, [[5, "a"], [10, "a"]]); } }
+    if (has("tabby")) { if (side) { E(1, [[6, "x"], [9, "x"]]); E(2, [[5, "x"], [8, "x"], [11, "x"]]); E(3, [[7, "x"], [10, "x"]]); E(4, [[5, "x"], [9, "x"], [12, "x"]]); } else { E(1, [[6, "x"], [9, "x"]]); E(2, [[4, "x"], [7, "x"], [8, "x"], [11, "x"]]); E(3, [[5, "x"], [10, "x"]]); E(4, [[3, "x"], [7, "x"], [8, "x"], [12, "x"]]); } }
+    if (has("calico")) { for (let r = 1; r <= 4; r++) E(r, range(3, 7).filter(i => rows[t + r][i] === "s").map(i => [i, "x"])); for (let r = 2; r <= 5; r++) E(r, range(9, 12).filter(i => rows[t + r][i] === "s").map(i => [i, "z"])); if (!side) E(5, [[3, "x"], [4, "x"]]); }
+    if (has("mane")) for (let r = 1; r <= 9; r++) E(r, range(2, 13).filter(i => rows[t + r][i] === "s" && (i <= 3 || i >= 12 || r === 1 || (r === 9 && !side))).map(i => [i, "a"]));
+    return rows;
+  }
+  function headRows(c, dir) {
+    if (c.species && c.species !== "human") return animalHead(c, dir);
+    let rows = HEAD[dir].slice(); const st = c.hair;
+    if (st === "spiky") { rows[0] = "....oo.oooo.oo.."; rows[1] = "...ohhohhhhohho."; }
+    if (st === "short") { if (dir === "down") for (const r of [5, 6, 7]) rows[r] = rowSet(rows[r], [[3, "s"], [4, "s"], [11, "s"], [12, "s"]]); else if (dir === "up") { rows[7] = "..osssssssssso.."; rows[8] = "..oossssssssoo.."; rows[9] = "...osssssssso..."; } else for (const r of [7, 8]) rows[r] = rowSet(rows[r], [[8, "s"], [9, "s"], [10, "s"]]); }
+    if (st === "long") { if (dir === "down") { rows[8] = "..ohssssssssho.."; rows[9] = "..ohhsssssshho.."; } else if (dir === "up") { rows[8] = "..ohhhhhhhhhho.."; rows[9] = "..ohhhhhhhhhho.."; rows[10] = "...ohhhhhhhho..."; } else { rows[9] = "...osssshhhhho.."; rows[10] = "....oshhhhhho..."; } }
+    if (st === "bald") rows = rows.map(r => r.replace(/h/g, "s"));
+    if (c.beard) { if (dir === "down") { rows[8] = rowSet(rows[8], [[4, "h"], [11, "h"]]); rows[9] = "...ohhhhhhhho..."; } else if (dir === "left") { rows[8] = rowSet(rows[8], [[3, "h"], [4, "h"]]); rows[9] = rowSet(rows[9], [[4, "h"], [5, "h"], [6, "h"]]); } }
+    if (c.glasses) { if (dir === "down") rows[7] = rowSet(rows[7], [[4, "g"], [6, "g"], [7, "g"], [8, "g"], [9, "g"], [11, "g"]]); else if (dir === "left") rows[7] = rowSet(rows[7], [[4, "g"], [5, "g"]]); }
+    return rows;
+  }
+  function bodyRows(c, dir) {
+    const side = dir === "left", rows = (side ? SIDE_BODY : BODY).slice(), st = c.shirt;
+    if (st === "stripes") for (const r of [1, 3, 5]) rows[r] = rows[r].replace(/c/g, "d");
+    if (st === "vneck" && dir === "down") { rows[0] = rowSet(rows[0], [[7, "s"]]); rows[1] = rowSet(rows[1], [[7, "s"]]); }
+    if (st === "logo" && dir === "down") for (const r of [2, 3]) rows[r] = rowSet(rows[r], [[7, "l"], [8, "l"]]);
+    if (st === "jacket") for (let r = 0; r < 6; r++) rows[r] = rowSet(rows[r], (side ? [3, 4] : [3, 4, 11, 12]).filter(i => rows[r][i] === "c").map(i => [i, "d"]));
+    if (c.species === "elephant") for (let r = 0; r < 4; r++) rows[r] = rowSet(rows[r], dir === "down" ? [[6, "o"], [7, "s"], [8, "s"], [9, "o"]] : side ? [[1, "o"], [2, "s"], [3, "s"], [4, "o"]] : []);   // the trunk hangs over the chest
+    return rows;
+  }
+  function sprite(c, dir, frame) {
+    const hd = dir === "right" ? "left" : dir, key = c.pal.key + "|" + c.species + c.variant + c.hair + c.beard + c.glasses + c.shirt + "|" + hd + "|" + frame;
+    let rows = ROWS.get(key); if (rows) return rows;
+    rows = headRows(c, hd).concat(bodyRows(c, hd), (hd === "left" ? SIDE_LEGS : LEGS)[frame]); ROWS.set(key, rows); return rows;
+  }
+  // ---- 16x24 source art, upscaled to 32x48 with Scale2x (rounds the corners) and then shaded and detailed; drawn at 1 unit per art pixel
+  const HIRES = new Map(), SPR = new Map(), DERIVED = new WeakMap(), LIGHT = { c: "1", p: "2", h: "3", k: "4" };
+  function scale2xRows(src, w) {                                              // Scale2x: doubles a character grid and rounds the corners
+    const h = src.length, at = (r, c) => r < 0 || c < 0 || r >= h || c >= w ? "." : src[r][c];
+    const out = []; for (let r = 0; r < h * 2; r++) out.push(new Array(w * 2).fill("."));
+    for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+      const p = at(r, c), a = at(r - 1, c), b = at(r, c + 1), l = at(r, c - 1), d = at(r + 1, c);
+      out[r * 2][c * 2] = l === a && l !== d && a !== b ? a : p; out[r * 2][c * 2 + 1] = a === b && a !== l && b !== d ? b : p;
+      out[r * 2 + 1][c * 2] = d === l && d !== a && l !== b ? l : p; out[r * 2 + 1][c * 2 + 1] = b === d && b !== a && d !== l ? d : p;
+    }
+    return out;
+  }
+  function hires(rows, cap, dir, top) {
+    const key = dir + "|" + cap + "|" + top + "|" + rows.join("|"); if (HIRES.has(key)) return HIRES.get(key);
+    const h = rows.length, src = rows.map((line, r) => [...line].map(ch => { if (cap && r <= 4 && ch === "h") ch = "k"; if (cap === "beanie" && r === 4 && ch === "k") ch = "o"; return ch; }));
+    const out = scale2xRows(src, 16);
+    const g = (r, c) => r < 0 || c < 0 || r >= h * 2 || c >= 32 ? "." : out[r][c], art = out.map(row => row.slice());
+    for (let r = 0; r < h * 2; r++) for (let c = 0; c < 32; c++) {                       // light from the top left: rims lighter, undersides darker
+      const ch = out[r][c]; if (!"cphks".includes(ch)) continue;
+      const rt = g(r, c + 1), lf = g(r, c - 1), up = g(r - 1, c), dn = g(r + 1, c);
+      if (ch === "s") { if (dn === "o" || dn === "c") art[r][c] = "S"; continue; }
+      if (rt === "o" || dn === "o" || (ch === "c" && dn === "p") || (ch === "p" && dn === "b")) art[r][c] = ch.toUpperCase();
+      else if (lf === "o" || ((ch === "h" || ch === "k") && up === "o")) art[r][c] = LIGHT[ch];
+    }
+    for (let r = 0; r < h * 2 - 1; r++) for (let c = 0; c < 31; c++) if (out[r][c] === "e" && out[r][c + 1] === "e" && out[r + 1][c] === "e" && g(r - 1, c) !== "e" && g(r, c - 1) !== "e") art[r][c] = "w";   // eye highlight
+    const mr = 17 + (top || 0) * 2;                                                                                                          // mouth, unless the species already has a nose or beak there
+    if (dir === "down" && h * 2 > mr && art[mr][15] === "s") { art[mr][15] = "m"; art[mr][16] = "m"; } else if (dir === "left" && h * 2 > mr && art[mr][6] === "s") art[mr][6] = "m";
+    const res = { key, rows: art }; HIRES.set(key, res); return res;
+  }
+  function fullPal(pal) { let d = DERIVED.get(pal); if (d) return d; d = { ...pal, w: "#ffffff", m: pal.m || "#c9705f", S: tint(pal.s, -0.14) }; for (const k of ["c", "p", "h", "k"]) { const base = pal[k] || pal.h || "#888888"; d[k.toUpperCase()] = tint(base, -0.28); d[LIGHT[k]] = tint(base, 0.22); } DERIVED.set(pal, d); return d; }
+  function spriteImage(rows, cap, dir, flip, pal, top) {
+    const art = hires(rows, cap, dir, top), key = art.key + "|" + flip + "|" + pal.key; let cv = SPR.get(key); if (cv) return cv;
+    cv = document.createElement("canvas"); cv.width = 32; cv.height = art.rows.length; const cx = cv.getContext("2d"), d = fullPal(pal);
+    art.rows.forEach((row, r) => row.forEach((ch, c) => { const col = d[ch]; if (!col || ch === ".") return; cx.fillStyle = col; cx.fillRect(flip ? 31 - c : c, r, 1, 1); }));
+    SPR.set(key, cv); return cv;
+  }
+  function drawSprite(rows, x, y, flip, pal, cap, dir, top) { ctx.drawImage(spriteImage(rows, cap, dir, flip, pal, top || 0), x, y); }
+  // ---- headshot: the same face as in the office (head and shoulders, facing the camera) as an SVG for the board avatars
+  const HEADSHOTS = new Map();
+  function headshot(name, role) {
+    const key = name + "|" + role; if (HEADSHOTS.has(key)) return HEADSHOTS.get(key);
+    const c = { name, ...(name === "watchdog" ? guardLook() : palFor(name, role)) }, rows = headRows(c, "down").concat(bodyRows(c, "down").slice(0, 6));
+    const art = scale2xRows(hires(rows, c.cap, "down", c.top).rows, 32), d = fullPal(c.pal), W64 = 64;
+    let rects = "", x0 = W64, x1 = 0;
+    art.forEach((row, r) => { let x = 0; while (x < W64) { const ch = row[x]; if (ch === "." || !d[ch]) { x++; continue; } let w = 1; while (x + w < W64 && row[x + w] === ch) w++; rects += '<rect x="' + x + '" y="' + r + '" width="' + w + '" height="1" fill="' + d[ch] + '"/>'; x0 = Math.min(x0, x); x1 = Math.max(x1, x + w); x += w; } });
+    const hue = (c.pal.c.match(/hsl\((\d+)/) || [0, 40])[1], headH = headRows(c, "down").length * 4, vh = headH + 12, vw = Math.max(vh, x1 - x0 + 8), vx = Math.round((x0 + x1) / 2 - vw / 2), vy = -4;   // square, the whole head plus the shoulders
+    const svg = '<svg viewBox="' + vx + ' ' + vy + ' ' + vw + ' ' + vh + '" preserveAspectRatio="xMidYMid meet"><rect x="' + (vx - 2) + '" y="' + (vy - 2) + '" width="' + (vw + 4) + '" height="' + (vh + 4) + '" fill="hsl(' + hue + ',42%,86%)"/><circle cx="32" cy="' + Math.round(headH * 0.6) + '" r="' + Math.round(vw * 0.44) + '" fill="hsl(' + hue + ',50%,93%)"/>' + rects + '</svg>';
+    HEADSHOTS.set(key, svg); return svg;
+  }
+
+  // ---- layout: a Japanese "island" office. The master's desk sits at the front facing everyone; workers sit in
+  // islands of four desks (two facing two). One desk and one bunk per agent. Generated from the team size.
+  let DESKS = [], BEDS = [], TOILETS = [], QUEUE = [], toiletQueue = [], FRONT = [3, 5], DOOR = [16, 1], PRINTER = [1, 4], PRINT_SPOT = [2, 4], map = [], solid = [], builtFor = -1, MASTER_IDX = 0;
+  let PANTRY_SPOTS = [];                            // the pantry's standing spots: { pos, dir (facing while sipping), brew (the counter tile in front, or null) }
+  const DEV_ROLES = ["backend", "frontend", "fullstack", "ml-engineer", "devops", "data-scientist"];
+  let teamRoles = [];
+  let CAP = 0, baseMap = [], baseSolid = [], mxCol = 0, LAYOUT_THEME = "regular", layoutRevision = 0;
+  function roomPlan(cap, masterIdx, legacy = false) {
+    const workers=Math.max(legacy?1:0,cap-(masterIdx>=0?1:0)), L=THEMES[THEME].layout || {};
+    const islands=Math.ceil(workers/4), S=L.connected?4:6, RS=L.bedsAtDesk?10:6;
+    let best=null;
+    for(let columns=1;columns<=Math.max(1,islands);columns++) {
+      if(legacy && columns!==Math.min(4,islands)) continue;
+      const rows=Math.ceil(islands/columns),officeW=Math.max(L.bossOffice?18:14,4+columns*S);
+      const officeH=Math.max(L.bedsAtDesk?8:7,(L.bedsAtDesk?8:5)+rows*RS), width=officeW+2,yMid=2+officeH;
+      const bedsPerRow=Math.max(1,Math.floor((width-4)/2)),bedRows=Math.ceil(cap/bedsPerRow);
+      const height=(L.bedsAtDesk?yMid+1:yMid+bedRows*3+2)+(L.tallWall?1:0);
+      const area=width*height,shape=Math.abs(width-height);
+      if(!best || area<best.area || area===best.area && shape<best.shape)
+        best={columns,rows,officeW,officeH,width,height,bedsPerRow,area,shape};
+    }
+    return best;
+  }
+  function layout(cap, masterIdx, legacy = false) {
+    cap = Math.max(legacy?1:0, cap); MASTER_IDX = masterIdx; CAP = cap;
+    const L = THEMES[THEME].layout || {}; LAYOUT_THEME = THEME;
+    const S = L.connected ? 4 : 6, RS = L.bedsAtDesk ? 10 : 6, iy0 = L.bedsAtDesk ? 12 : 8;      // connected rows pack the islands; beds at the desk need taller rows
+    const plan=roomPlan(cap,masterIdx,legacy), islandsPerRow=plan.columns,islandRows=plan.rows;
+    const officeW=plan.officeW,officeH=plan.officeH; // retain the circulation and fixture clearance, with the least floor area
+    MW = officeW + 2;
+    const yMid = 2 + officeH; Y_MID = yMid;
+    const bedsPerRow = Math.max(1, Math.floor((MW - 4) / 2)), bedRows = Math.ceil(cap / bedsPerRow);
+    MH = L.bedsAtDesk ? yMid + 1 : yMid + bedRows * 3 + 2; W = MW * T; H = MH * T;
+    DESKS = new Array(cap); BEDS = []; map = []; solid = [];
+    const mx = 1 + Math.floor(officeW / 2) - 1; mxCol = mx;
+    FRONT = [mx, L.bossOffice ? 8 : 6];
+    if (masterIdx >= 0) DESKS[masterIdx] = { desk: [mx, 4], chair: [mx, 3], dir: "down", dual: false, boss: !!L.bossOffice };   // row 2 stays clear: it is the corridor from the door
+    let j = 0;
+    const islandX0 = legacy ? 1 + Math.floor((officeW - 2 - islandsPerRow * S) / 2) : 2;
+    for (let i = 0; i < cap; i++) {
+      if (i === masterIdx) continue;
+      const isl = Math.floor(j / 4), pos = j % 4, col = isl % islandsPerRow, row = Math.floor(isl / islandsPerRow);
+      const ix = islandX0 + col * S + (pos % 2) * 2, iy = iy0 + row * RS;
+      DESKS[i] = pos < 2 ? { desk: [ix, iy], chair: [ix, iy - 1], dir: "down", dual: false } : { desk: [ix, iy + 1], chair: [ix, iy + 2], dir: "up", dual: false };
+      j++;
+    }
+    if (L.bedsAtDesk) { for (let i = 0; i < cap; i++) { const d = DESKS[i]; BEDS.push(i === masterIdx ? [mx - 1, 2] : d.dir === "down" ? [d.desk[0], d.desk[1] - 3] : [d.desk[0], d.desk[1] + 2]); } }   // a bunk right behind every chair
+    else for (let i = 0; i < cap; i++) BEDS.push([2 + (i % bedsPerRow) * 2, yMid + 2 + Math.floor(i / bedsPerRow) * 3]);
+    for (let y = 0; y < MH; y++) { map[y] = []; solid[y] = []; for (let x = 0; x < MW; x++) { map[y][x] = [y >= yMid ? "floor2" : "office"]; solid[y][x] = false; } }              // the bunk room is open to the office: only the floor changes
+    const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
+    for (let x = 0; x < MW; x++) { put(x, 0, "wallTop"); put(x, 1, "wallFace"); put(x, MH - 1, "wallTop"); }
+    for (let y = 0; y < MH; y++) { put(0, y, "wallTop"); put(MW - 1, y, "wallTop"); }
+    if (masterIdx >= 0) { put(mx, 1, "board"); put(mx + 1, 1, "board"); }
+    if (L.bossOffice && masterIdx >= 0) { for (let y = 2; y <= 5; y++) { put(mx - 2, y, "glassV"); put(mx + 3, y, "glassV"); } put(mx - 2, 6, "glassBL"); put(mx + 3, 6, "glassBR"); for (let x = mx - 1; x <= mx + 1; x++) put(x, 6, "glassH"); }   // the master's own office: thin glass partitions, door gap at the right
+    [[MW - 2, 2], [MW - 2, yMid - 1], [1, yMid - 1], [MW - 2, MH - 2]].forEach(([x, y]) => { if (!solid[y]?.[x]) put(x, y, "plant"); });
+    // the restroom against the right wall: two marble stalls entered from the left, walnut walls between them carrying each
+    // stall's timer and alarm light, a vanity below; marble floor in front of them
+    TOILETS = [[MW - 2, 4], [MW - 2, 6]]; TOILETS.forEach(([x, y]) => put(x, y, "toilet"));
+    put(MW - 2, 3, "stallPanel"); put(MW - 2, 5, "stallPanel"); put(MW - 2, 7, "stallEnd"); put(MW - 2, 8, "vanity");
+    for (let y = 3; y <= 8; y++) for (const x of [MW - 3, MW - 2]) map[y][x][0] = "restroomFloor";
+    // the office printer along the bottom wall, in the first free spot from the left; the master prints the delivery report here
+    { const busy = new Set(); DESKS.forEach(d => { if (d) [d.desk, [d.desk[0] + 1, d.desk[1]], d.chair].forEach(([x, y]) => busy.add(key(x, y))); }); BEDS.forEach(([x, y]) => { busy.add(key(x, y)); busy.add(key(x, y + 1)); });
+      const free = (x, y) => x > 0 && y > 1 && x < MW - 1 && y < MH - 1 && !solid[y][x] && !busy.has(key(x, y));
+      PRINTER = null; const y = MH - 2;
+      for (let x = 1; x < MW - 2 && !PRINTER; x++) if (free(x, y)) { if (free(x + 1, y)) { PRINTER = [x, y]; PRINT_SPOT = [x + 1, y]; } else if (free(x, y - 1)) { PRINTER = [x, y]; PRINT_SPOT = [x, y - 1]; } }
+      if (!PRINTER) { PRINTER = [1, 4]; PRINT_SPOT = [2, 4]; }
+      put(PRINTER[0], PRINTER[1], "printer"); }
+    // the pantry (茶水间) in the top-left corner, five tiles square on a floor of its own: cupboards and the menu on the wall, a
+    // counter with the sink, the coffee machine and the microwave, the fridge, a water cooler and a snack machine against the
+    // left wall, and two tables. An agent resuming a cycle (its model reading the conversation back in) has a coffee here.
+    const pxMax = Math.min(5, L.bossOffice ? mx - 3 : mx - 2);                                     // clear of the master's desk (and glass office)
+    for (let y = 2; y <= 6; y++) for (let x = 1; x <= pxMax; x++) if (!solid[y][x]) map[y][x][0] = "pantryFloor";
+    [[1, "pantryCabinetSign"], [2, "pantryCabinet"], [3, "pantryCabinet"], [4, "pantryMenu"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 1, t); });
+    [[1, "pantrySink"], [2, "pantryCoffee"], [3, "pantryMicrowave"], [4, "pantryFridge"]].forEach(([x, t]) => { if (x <= pxMax) put(x, 2, t); });
+    put(1, 4, "waterCooler"); put(1, 6, "snackMachine");
+    if (pxMax >= 5) { put(4, 4, "cafeTable"); put(3, 6, "cafeTable"); }
+    QUEUE = []; for (let y = 8; y <= yMid - 2; y += 2) QUEUE.push([MW - 3, y]);                    // the line forms in front of them, heading down the wall, a tile apart
+    DOOR = [MW - 4, 1];
+    for (let x = 6; x < MW - 5; x += 5) if (!map[1][x].includes("board") && !map[1][x + 1]?.includes("board")) put(x, 1, "shelf");
+    map[1][DOOR[0]] = ["door"]; solid[1][DOOR[0]] = false;                                  // the entrance: everyone comes in through here
+    if (THEME === "chinese_tech") put(DOOR[0] + 1, 2, "moneyTree");                             // 发财树 by the entrance
+    // the pantry's standing spots, taken greedily in this order: one is kept only if every spot still has a way out that
+    // passes no other spot, so a drinker called back to work never waits behind the others
+    const pantryOut = (spots) => {
+      const busy = new Set(spots.map(([x, y]) => key(x, y))), start = [DOOR[0], DOOR[1] + 1], seen = new Set([key(...start)]), q = [start];
+      while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || solid[ny][nx] || busy.has(key(nx, ny)) || seen.has(key(nx, ny))) continue; seen.add(key(nx, ny)); q.push([nx, ny]); } }
+      return spots.every(([x, y]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen.has(key(x + dx, y + dy))));
+    };
+    PANTRY_SPOTS = [];
+    for (const [x, y, dir, brew] of [[2, 3, "down", [2, 2]], [2, 4, "right", [1, 4]], [4, 3, "down"], [3, 4, "right"], [5, 4, "left"], [4, 5, "up"], [2, 6, "right"], [4, 6, "left"], [3, 5, "down"],
+                                     [1, 3, "down", [1, 2]], [3, 3, "down"], [5, 3, "left"], [5, 5, "left"], [5, 6, "left"], [2, 5, "right"], [1, 5, "right"]]) {
+      if (x > pxMax || solid[y][x] || (x === PRINT_SPOT[0] && y === PRINT_SPOT[1]) || !pantryOut([...PANTRY_SPOTS.map(p => p.pos), [x, y]])) continue;
+      const b = brew && solid[brew[1]][brew[0]] ? brew.slice() : null;               // where the cup is filled, and which way that faces
+      PANTRY_SPOTS.push({ pos: [x, y], dir, brew: b, brewDir: b ? (b[0] < x ? "left" : b[0] > x ? "right" : b[1] < y ? "up" : "down") : null });
+    }
+    if (THEMES[THEME].props) {                                                                  // the theme's own furniture, on free floor only
+      const taken = new Set([key(DOOR[0] - 1, DOOR[1] + 1)]); DESKS.forEach(d => { if (d) { taken.add(key(d.desk[0], d.desk[1])); taken.add(key(d.desk[0] + 1, d.desk[1])); taken.add(key(d.desk[0] - 1, d.desk[1])); taken.add(key(d.chair[0], d.chair[1])); } });
+      BEDS.forEach(([x, y]) => { taken.add(key(x, y)); taken.add(key(x, y + 1)); }); QUEUE.forEach(([x, y]) => taken.add(key(x, y))); taken.add(key(PRINT_SPOT[0], PRINT_SPOT[1])); for (let k = 0; k < 6 && FRONT[0]+k*2<MW-2; k++) taken.add(key(FRONT[0] + k * 2, FRONT[1]));
+      PANTRY_SPOTS.forEach(({ pos: [x, y] }) => taken.add(key(x, y)));
+      const targets = []; DESKS.forEach(d => { if (d) targets.push(d.chair); }); BEDS.forEach(b => targets.push(b)); TOILETS.forEach(t => targets.push(t)); QUEUE.forEach(q => targets.push(q)); targets.push(PRINT_SPOT); for (let k = 0; k < 6 && FRONT[0]+k*2<MW-2; k++) targets.push([FRONT[0] + k * 2, FRONT[1]]); PANTRY_SPOTS.forEach(s => targets.push(s.pos));
+      const furnitureWalls=new Set();
+      DESKS.forEach(d=>{if(d) {furnitureWalls.add(key(...d.desk));furnitureWalls.add(key(d.desk[0]+1,d.desk[1]));if(d.boss)furnitureWalls.add(key(d.desk[0]-1,d.desk[1]));}});
+      BEDS.forEach(([x,y])=>furnitureWalls.add(key(x,y+1)));
+      const blocked=(x,y)=>solid[y]?.[x] || furnitureWalls.has(key(x,y));
+      const allReachable = () => {                                                              // every chair, bunk, stall and spot must stay reachable from the door (a solid target counts if a neighbour is)
+        const seen = new Set([key(DOOR[0], DOOR[1] + 1)]), q = [[DOOR[0], DOOR[1] + 1]];
+        while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || blocked(nx,ny) || seen.has(key(nx, ny))) continue; seen.add(key(nx, ny)); q.push([nx, ny]); } }
+        return targets.every(([x, y]) => seen.has(key(x, y)) || blocked(x,y) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen.has(key(x + dx, y + dy))));
+      };
+      const safe = (x, y, t) => { if (x <= 0 || y <= 1 || x >= MW - 1 || y >= MH - 1 || solid[y][x] || taken.has(key(x, y)) || isEntry(x, y) || (x === DOOR[0] && y <= 2) || map[y][x].length > 1) return; put(x, y, t); if (!allReachable()) { map[y][x].pop(); solid[y][x] = false; } };
+      const rowsDeskBack = []; for (let r = 0; r < islandRows; r++) rowsDeskBack.push(iy0 + r * RS + 1);
+      THEMES[THEME].props(safe, { MW, MH, yMid, mx, DOORX: DOOR[0], islandX0, rowsDeskBack });
+    }
+    if (L.tallWall) {                                                                           // one more row of wall above the door: the banners hang there
+      map.unshift(Array.from({ length: MW }, () => ["wallTop"])); solid.unshift(new Array(MW).fill(true));
+      for (let x = 1; x < MW - 1; x++) { map[1][x] = ["wallHigh"]; solid[1][x] = true; }
+      MH += 1; H = MH * T; Y_MID += 1;
+      const down = (pt) => { if (pt) pt[1] += 1; };
+      DESKS.forEach(d => { if (d) { down(d.desk); down(d.chair); } }); BEDS.forEach(down); TOILETS.forEach(down); QUEUE.forEach(down); PANTRY_SPOTS.forEach(sp => { down(sp.pos); down(sp.brew); });
+      [FRONT, DOOR, PRINTER, PRINT_SPOT].forEach(down);
+    }
+    baseMap = map.map(r => r.map(t => t.slice())); baseSolid = solid.map(r => r.slice());
+    builtFor = cap;
+    applyFurniture();
+  }
+  // desks and bunks exist only for furnished seats: the founding team's are there from the start, later hires carry theirs in and leavers carry theirs out
+  function applyFurniture() {
+    map = baseMap.map(r => r.map(t => t.slice())); solid = baseSolid.map(r => r.slice());
+    const put = (x, y, t, sld = true) => { if (y < 0 || y >= MH || x < 0 || x >= MW) return; map[y][x].push(t); if (sld) solid[y][x] = true; };
+    seats.forEach((st, i) => {
+      const d = DESKS[i], b = BEDS[i]; if (!st || !d) return;
+      d.dual = !!THEMES[THEME].allDual || DEV_ROLES.includes(st.role);
+      if (st.desk && d.boss) { put(d.desk[0] - 1, d.desk[1], "bossDeskMid"); put(d.desk[0], d.desk[1], "bossDeskL"); put(d.desk[0] + 1, d.desk[1], "bossDeskR"); put(d.chair[0], d.chair[1], "bossChair", false); }
+      else if (st.desk) { put(d.desk[0], d.desk[1], d.dir === "down" ? (d.dual ? "deskLBack" : "deskLapBack") : (d.dual ? "deskL" : "deskLap")); put(d.desk[0] + 1, d.desk[1], d.dual ? (d.dir === "down" ? "deskRBack" : "deskR") : "deskPlain"); put(d.chair[0], d.chair[1], d.dir === "down" ? "chair" : "chairUp", false); }
+      if (st.bed && b) { put(b[0], b[1], "bedHead", false); put(b[0], b[1] + 1, "bedFoot"); }
+    });
+    FLOOR = []; for (let y = DOOR[1] + 1; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) if (!solid[y][x] && !map[y][x].some(t => t.startsWith("chair") || t.startsWith("bed") || t === "mat") && !isEntry(x, y) && !(x === DOOR[0] - 1 && y === DOOR[1] + 1)) FLOOR.push([x, y]);
+    if (off) renderMap();
+  }
+  const furnish = (i, item, on) => { if (seats[i]) { seats[i][item] = on; applyFurniture(); } };
+  let seats = [];                                   // stable seating: first come, first seated; a leaver's slot is freed once they have packed and gone
+  function seatsFor(st) {
+    const team = st.agents.filter(a => a.status !== "retired"), populated = Object.values(chars).some(o => !o.hidden);
+    seats.forEach((x, i) => { if (x && !team.some(a => a.name === x.name) && !chars[x.name]) seats[i] = null; });
+    team.forEach(a => { const mine = seats.find(x => x && x.name === a.name); if (mine) mine.role = a.role; else { const seat = { name: a.name, role: a.role, desk: !populated, bed: !populated }; const hole = seats.findIndex(x => x === null); if (hole >= 0) seats[hole] = seat; else seats.push(seat); } });
+    seats=seats.filter(Boolean); // departed agents no longer reserve empty islands or bed rows
+    return seats;
+  }
+  function ensureLayout(list, preserveMotion = false) {
+    const n = list.length, mi = list.findIndex(a => a && a.role === "master"), cap = n;
+    const sig = list.map(a => a ? a.role + (a.desk ? "d" : "") + (a.bed ? "b" : "") : "-").join(",");
+    const movedSeats=simulation && Object.values(chars).some(c=>!c.medic && !c.guard && !c.boss && list.some((s,i)=>s?.name===c.name && i!==c.idx));
+    if (cap !== CAP || mi !== MASTER_IDX || builtFor < 0 || movedSeats) {
+      const old=map.length?{MW,MH,DESKS,BEDS,DOOR,FRONT,TOILETS,PRINT_SPOT,PANTRY_SPOTS,theme:LAYOUT_THEME}:null;
+      teamRoles = list.map(a => a && { role: a.role }); layout(cap, mi);
+      if(simulation && (!old || reflowRoom(old,list))) layoutRevision++;
+    }
+    else if (sig !== ensureLayout.sig) applyFurniture();
+    ensureLayout.sig = list.map(a => a ? a.role + (a.desk ? "d" : "") + (a.bed ? "b" : "") : "-").join(",");
+  }
+  function reflowRoom(old,list) {
+    // A room resize moves furniture, not an agent's conversation, pose or
+    // furniture-delivery script. Rebase against named seats and public stations.
+    const pairs=[],pair=(a,b)=>{if(a && b)pairs.push([a,b]);};
+    let changed=old.MW!==MW || old.MH!==MH || old.theme!==THEME;
+    for(const c of Object.values(chars)) {
+      const i=list.findIndex(s=>s?.name===c.name);
+      if(i<0) continue;
+      const d=old.DESKS[c.idx],b=old.BEDS[c.idx],next=DESKS[i];
+      if(d && next) {
+        pair(d.chair,next.chair);pair(d.desk,next.desk);pair(b,BEDS[i]);
+        changed ||= c.idx!==i || d.chair.some((v,k)=>v!==next.chair[k]) || b?.some((v,k)=>v!==BEDS[i][k]);
+      }
+      c.idx=i;
+    }
+    if(!changed) return false;
+    for(let dy=-1;dy<=2;dy++) pair([old.DOOR[0],old.DOOR[1]+dy],[DOOR[0],DOOR[1]+dy]);
+    pair(old.FRONT,FRONT);pair(old.PRINT_SPOT,PRINT_SPOT);
+    old.TOILETS.forEach((p,i)=>pair(p,TOILETS[i]));
+    old.PANTRY_SPOTS.forEach((p,i)=>pair(p.pos,PANTRY_SPOTS[i]?.pos));
+    const project=p=> {
+      if(!Array.isArray(p)) return p;
+      let near=null,distance=Infinity;
+      for(const [a,b] of pairs) {
+        const d=Math.abs(p[0]-a[0])+Math.abs(p[1]-a[1]);
+        if(d<distance) {near=[a,b];distance=d;}
+        if(!d) break;
+      }
+      return near?[p[0]+near[1][0]-near[0][0],p[1]+near[1][1]-near[0][1]]:p.slice();
+    };
+    const used=new Set(),inside=([x,y])=>x>0 && x<MW-1 && y>=DOOR[1] && y<MH-1;
+    const free=(p,c,reserve=true)=> (inside(p) && (!solid[p[1]][p[0]] || c.mode==="toilet" && TOILETS.some(t=>t[0]===p[0] && t[1]===p[1])) ||
+      (c.medic || c.boss) && p[0]===DOOR[0] && p[1]===DOOR[1]-1) && (!reserve || !used.has(key(...p)));
+    const place=(p,c,reserve=false)=> {
+      if(free(p,c,reserve)) return p;
+      let best=null,distance=Infinity;
+      for(let y=DOOR[1]+1;y<MH-1;y++) for(let x=1;x<MW-1;x++) {
+        const point=[x,y],d=Math.abs(x-p[0])+Math.abs(y-p[1]);
+        if(d<distance && free(point,c,reserve)) {best=point;distance=d;}
+      }
+      return best || DOOR.slice();
+    };
+    // Keep seated/sleeping/fainted occupants on their own furniture first.
+    const order=Object.values(chars).sort((a,b)=>Number(!!a.moving)-Number(!!b.moving));
+    for(const c of order) {
+      const start=[c.tx,c.ty],dx=c.nx-c.tx,dy=c.ny-c.ty;
+      const at=c.hidden?DOOR.slice():place(project(start),c,true);
+      const goal=project(c.goal);
+      for(const obj of [c.talk,c.smoke,c.despair,c.strike,c.bossYield]) if(obj?.spot)obj.spot=place(project(obj.spot),c);
+      if(c.despair?.pose==="wall")c.despair.spot=null;
+      for(const obj of [c.trafficYield,c.entranceYield]) if(obj) for(const field of ["origin","goal","spot","blockedAt"]) if(obj[field]) obj[field]=place(project(obj[field]),c);
+      if(c.cupAt)c.cupAt=project(c.cupAt);
+      for(const step of c.setup || []) if(step.at) step.at=step.where==="medic"?null:project(step.at);
+      c.tx=at[0];c.ty=at[1];
+      const end=[at[0]+dx,at[1]+dy];
+      if(c.moving && (!free(end,c) || Math.abs(dx)+Math.abs(dy)!==1)) {c.moving=false;c.prog=0;}
+      if(c.moving) {c.nx=end[0];c.ny=end[1];c.px=(c.tx+dx*c.prog)*T;c.py=(c.ty+dy*c.prog)*T;}
+      else {c.nx=c.tx;c.ny=c.ty;c.px=c.tx*T;c.py=c.ty*T;}
+      if(!c.hidden) {used.add(key(c.tx,c.ty));if(c.moving)used.add(key(c.nx,c.ny));}
+      c.goal=goal?place(goal,c):null;c.steps=[];
+      if(c.goal && !c.setup && c.mode!=="faint")c.steps=path(c.moving?[c.nx,c.ny]:at,c.goal,c);
+    }
+    return true;
+  }
+  function renderMap() {
+    if (simulation) return;
+    off.width = W * P; off.height = H * P;
+    mapImg = document.createElement("canvas"); mapImg.width = W * P; mapImg.height = H * P;
+    ctx = mapImg.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
+    CAMS.length = 0;
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; TILES[map[y][x][0]](); }               // floors
+    if (THEMES[THEME].floorMarks) THEMES[THEME].floorMarks();                                                                                        // court lines, bays, lanes: under everything
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) { TX = x * T; TY = y * T; TILE_X = x; TILE_Y = y; for (let i = 1; i < map[y][x].length; i++) TILES[map[y][x][i]](); }   // walls, furniture, props
+    if (THEMES[THEME].decorate) THEMES[THEME].decorate();
+    ctx = off.getContext("2d");
+  }
+  const key = (x, y) => y * MW + x;
+  const seatedAtDesk = (o) => { const d = DESKS[o.idx]; return !!d && !o.moving && !o.steps.length && o.tx === d.chair[0] && o.ty === d.chair[1]; };   // sitting at the desk: others may pass behind the chair
+  function heldBy(x, y, self) { for (const o of Object.values(chars)) { if (o === self || o.hidden || seatedAtDesk(o)) continue; if ((o.tx === x && o.ty === y) || (o.moving && o.nx === x && o.ny === y)) return o; } return null; }
+  const canYield = c => !c.hidden && c.mode !== "faint" && !(c.knockedUntil > nowMs());
+  function path(from, to, self) {
+    if (![from, to].every(p => Array.isArray(p) && p.length >= 2 && Number.isInteger(p[0]) && Number.isInteger(p[1]) && p[0] >= 0 && p[1] >= 0 && p[0] < MW && p[1] < MH)) return [];
+    // Prefer a route around people; otherwise ask movable occupants to yield.
+    // Casualties remain obstacles so doctors can take another route to them;
+    // if there is no route at all, return no steps rather than teleporting.
+    return bfs(from, to, self) ?? bfs(from, to, null) ?? [];
+  }
+  function bfs(from, to, self) {
+    if (from[0] === to[0] && from[1] === to[1]) return [];
+    const prev = new Map([[key(from[0], from[1]), null]]); const q = [from];
+    while (q.length) {
+      const [x, y] = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
+        const k = key(nx, ny); if (prev.has(k)) continue;
+        const goal = nx === to[0] && ny === to[1]; if ((solid[ny][nx] || isDoor(nx, ny)) && !goal) continue;
+        const occupant = heldBy(nx, ny, self);
+        if (occupant && ((!self && !canYield(occupant)) || self && !goal)) continue;
+        prev.set(k, key(x, y)); if (goal) { const out = []; let cur = k; while (cur !== key(from[0], from[1])) { out.unshift([cur % MW, Math.floor(cur / MW)]); cur = prev.get(cur); } return out; }
+        q.push([nx, ny]);
+      }
+    }
+    return null;
+  }
+
+  // ---- characters
+  const SKIN = ["#f3c9a0", "#ffdbb4", "#e8b48a", "#c68642", "#a86b3c", "#8d5524"], PANTS = ["#2f4a8a", "#4a4a4a", "#b08d5a", "#556b2f", "#6d6d6d", "#3b2a1e"], SHOES = ["#3b2a1e", "#1e1e1e", "#e8e8e8", "#c0392b"];
+  const HAIR_STYLES = ["bowl", "short", "long", "spiky", "bald"], SHIRTS = ["plain", "stripes", "vneck", "logo", "jacket"], GLASSES = ["#1f1f1f", "#6b4a2a", "#3a5fd8"];
+  function palFor(name, role) {                                              // every look is derived from the name, so it is stable across reloads
+    const h = hash(name + "hue") % 360, v = hash(name + "look"), u = hash(name + "style"), master = role === "master";
+    const shirt = "hsl(" + h + "," + (55 + (u % 3) * 10) + "%," + (42 + ((u >>> 2) % 3) * 8) + "%)";
+    const hair = master ? ["bowl", "short"][u % 2] : HAIR_STYLES[(v >>> 10) % HAIR_STYLES.length];
+    const pal = { o: "#3b2a1e", h: master ? "#2b2b2b" : HAIR_COLORS[v % HAIR_COLORS.length], k: CAP_COLORS[(v >>> 3) % CAP_COLORS.length], s: SKIN[(v >>> 20) % SKIN.length], e: "#2b2b2b", c: shirt, p: master ? "#2b2b2b" : PANTS[(v >>> 5) % PANTS.length], b: SHOES[(v >>> 23) % SHOES.length], g: GLASSES[(v >>> 27) % GLASSES.length], l: (u >>> 5) % 2 ? "#ffffff" : "#ffd23f" };
+    pal.d = (v >>> 25) % 2 ? "#f4f4f4" : tint(shirt, -0.45); pal.key = JSON.stringify(pal);
+    const w = hash(name + "species"), species = master || w % 5 < 2 ? "human" : ANIMAL_PICK[(w >>> 3) % ANIMAL_PICK.length], base = ANIMALS[species];
+    const variant = base && base.variants ? Object.keys(base.variants)[(w >>> 12) % Object.keys(base.variants).length] : null, sp = variant ? { ...base, ...base.variants[variant] } : base;
+    if (sp) { pal.s = sp.fur[(w >>> 8) % sp.fur.length]; pal.n = sp.n; pal.a = sp.a || pal.s; pal.m = sp.m; pal.x = sp.x || pal.s; pal.z = sp.z || pal.s; if (sp.e) pal.e = sp.e; pal.key = JSON.stringify(pal); }
+    return { pal, species, variant, top: sp ? (EARS[sp.ears] || EARS.none).top.length : 0, hair: sp ? "bald" : hair, cap: master || sp || hair === "bald" ? null : CAPS[(v >>> 7) % CAPS.length], glasses: (v >>> 13) % 3 === 0, beard: !master && !sp && (v >>> 15) % 4 === 0, shirt: master ? "plain" : SHIRTS[(v >>> 17) % SHIRTS.length] };
+  }
+  function ensureChar(a) {
+    if (!chars[a.name]) {
+      const look = palFor(a.name, a.role), waiting = Object.values(chars).filter(o => o.hidden).length, populated = Object.values(chars).some(o => !o.hidden);
+      chars[a.name] = { name: a.name, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, hidden: true, newHire: populated, enterAt: nowMs() + 400 + waiting * 900, ...look };
+      if (populated) chars[a.name].setup = hireSequence(a);                  // a hire into a running office: hello, then fetch a desk and a bunk
+    }
+    return chars[a.name];
+  }
+  // ---- the medics: when an agent passes out, two doctors come in through the door, resuscitate it where it lies until it comes round,
+  // pick up their case and leave; several casualties are treated one after another, in the order they went down
+  let medicQueue = [], medics = null;
+  function medicLook(i) {
+    const look = palFor("medic-" + i, "backend"), pal = look.pal;
+    look.species = "human"; look.variant = null; look.top = 0; look.hair = i ? "short" : "bowl"; look.cap = null; look.shirt = "plain"; look.beard = false;
+    pal.s = SKIN[(i * 2 + 1) % SKIN.length]; pal.c = "#f4f4f4"; pal.d = "#f4f4f4"; pal.p = i ? "#9fc3e6" : "#f4f4f4"; pal.b = "#f4f4f4"; pal.e = "#2b2b2b"; delete pal.n; delete pal.a; delete pal.m; delete pal.x; delete pal.z; pal.key = JSON.stringify(pal);
+    return look;
+  }
+  const isFainted = (n) => { const p = chars[n]; return !!p && p.mode === "faint" && !p.hidden; };
+  function medicArrival(c) {
+    const p=chars[c.setup?.[0]?.patient],at=p && (p.moving?[p.nx,p.ny]:[p.tx,p.ty]);
+    return c.medic && p?.mode==="faint" && at[0]===DOOR[0] && at[1]===DOOR[1] ? [DOOR[0],DOOR[1]-1] : DOOR;
+  }
+  function medicTile(c,p,x,y,reachable=true) {
+    const at=p.moving?[p.nx,p.ny]:[p.tx,p.ty];
+    const outside=at[0]===DOOR[0] && at[1]===DOOR[1] && x===DOOR[0] && y===DOOR[1]-1;
+    const threshold=isDoor(x,y) && at[0]===DOOR[0] && at[1]===DOOR[1]+1;
+    if(!outside && !threshold && !(x>0 && y>0 && x<MW-1 && y<MH-1 && !solid[y][x] && !isDoor(x,y))) return false;
+    if(!reachable) return true;
+    const start=c.hidden?medicArrival(c):c.moving?[c.nx,c.ny]:[c.tx,c.ty];
+    return bfs(start,[x,y],null)!==null;
+  }
+  function medicSpot(c, patient) {                                            // beside the casualty: the first medic at the head end, the second across from it
+    const p = chars[patient]; if (!p) return [c.tx, c.ty];
+    const [px,py] = p.moving ? [p.nx,p.ny] : [p.tx,p.ty];
+    const other = Object.values(chars).find(o => o.medic && o !== c), taken = other && other.setup && other.setup[0] && other.setup[0].at;
+    const ok = (x, y) => medicTile(c,p,x,y) && !(taken && taken[0] === x && taken[1] === y) && !heldBy(x, y, c);
+    const order = c.medic === "a" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of order) if (ok(px + dx, py + dy)) return [px + dx, py + dy];
+    // Reserve a neighbouring tile occupied by a movable listener if no free
+    // treatment spot remains; normal traffic rules request a passing bay.
+    for (const [dx,dy] of order) {
+      const x=px+dx,y=py+dy, occupant=heldBy(x,y,c);
+      if(medicTile(c,p,x,y) &&
+        !(taken && taken[0]===x && taken[1]===y) && occupant && canYield(occupant) &&
+        (occupant.setup?.[0]?.k!=="treat" || occupant.treat?.patient!==patient)) return [x,y];
+    }
+    return [c.tx,c.ty]; // wait for access; never treat remotely or share the casualty's tile
+  }
+  const medicSequence = (patient) => { const go = { k: "goto", patient, at: null, where: "medic" }; return [go, { k: "treat", patient }, { k: "nextPatient" }]; };
+  function spawnMedics(patient) {
+    medics = { patient, since: nowMs() };
+    ["a", "b"].forEach((m, i) => { const name = "medic-" + m; chars[name] = { name, label: fixed("medic"), medic: m, idx: 60 + i, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "idle", moving: false, prog: 0, bang: 0, hidden: true, hiddenUntil: nowMs() + i * 900, setup: medicSequence(patient), ...medicLook(i) }; });
+  }
+  function medicTick() {
+    medicQueue = medicQueue.filter(isFainted);
+    for (const c of Object.values(chars)) {
+      if(c.medic && c.treat) {
+        const p=chars[c.treat.patient];
+        if(!isFainted(c.treat.patient) || c.moving || p.moving || !adjacent(c,p)) c.treat=null;
+      }
+      if (c.mode === "faint" && !c.hidden && !c.medic && !medicQueue.includes(c.name)) medicQueue.push(c.name);
+    }
+    if (!medics && medicQueue.length) spawnMedics(medicQueue[0]);
+  }
+  // ---- the security guard: Huntun's watchdog in person, posted beside the entrance of every office. It acts out what the
+  // watchdog does: stops everyone when a vendor's usage limit hits, radios in when the limit is checked, announces the tokens
+  // coming back and, when the master resumes first, gets the master up (in the Chinese office with a stun baton). In the
+  // Chinese office it also shares a thought about once a minute.
+  const GUARD = "#guard";                                                      // not a valid agent name, so never a teammate's
+  // 25 greetings × 20 office-style observations = 500 distinct greetings.
+  // Only the server chooses one on entering range; the result is checkpointed.
+  const GUARD_GREETINGS = [
+    "老板好，您辛苦了！", "老板好，欢迎莅临！", "老板好，向您敬礼！", "老板好，门岗报到！", "老板好，请您检阅！",
+    "老板好，今天精神真好！", "老板好，您一来就有主心骨了！", "老板好，您这步伐自带战略！", "老板好，门口都亮堂了！", "老板好，您的气场已覆盖全楼！",
+    "老板好，恭候多时！", "老板好，巡视路线已就绪！", "老板好，请往里走！", "老板好，欢迎指导工作！", "老板好，今日门岗在线！",
+    "老板好，祝您旗开得胜！", "老板好，祝您一路绿灯！", "老板好，给您问安！", "老板好，您来的正是时候！", "老板好，向奋斗者致敬！",
+    "老板好，您的到来就是开工信号！", "老板好，您这状态比服务器还稳！", "老板好，门禁为您秒级响应！", "老板好，欢迎来到奋斗现场！", "老板好，敬礼动作已对齐！"
+  ].flatMap(greeting => [
+    "人已站直，帽子也摆正了。", "门口的颗粒度已经对齐。", "安全感这块由我端到端负责。", "今天的迎宾KPI提前达成。", "门岗不掉线，敬礼不掉帧。",
+    "全楼的门禁都在给您点赞。", "汇报一下，门开着，精神也开着。", "我的巡逻路线绝不走回头路。", "风控在门口，福报在里面。", "站岗可以轮班，尊重永不下班。",
+    "您管增长，我管进出。", "请放心，这道门没有技术债。", "楼道已经进入高可用模式。", "您指方向，我守入口。", "我把摸鱼按钮藏起来了。",
+    "房租按月收，敬意实时交付。", "茶可以凉，迎接您的热情不能凉。", "这一礼不走审批，直接上线。", "门岗响应延迟始终小于一秒。", "欢迎回家，公司这边一切就绪。"
+  ].map(line => greeting + line));
+  let guardQueue = [], guardProbing = false, nextGuardLineAt = nowMs() + 30000;
+  const seenWatch = new Set();
+  function guardLook() {
+    const look = palFor("watchdog-guard", "backend"), pal = look.pal;
+    Object.assign(look, { species: "human", variant: null, top: 0, hair: "short", cap: "cap", shirt: "logo", beard: false, glasses: false });
+    Object.assign(pal, { s: SKIN[2], c: "#2a3f66", d: "#1d2c4a", l: "#e6c15a", k: "#1d2c4a", p: "#1b2438", b: "#161616", h: "#2b2b2b", e: "#2b2b2b" });
+    for (const k of ["n", "a", "m", "x", "z"]) delete pal[k];
+    pal.key = JSON.stringify(pal); return look;
+  }
+  const guardPost = () => { for (const [x, y] of [[DOOR[0] - 2, DOOR[1] + 1], [DOOR[0] - 1, DOOR[1] + 1], [DOOR[0] + 1, DOOR[1] + 1], [DOOR[0] - 1, DOOR[1] + 2]]) if (x > 0 && y > 1 && x < MW - 1 && y < MH - 1 && !solid[y][x]) return [x, y]; return [DOOR[0], DOOR[1] + 2]; };
+  function ensureGuard(place) {
+    let g = chars[GUARD];
+    if (!g) g = chars[GUARD] = { name: GUARD, guard: true, idx: 70, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "guard", moving: false, prog: 0, bang: 0, hidden: true, enterAt: nowMs() + 300, ...guardLook() };
+    g.label = fixed("watchdog");
+    if (place) { const p = guardPost(); Object.assign(g, { hidden: false, setup: null, steps: [], moving: false, tx: p[0], ty: p[1], px: p[0] * T, py: p[1] * T, dir: "down", gear: null, stepAt: null }); guardQueue = guardQueue.filter(q => q.k === "probe"); }
+    return g;
+  }
+  const backendIn = (text, re) => { const m = re.exec(text || ""); return m ? m[1] : ""; };
+  const masterChar = () => Object.values(chars).find(o => o.role === "master" && !o.hidden && !o.leaving);
+  function noticeWatchdog(st, quiet) {                                         // the watchdog's events, oldest first, each acted out once
+    for (const e of (st.events || []).filter(x => x.agent === "watchdog").reverse()) {
+      const id = e.id ?? e.created_at + e.detail; if (seenWatch.has(id)) continue; seenWatch.add(id);
+      if (quiet || nowMs() - new Date(e.created_at) > 180000) continue;
+      const d = e.detail || "";
+      if (e.kind === "limit" && /^Usage limit reached/.test(d)) guardQueue.push({ k: "limit", backend: backendIn(d, /on (\S+) \(by/) });
+      else if (e.kind === "limit" && /^Checked/.test(d)) guardQueue.push({ k: "still", backend: backendIn(d, /^Checked (\S+):/) });
+      else if (e.kind === "dialogue") {
+        try { const q = JSON.parse(d); if (q.target && q.text) guardQueue.push({k:"dialogue", ...q}); } catch (err) { /* legacy unstructured event */ }
+      }
+      else if (e.kind === "recovery") { const target = (d.match(/^@([a-z0-9-]+):/) || [])[1]; if (!target) guardQueue.push({k:"recovery", text:d}); else if (!(st.events || []).some(x => x.agent === "watchdog" && x.kind === "dialogue" && x.detail.includes('"target": "' + target + '"'))) guardQueue.push({k:"dialogue", target, speaker:"watchdog", text:d}); }
+      else if (e.kind === "resume") {
+        const master = /master resumes first/.test(d), m = master && masterChar();
+        if (m) { m.hold = { until: nowMs() + 60000 }; m.steps = []; }          // the master stays where it is until the guard has got it up
+        guardQueue.push({ k: "resume", backend: backendIn(d, /again on (\S+);/), master });
+      }
+    }
+    const probing = !!(st.limits && st.limits.probing);                       // a check running right now: on the radio until it ends
+    if (probing && !guardProbing && !guardQueue.some(q => q.k === "probe")) guardQueue.push({ k: "probe", backend: Object.keys((st.limits && st.limits.backends) || {})[0] || "" });
+    guardProbing = probing;
+  }
+  const GUARD_LINES = {
+    limit: ["Usage limit on {b}! Tools down, everyone.", "Whistle! {b} is out of tokens. Everybody stop."],
+    radio: ["Door to control: is {b} back yet? Over.", "Control, this is the door. Any tokens on {b}? Over."],
+    still: ["Still limited. Sit tight, folks.", "Control says not yet. Hang on."],
+    back: ["Copy that! {b} is back!", "Good news: tokens are back on {b}!"],
+    toDesks: ["Back to your desks, everyone!", "Break's over. Back to work!"],
+    wake: ["Rise and shine, boss! Tokens are back and the team is waiting on you.", "Wake up! The window reopened. Up you get!"],
+    woke: ["Huh?! I'm up, I'm up!", "Alright, alright, I'm going!"],
+    done: ["That's more like it.", "Good. Carry on."],
+    evict: ["You've been let go. Time to leave, now.", "Your badge is off. Out you go."],
+    evicted: ["That's that.", "Next."],
+    hurried: ["That's more like it. Back to work!", "Flushed? Good. Desk, now."],
+    hurryLater: ["Fine. I'll be back.", "I'll do a round and come back for you."],
+  };
+  const CN_GUARD = {
+    limit: ["{b}的额度用完了！全体停工，原地待命！", "嘟——！{b}额度见底，所有人把手从键盘上拿开！"],
+    radio: ["喂喂，总部总部，{b}的额度恢复没有？完毕。", "总部请回答，{b}那边能用了吗？完毕。"],
+    still: ["还没恢复，大家接着歇着。", "总部说还得等，都别急。"],
+    back: ["收到收到！{b}的额度恢复了！", "好消息！{b}的额度回来了！"],
+    toDesks: ["都回工位，干活！", "休息结束，开工！"],
+    wake: ["起来！额度都回来了还睡？干活！", "老板！醒醒！全组都等你呢！起床！", "别装睡了！token到账了，马上起来干活！"],
+    woke: ["啊啊啊啊——！醒了醒了！马上干活！", "哎哟！别电了别电了，这就开工！"],
+    done: ["这还差不多。", "早这样不就完了。", "下次再睡直接上高压。"],
+    evict: ["你已经被优化了，请立刻离开！", "手续都办完了，别在这儿闹！", "工牌都注销了，还赖着干嘛？走！", "再不走我可就不客气了！"],
+    evicted: ["早这样不就完了。", "走好，不送。", "下一个。"],
+    hurried: ["这还差不多，赶紧回工位！", "早这样不就完了？干活去！", "冲干净了没有？回去干活！", "出来了就好，下次十五秒内解决！"],
+    hurryLater: ["行，你有种！我巡一圈再来！", "我先去看门，一会儿回来接着喊！", "别以为我走了就没事了，我还会回来的！"],
+  };
+  const CN_GUARD_CHAT = ["想当年我也是写代码的，996写到头发都快掉光了。后来老家拆迁，现在就图个清闲。", "家里八套房，房租都收不过来，来这儿当保安纯属体验生活。", "你们那个bug啊，我十年前就踩过了。",
+    "别看我是保安，当年我也是全栈，前端后端运维一把抓。", "我那几套房的租客，交租比你们老板发工资还准时。", "年轻人少熬夜。你看我，拆迁以后头发都长回来了。", "当年我写的系统现在还在银行跑着呢，没人敢动。",
+    "这点工资还不够我一套房的物业费，我就是来打发时间的。", "我儿子问我为啥当保安，我说离代码远一点，心态好。", "你们这个架构啊，跟我老家那片城中村一样，迟早得拆。", "别问我为啥不回去写代码，问就是收租比debug舒服。",
+    "当年公司说我'毕业'了，第二天村里就通知拆迁，你说巧不巧。", "这个月又有两套房续租了，每套涨三百，美滋滋。", "我写代码那会儿没有AI，全靠搜索引擎和运气，你们现在幸福多了。",
+    "看门也是技术活，跟守护进程一个道理：得一直在线。", "我就是这个公司的watchdog，谁偷懒我第一个知道。", "你们这些agent，就是新时代的码农，我懂，我都懂。", "我当年CTO都干过，后来发现还是当包租公香。",
+    "收租、巡逻、喝茶，这才是人生的最优解。", "有空来我家楼下坐坐，那一整栋都是我的。", "以前天天被产品经理追着改需求，现在我只听物业的。", "年终奖？我的年终奖就是房租上涨通知。",
+    "我的KPI就一条：门口别出事。", "写代码记得加注释，不然跟我一样，一走就没人看得懂。", "拆迁款到账那天，我把键盘挂墙上了，留个纪念。", "干保安最重要的就是眼观六路、耳听token。",
+    "谁再把外卖堆在门口，我可要记名字了啊。", "我这身制服，比你们的格子衫精神多了吧？", "以前我在大厂写中台，现在我就是这个门口的中台。", "拆迁那年我就悟了：代码会过时，地段不会。",
+    "每个月1号就是我的发版日，收租，准时上线。", "我也想过创业，后来一算，收租的现金流比什么都稳。", "你们老板开会的时候，我在业主群里抢了三个红包。", "别看我整天站着，我的uptime比你们的服务器还高。",
+    "我手机里的租客群，比你们的工作群热闹多了。", "当年我也是计算机系的高材生，现在是八套房专业户。", "我不怕裁员，我怕租客退租。", "闲着也是闲着，给你们看看门，顺便看看你们代码写得咋样。",
+    "我当年加班的时候，这楼还是一片菜地，现在菜地的钱都在我兜里。", "你们的需求天天变，我的房租年年涨，这就叫稳定。"];
+  const CN_HURRY = ["里面的！十五秒了，拉完没有？", "秒表都红了，还蹲着呢？赶紧出来干活！", "喂喂喂，坑位不是工位，别在里面办公！", "拉快点！工位上的需求都排到下周了！", "我数到三，一——二——三——人呢？！", "压缩个上下文要这么久吗？快点！", "兄弟，你这是在拉屎还是在读论文？", "厕所不是休息室，拉完赶紧回工位！", "外面排队的都憋红脸了，快点！", "带薪拉屎也得有个限度！",
+    "拉完就冲，冲完就走，走了就干活！", "你在里面写代码呢？手机收起来！", "摄像头都拍着呢，别在里面刷短视频！", "再不出来我就把门卸了！", "老板问你人呢，我说你在厕所修仙！", "你这一坑下去，项目进度都跟着便秘了！", "压缩上下文是拉屎，不是冬眠！", "十五秒是规矩，你已经超时了！", "拉屎超时，绩效扣分，你自己看着办！", "用力！用力！公司不养闲人！",
+    "里面的朋友，你的KPI在外面哭呢！", "喇叭都给你准备好了，还不出来？", "马桶都被你坐热了，起来吧！", "出来！排期表上没有给你留拉屎的时间！", "你这是压缩上下文还是压缩人生？", "蹲这么久，腿不麻吗？赶紧出来！", "拉屎也要讲效率，一口气解决！", "我在门口站岗，你在里面站坑，公平吗？", "再蹲下去，你的工位就要被别人坐了！", "快点！末位淘汰可不看你拉得香不香！",
+    "厕所计时器已经报警了，听见没有？", "里面的，出来的时候记得冲水，别给下一个留惊喜！", "拉个屎还拉出加班费来了？", "同志，坑位资源紧张，请勿长期占用！", "你以为躲在厕所就能不开会？", "需求方都追到厕所门口了，你快点！", "上下文压缩完了没有？压缩完了就起来！", "你拉的不是屎，是公司的钱！", "这么慢？你肠道也在走审批流程吗？", "别在里面想架构了，出来画白板！",
+    "使点劲！狼性文化，连拉屎都要有冲劲！", "快拉快拉，老板十分钟后巡查！", "厕所是用来拉的，不是用来躲的！", "你已经在里面待了一个迭代了！", "再不出来，我就开喇叭念你的周报了！", "蹲坑超时，要写情况说明的啊！", "你的队友在工位等你合代码呢！", "厕所隔间不能当会议室，赶紧散会！", "出来吧，里面的信号又不好！", "快点儿，冲水声我都等半天了！",
+    "我这喇叭一开，整层楼都知道你便秘了！", "拉完了吗？拉完了就别坐着回味了！", "人有三急，你这是第四急——急着摸鱼！", "别憋了，憋不出来就回去干活，下次再来！", "厕所不计工时，但计你的时！", "马桶跟你没感情，别抱着不放！", "你那点上下文，压缩三秒就够了！", "我给你计时呢，一分钟后我就破门了！", "里面的，你是掉进去了吗？吱一声！", "快出来，保洁阿姨也要下班的！",
+    "你这坑位占用率比服务器CPU还高！", "出来干活！公司的空调不是给你在厕所吹的！", "拉个屎还要这么多前戏？", "一泡屎拉出了一个版本迭代的时间！", "你再不出来，我就申请给厕所装倒计时自动冲水！", "老板说了，谁蹲坑超过十五秒，年终奖打八折！", "别在里面刷招聘网站了，我都看见了！", "厕所又不是你家，拉完就走！", "快点快点！产品经理在门口磨刀了！", "你在厕所的时间比在工位的时间还长！",
+    "拉完赶紧提交代码，别提交到马桶里！", "使劲儿！别让你的肠子也学会了拖延！", "这一坑，你蹲出了项目延期的风采！", "外面还有人等着压缩上下文呢，发扬风格！", "出来！再不出来我就喊老板亲自来请你！", "这里是保安，请里面的同事立即结束排泄流程！", "蹲坑不是冥想，别搁那儿修身养性了！", "早拉完早干活，早干活早下班——虽然也下不了班！", "你在里面干嘛呢？别告诉我在写日报！", "最后通牒：十秒之内给我出来！",
+    "工位上的显示器都进入屏保了！", "快点！你的token都要过期了！", "你拉得这么认真，干活怎么没见这么认真？", "请注意，您的如厕时长已超出公司规定！", "马桶也有KPI，你别耽误它接下一单！", "起来！坐久了容易长痔疮，公司不报销！", "冲水！起立！提裤子！回工位！一气呵成！", "听我口令：拉——完——出——来！", "你这是压缩上下文还是压缩硬盘，要格式化吗？", "再蹲下去，公司就要给你在厕所配工位了！",
+    "老板刚问今天的进度，我说你在厕所里进度条卡住了！", "用点力，别让我这喇叭白喊！", "同事们都在奋斗，你在马桶上奋斗？", "厕所门口已经排成长龙了！", "你拉的每一秒，都是老板的钱在流！", "快出来，你的bug都在工位上想你了！", "这么久？你是在马桶上跑单元测试吗？", "别给我装死，我听见你刷手机的声音了！", "你这不是便秘，是懒！", "起立！回工位！今天的活还没开始呢！",
+    "压缩上下文嘛，挤一挤总会有的！", "你的上下文压缩率也太低了吧？", "垃圾回收要快，Full GC停顿这么久谁受得了！", "拉屎也要异步，别阻塞主线程！", "你这是同步阻塞式拉屎，全组都在等你！", "快点释放资源，坑位也是共享内存！", "你占着坑位不释放，这叫资源泄漏！", "死锁了吗？要不要我从外面帮你kill掉？", "你的进程在厕所里挂起了，赶紧恢复！", "拉屎超时，心跳检测都要判你下线了！",
+    "马桶的吞吐量是有限的，别一直写入！", "出来！这里又不是冷备份机房！", "清完缓存就回来，别在里面重建索引！", "压缩完了就flush，flush完了就撤！", "冲水就是commit，你倒是提交啊！", "你是不是在里面做全量压缩？增量的就够了！", "你的上下文窗口都快被你拉满了！", "拉个屎还要跑一遍回归测试？", "你这排泄流水线卡在哪个阶段了？", "别让厕所成为系统瓶颈！",
+    "你在马桶上的延迟比跨国专线还高！", "再不出来，我就给你发SIGKILL了！", "厕所也要限流，你已经触发熔断了！", "超时重试三次，第四次我就直接踹门！", "你这是单线程拉屎，能不能开个多线程？", "快点！你的token额度可不等人！", "模型都推理完三轮了，你还没拉完一坨！", "压缩上下文，重点是压缩，不是上下文！", "你拉屎的时间复杂度是O(n²)吗？", "马桶不是消息队列，别在里面堆积！",
+    "你这坑位的SLA早就不达标了！", "快点出来部署，线上还等着你呢！", "厕所隔间的租约到期了，请续费或者离开！", "你是在里面编译Linux内核吗？这么久！", "我看你是想在马桶上跑完一整个epoch！", "你的肠道也要做性能优化了！", "出来吧，你的上下文已经压得不能再压了！", "你在厕所里的日志都刷屏了！", "拉屎不要打断点，一口气跑完！", "你的肠道是不是也陷入死循环了？",
+    "别在马桶上调试了，出来用IDE！", "请尽快结束当前事务，释放厕所锁！", "你这不叫压缩上下文，叫上下文泄露！", "厕所的并发只有两个，你一个人占了一半！", "我这喇叭就是你的告警通知，赶紧处理！", "线上告警都没你拉屎这么准时！", "快点！再慢一点你就要被当成僵尸进程清理了！", "你在里面是不是连着VPN偷偷打游戏？", "厕所也有QPS限制，你别超了！", "拉完就上线，别在灰度环境里磨蹭！",
+    "你这一坨屎，比我们的技术债还难清理！", "你拉的不是屎，是上个季度的需求！", "压缩上下文，压的是记忆，不是时间！", "出来重启一下，别在里面卡死！", "你是想在厕所里拿终身成就奖吗？", "回滚不了了，赶紧冲水向前！", "马桶的缓冲区都快溢出了！", "你在里面写的不会是辞职信吧？", "你的肠胃也该做一次代码评审了！", "冲水这个动作，一秒钟就能部署完！",
+    "超时了！超时了！触发降级方案，立刻撤离！", "你的屎要是有你的代码这么难写，那我理解！", "别让排泄变成阻塞型任务！", "你在马桶上跑的是哪个版本的算法？这么慢！", "出来吧，你的上下文我都帮你记着了！", "快点！你的会话都快超时断开了！", "你的节点在厕所里失联了，请立即上报状态！", "再磨蹭，我就给厕所装一个负载均衡！", "你这一蹲，把整个团队的吞吐量都拉低了！", "你是在里面做数据迁移吗？一坨一坨慢慢搬？",
+    "马桶不支持断点续传，你一次拉完！", "你的请求在厕所里排队排到天荒地老了！", "快出来！你的PR都被人approve了！", "别在里面冥想架构了，这里只有一种架构：下水道！", "你是准备在厕所里写完整个微服务吗？", "拉屎也要敏捷，一个冲刺解决！", "你这一坑，蹲出了瀑布式开发的节奏！", "快点！站会就差你一个了！", "你在马桶上加载的是全量数据集吗？", "出来！你的上下文压缩任务已经被标记为超时！",
+    "你这个坑位的利用率报表我要交给老板看！", "你拉得比我们的CI流水线还慢！", "再蹲下去，你的代码分支都要冲突了！", "马桶是临时存储，不是长期归档！", "出来吧，里面没有WiFi，你刷不了什么！", "你这是拉屎还是在马桶上挖矿？", "厕所资源回收中，请立即退出！", "你要是再不出来，我就把你的工位分给实习生！", "你的蹲坑时长已经超过了模型的上下文窗口！", "快点压缩完，别把公司的时间也压缩没了！",
+    "冲水键就在你右手边，按一下很难吗？", "你在马桶上思考人生，老板在工位上思考裁谁！", "快拉！拉完这坨还有下一坨需求！", "马桶都要被你坐出内存碎片了！", "你这是在厕所里做持久化吗？", "别在里面等超时了，我这就是超时通知！", "出来吧，外面的世界需要你的代码！", "你拉屎的样子，像极了我们没有索引的查询！", "速度！速度！压缩上下文不是压缩意志！", "我数到十，你再不出来我就接管你的坑位！",
+    "我当年写代码，拉屎都是带着笔记本去的！", "我八套房收租都没你拉屎这么磨蹭！", "我租客交租都比你出厕所快！", "当年我在大厂，上厕所都得打卡，你知足吧！", "我这喇叭是收租用的，今天专门拿来催你！", "你再不出来，我就在厕所门口贴你的照片！", "我站岗站得腿都酸了，你蹲得倒舒服！", "我巡逻一圈回来了，你还在里面！", "我可是见过世面的保安，你别跟我耗！", "我拆迁那年都没你这么能蹲！",
+    "我数过了，你今天第三次进厕所了！", "你是想让我在门口给你站一整天岗吗？", "我年轻时也便秘过，但从不耽误上线！", "我这喇叭音量已经开到最大了！", "你在里面，我在外面，中间隔着一个KPI！", "我那几套房的马桶都没你坐得久！", "我当年996，拉屎都是秒拉秒走！", "你知道这喇叭多少钱吗？别让我白买！", "我当保安这么多年，头一回见蹲这么久的！", "老板问我要厕所监控录像，你自己想清楚！",
+    "我在门口喊得嗓子都哑了，你倒是吭一声！", "我一个包租公都来上班了，你还有脸蹲坑？", "快点，我还等着去收房租呢！", "我要是你老板，现在已经把你优化了！", "我这眼睛盯着秒表呢，一秒都不放过！", "我给你计时计得比我收租还认真！", "我看门看了这么多年，从没见过这么能蹲的员工！", "我可是有执法记录仪的，你别逼我开！", "我年轻的时候，拉屎都是写代码的间隙！", "我告诉你，这个坑位老板也要用的！",
+    "快出来，我还要去巡查吸烟区呢！", "我在门口给你唱首歌，唱完你必须出来！", "你再不出来，我就打电话叫你妈来！", "我这喇叭里录了一百句催你的话，够你听一天！", "我可不是物业，没有耐心等你！", "我当年从大厂“毕业”都没你这么舍不得离开！", "我给你十秒钟，一秒钟都不多给！", "我在外面都能闻到你的上下文了，快冲水！", "我的uptime比你的肠道稳定多了！", "我拿着喇叭站在这，你好意思吗？",
+    "我这是第一次警告，第二次我就上电棍了！", "电棍已经充好电了，你自己掂量！", "再不出来，电棍伺候！", "你想试试我的电棍是不是真的吗？", "我不想用电棍，你别逼我！", "我的电棍对着门了，给你三秒！", "我这电棍电过老板，也不在乎多电你一个！", "你想被电着出来，还是自己走出来？", "电棍和喇叭，你选一个！", "别让我从喇叭升级到电棍！",
+    "公司的价值观第一条：不在厕所浪费时间！", "狼性文化！狼拉屎都是速战速决的！", "奋斗者不在马桶上奋斗！", "你的福报在工位上，不在马桶上！", "996的福报，不包括带薪拉屎！", "公司养你是来写代码的，不是来养肠道的！", "老板说了：厕所是成本中心！", "你的每一分钟都是公司的资产，别冲进下水道！", "企业文化墙上写着：拉屎不超过十五秒！", "我们的愿景是成为行业第一，不是蹲坑第一！",
+    "你这一坑，蹲掉了公司的上市进程！", "年底述职的时候，你打算汇报蹲坑成果吗？", "末位淘汰名单上，你的名字已经在闪了！", "你这是在厕所里躺平吗？起来卷！", "同事们都在卷，你在马桶上摆烂！", "摸鱼可以，别摸到厕所里去！", "带薪拉屎是福利，不是权利！", "老板的原话：拉屎超过十五秒的，全部通报批评！", "这个月的厕所之王，非你莫属了！", "我要给你颁一个“最佳蹲坑奖”吗？",
+    "你的蹲坑时长已经上了全公司排行榜第一！", "快出来，别让我在周会上点你名！", "你蹲坑的时间，够别人写完一个需求了！", "你知道外面有多少人等着接你的坑吗？", "快点！再不出来，公司就要给你发厕所津贴了！", "你是在里面等年终奖吗？它不会从下水道冒出来的！", "你以为老板看不见？监控全都拍着呢！", "你的工位空了半天，老板已经拍照发群里了！", "群里都在问你去哪了，我说你在厕所当钉子户！", "厕所钉子户，是要被强拆的！",
+    "我可是拆迁专业户，钉子户我见多了！", "再不出来，我就走强拆流程了！", "这个坑位已经被列入拆迁范围，请立即搬离！", "我当年拆迁都没这么费劲！", "你以为占着坑位就能拿补偿款吗？", "拉完就走，别在这里当钉子户！", "我数到三，不出来就强制执行！", "你这是要在厕所里安家落户吗？", "厕所不提供户口，请尽快离开！", "我可以给你办个厕所暂住证，但你得干活！",
+    "你再蹲，我就给你计房租了！一秒一块！", "按我收租的标准，你已经欠我三百块了！", "坑位租金按秒计费，你自己算算！", "押一付三，你付得起吗？快出来！", "这坑位的租约只有十五秒，你已经违约了！", "违约金从你工资里扣！", "快出来，下一个租客已经在排队了！", "我这房东都没催过租客，你让我破例了！", "你再不出来，我就换锁了！", "拉完记得冲水，押金才能退给你！",
+    "加油！再用点力就出来了！", "我在外面给你打气：一二一，用力！", "深呼吸，用力，然后出来干活！", "多喝水多吃蔬菜，下次就不用蹲这么久了！", "建议你明天多吃点香蕉，别再占坑了！", "你是不是昨晚吃火锅了？那也不能蹲这么久！", "厕所里的纸不够了吗？我给你递一卷，快出来！", "纸给你塞门缝里了，赶紧用完出来！", "没纸了就喊一声，别在里面耗时间！", "你的腿蹲麻了吗？麻了也得出来！",
+    "需要开塞露吗？保安室有，免费！", "保安室备了泻药，下次来之前先吃一粒！", "你是不是在里面睡着了？醒醒！", "别在马桶上打盹，要睡回工位趴着睡！", "听到喇叭没有？听到了就回答一声！", "你那边什么动静？是在干活还是在打呼噜？", "我听见冲水声了——哦，是隔壁的。你呢？", "隔壁的都冲两次了，你还没动静？", "你隔壁那位都拉完回去写了三个接口了！", "你看看人家，十秒搞定，这就是差距！",
+    "拉屎都比不过同事，你还想涨工资？", "同样是蹲坑，人家怎么就这么高效？", "老板刚才进厕所五秒就出来了，你学学！", "连实习生都比你拉得快！", "保洁阿姨说你这个隔间今天就没空过！", "保洁阿姨在门口等着打扫呢，快出来！", "快出来吧，里面的味道都飘到工位了！", "你的味道都触发烟雾报警器了！", "通风系统已经满负荷运转了，你赶紧的！", "整层楼都在问是谁这么有毅力！",
+    "你再蹲，我就把排气扇关了！", "空气清新剂都用完一瓶了，你还在里面！", "你这是在厕所里闭关修炼吗？", "出关吧大侠，江湖还需要你写代码！", "你在里面参禅悟道吗？悟了就出来！", "蹲坑悟不了道，只能悟出痔疮！", "别在马桶上思考人生了，人生答案在工位上！", "你在马桶上想出什么好点子了吗？想出来就出来写！", "灵感来了？那就赶紧回工位记下来！", "快出来，你的咖啡都凉了！",
+    "你的外卖到了，再不出来就被别人吃了！", "你点的奶茶在前台，冰都化了！", "有人找你，说是你的需求方，快出来！", "老板的电话打到保安室了，找你的！", "快出来，你中彩票了——骗你的，快回去干活！", "着火了！——没着，但你的项目着火了！", "快出来，你的服务器在冒烟！", "线上出事故了，全组都在找你！", "客户在会议室等你演示，你在马桶上演示什么？", "产品经理拿着新需求在找你，快跑……哦不，快出来！",
+    "你的电脑自动锁屏了，密码记得吗？快回去！", "你工位上的电话响了八遍了！", "HR在找你谈话，你是躲在厕所吗？", "财务找你签字报销，再不出来就过期了！", "你的导师在工位等你code review！", "测试同学提了二十个bug，就等你了！", "你负责的模块挂了，还不出来救火？", "快出来，发布窗口只剩十分钟了！", "版本冻结了，你的代码还在马桶上！", "今晚上线，你今天就别想在厕所里过了！",
+    "快出来，今天的日报还没写呢！", "周报截止时间到了，你还在马桶上构思吗？", "月底考核了，你的蹲坑时间会被写进去的！", "年终评优，你这个蹲坑记录很拖后腿啊！", "你这坑蹲的，季度OKR都要重新对齐了！", "你蹲坑的时候，竞争对手在加班！", "竞品都发新版本了，你还在发酵！", "市场不等人，马桶也不该等你！", "时间就是金钱，你在冲掉公司的金钱！", "你每多蹲一秒，老板的心就痛一下！",
+    "老板的心在滴血，你还在马桶上滴答！", "快出来，你在里面蹲出了一个季度的亏损！", "你这坑的机会成本，够给大家加一顿鸡腿了！", "股价都跌了，是不是你在厕所里拖的？", "投资人问我们效率为什么低，我该怎么说你？", "快出来，不然我在融资路演上拿你当反面案例！", "你这蹲坑时长，连审计都要来查了！", "这一坨屎，承载了公司太多的期望！", "使劲！全公司的希望都在你肩上——不对，在你肠子里！", "不管多难，都要拉出来，这就是奋斗精神！",
+    "拉不出来也要站起来，这叫执行力！", "拉得出来要拉，拉不出来创造条件也要拉！", "困难是暂时的，工位是永恒的！", "蹲坑是一时的，绩效是一辈子的！", "今天蹲得越久，明天加班越晚！", "你多蹲一分钟，大家多加一小时班！", "你在马桶上摸鱼，同事们替你背锅！", "团队的荣誉，不能被一泡屎耽误！", "集体利益高于个人肠道！", "你不是一个人在拉屎，你代表的是整个组！",
+    "这坑你再蹲下去，组长的奖金都要没了！", "你组长让我带句话：再不出来就别回来了！", "你组长已经在找替补了！", "你的替身已经坐在你的工位上了！", "外包同学已经在接手你的活了，你急不急？", "AI都能替你写代码了，你还不赶紧回去证明自己？", "你再蹲下去，AI就把你替代了！", "连扫地机器人都比你勤快！", "我的喇叭都比你有存在感！", "你在厕所里，岗位上的存在感已经归零了！",
+    "一二一，一二一，拉完赶紧回工位！", "快快快，快快快，蹲坑超时要扣钱！", "拉屎要快，干活要猛，这才是好员工！", "屁股离马桶，双手回键盘！", "冲水冲水，冲完就走！", "起立！敬礼！回工位！", "听口令：提裤子——走！", "最后十秒倒计时：十、九、八……", "五、四、三、二、一——出来！", "倒计时结束，你还没出来，我很失望！",
+    "我已经喊了第十遍了！", "这是第一百零一次警告！", "喇叭电池都快没电了，你快出来！", "我嗓子喊哑了，你倒是回个话！", "你再不出来，我换扩音器了！", "我去保安室拿大喇叭了，别逼我！", "这个喇叭能传三层楼，你想让全公司都知道吗？", "我已经在群里直播了，全公司都在看你蹲坑！", "你的蹲坑时长已经同步到老板的手机上了！", "厕所门口的电子屏正在滚动你的名字！",
+    "厕所广播：请某位同事立即结束如厕！", "厕所广播第二遍：请某位同事立即回到工位！", "这里是保安广播站，现在插播一条紧急通知：快出来！", "各位注意，本厕所即将关闭维修，请立即撤离！", "本厕所马上断水，再不冲水你就冲不了了！", "本厕所即将停电，你在黑暗里拉吧！", "马桶即将进入自动清洗模式，请立即离开！", "智能马桶检测到您坐得太久，即将启动弹射座椅！", "马桶说它也想下班了！", "马桶都要罢工了，你还不走？",
+    "马桶：求求你起来吧，我喘不过气了！", "马桶盖都想合上了！", "连马桶都嫌你慢！", "厕所的灯都等得打瞌睡了！", "排气扇都转得冒烟了！", "厕纸都被你看完了吧？上面没有答案！", "你是在里面数瓷砖吗？一共四十八块，不用数了！", "墙上的小广告你都背下来了吧？", "你在隔板上写的代码我看到了，回工位写！", "别在隔板上画架构图了！",
+    "隔间的门都被你看出感情了！", "你跟这个隔间处出感情了是吧？", "这隔间要是会说话，早就赶你走了！", "你要是再不出来，我就在门上贴“此坑已被承包”！", "你承包这个坑位了吗？合同呢？", "这个坑位是公共资源，不是你的私人办公室！", "你再不出来，我给这个隔间挂你的名字！", "以后这个坑就叫“某某纪念坑”了！", "你的蹲坑事迹要载入公司史册了！", "公司年会的段子素材，你已经贡献了！",
+    "我已经把你的蹲坑时长报给行政了！", "行政说要给厕所装计费器，都是因为你！", "你开创了公司厕所管理的新纪元！", "因为你，厕所要改成按次收费了！", "以后进厕所要刷工牌，你满意了吧？", "以后厕所要人脸识别，超时直接报警！", "你蹲坑的样子已经被做成表情包了！", "快出来，别让我把你的蹲坑视频发抖音！", "我录音了，你刚才叹气三次！", "叹气没用，使劲才有用！",
+    "别叹气了，叹气拉不出来！", "你在里面哼歌呢？哼完了吗？", "你在里面打电话？私事回家再打！", "你在里面开视频会议吗？背景不太合适吧！", "你是不是在马桶上跟人吵架？吵完了快出来！", "厕所里禁止抽烟，也禁止摸鱼！", "你在里面吃东西？这就过分了！", "你在厕所里吃泡面我是真服了！", "出来吃吧，茶水间有热水！", "茶水间的咖啡都给你泡好了，快出来！",
+    "出来喝口咖啡，上下文压缩得更快！", "茶水间在左上角，厕所在右边，别在这儿待着了！", "快出来，工位上的绿萝都等枯了！", "你的椅子都凉了！", "你的键盘都积灰了！", "你的显示器都自动关机了！", "你的鼠标在想你！", "你的工牌在工位上哭！", "你的待办列表又长了三条！", "你的邮箱里有九十九封未读邮件！",
+    "你的消息已读不回，老板很生气！", "你的消息红点都爆了！", "你再不出来，你的群聊就要把你踢出去了！", "你不回消息，大家都以为你离职了！", "大家都在猜你是不是从下水道跑路了！", "你要跑路也别走下水道啊！", "下水道不通往自由，只通往化粪池！", "你是想冲进下水道一去不回吗？", "出来吧，外面的世界虽然残酷，但有工资！", "出来吧，外面有空调、有WiFi、有需求！",
+    "回工位吧，那里有你的梦想——和需求文档！", "早点出来，今晚说不定还能十点前下班！", "早拉完早干完，早干完早……继续干！", "拉完了就好好干，别辜负了这泡屎！", "这泡屎拉得值，拉完就冲刺！", "冲水声就是冲锋号，冲完就冲锋！", "你拉的是屎，冲的是业绩！", "拉出去的是昨天，冲下去的是过去，迎接你的是加班！", "好了好了，差不多得了，出来吧祖宗！", "我求你了，快出来吧，我还得去看门呢！",
+    "你再磨蹭，我就把你的上下文全删了！", "厕所不是避风港，工位才是你的战场！", "我在门口数着呢，你已经蹲了一首歌的时间了！", "再不出来，我就在门口放广场舞音乐了！", "我这喇叭里下一句就是你的名字了！", "听见冲水声我就撤，没听见我就一直喊！", "你冲一下水，我就闭嘴，成交？", "拉完了就给个信号，敲三下门！"];   // the guard's megaphone at a stall occupied over fifteen seconds
+  const guardSay = (kind, b) => { const L = (zh() ? CN_GUARD : GUARD_LINES)[kind]; return L[Math.floor(Math.random() * L.length)].replace("{b}", BLABEL[b] || b || (zh() ? "模型" : "the vendor")); };
+  const facing = (c, o) => { const dx = o.tx - c.tx, dy = o.ty - c.ty; return Math.abs(dy) > Math.abs(dx) ? (dy > 0 ? "down" : "up") : dx > 0 ? "right" : dx < 0 ? "left" : dy > 0 ? "down" : "up"; };   // along the longer way
+  function guardScript(q) {
+    const home = [{ k: "goto", where: "guardPost" }, { k: "face", dir: "down" }];
+    if (q.k === "dialogue") {
+      const o = chars[q.target]; if (!o || o.leaving) return [{k:"gear", gear:"radio", ms:5000, text:q.text, keepDir:true}].concat(home);
+      return [{k:"goto", where:"visit", target:q.target}, {k:"conversation", target:q.target, speaker:q.speaker, text:q.text, ms:talkMs(q.text)}].concat(home);
+    }
+    if (q.k === "recovery") return [{ k: "gear", gear: "radio", ms: 5000, text: q.text, keepDir: true }].concat(home);
+    if (q.k === "limit") return [{ k: "goto", where: "guardAhead" }, { k: "gear", gear: "stop", ms: 5200, text: guardSay("limit", q.backend) }].concat(home);
+    if (q.k === "probe") return [{ k: "gear", gear: "radio", ms: 6000, text: guardSay("radio", q.backend), whileProbing: true, keepDir: true }];
+    if (q.k === "still") return [{ k: "gear", gear: "radio", ms: 3200, text: guardSay("radio", q.backend), keepDir: true }, { k: "gear", gear: null, ms: 4000, text: guardSay("still", q.backend) }];
+    if (q.k === "evict") {                                                     // a leaver who will not go: the baton, then it packs up
+      const o = chars[q.target]; if (!o || !o.refusing) return [];
+      return [{ k: "goto", where: "visit", target: o.name }, { k: "gear", gear: "baton", ms: 2200, text: guardSay("evict"), target: o.name }, { k: "zap", target: o.name, ms: 1600 },
+              { k: "evicted", target: o.name }, { k: "gear", gear: null, ms: 2200, text: guardSay("evicted"), target: o.name }].concat(home);
+    }
+    if (q.k === "hurry") {                                                     // someone on the toilet too long (Chinese office): the megaphone at the stall until they come out
+      const o = chars[q.target]; if (!o || o.toilet == null || !o.satAt) return [];
+      return [{ k: "goto", where: "toiletFront", target: o.name }, { k: "hurry", target: o.name }].concat(home);
+    }
+    if (q.k !== "resume") return [];
+    const steps = [{ k: "gear", gear: "radio", ms: 2600, text: guardSay("back", q.backend), keepDir: true }, { k: "gear", gear: "whistle", ms: 2400, text: q.master ? "" : guardSay("toDesks") }];
+    const m = q.master && masterChar();
+    if (m) {                                                                   // the master resumes first: held where it lies until the guard gets there
+      m.hold = { until: Math.max(m.hold ? m.hold.until : 0, nowMs() + 45000) };
+      steps.push({ k: "goto", where: "visit", target: m.name }, { k: "gear", gear: zh() ? "baton" : "whistle", ms: 2600, text: guardSay("wake"), target: m.name },
+                 { k: "zap", target: m.name, ms: zh() ? 1800 : 1200 }, { k: "release", target: m.name }, { k: "gear", gear: null, ms: 2400, text: guardSay("done"), target: m.name });
+    }
+    return steps.concat(home);
+  }
+  function guardTick(c, dt) {                                                  // at the post between jobs: back to it, then keep watch
+    if (c.setup || c.hidden || c.saluteReleaseAt > nowMs() || (transition && transition.phase !== "in")) return;
+    const now = nowMs(), post = guardPost();
+    if (c.hold && now < c.hold.until) { const b = chars[c.hold.face]; if (b && !c.moving) c.dir = facing(c, b); return; }   // the boss is talking: eyes on him
+    if (guardQueue.length && !c.moving) { c.setup = guardScript(guardQueue.shift()); c.stepAt = null; c.steps = []; return; }
+    if (c.tx !== post[0] || c.ty !== post[1]) {
+      if (!c.moving && !c.steps.length) { c.retry = (c.retry || 0) + dt; if (c.retry > 0.5 || !c.goal || c.goal[0] !== post[0] || c.goal[1] !== post[1]) { c.retry = 0; c.goal = post; c.steps = path([c.tx, c.ty], post, c); } }
+      return;
+    }
+    if (!c.moving && !c.steps.length && (!c.lookAt || now > c.lookAt)) { c.dir = ["down", "down", "left", "right"][Math.floor(Math.random() * 4)]; c.lookAt = now + 3000 + Math.random() * 5000; }
+  }
+  function guardStep(c, step, now, next) {                                     // the guard's scripted steps; true when this was one
+    if (step.k === "conversation") {
+      const o = chars[step.target], speaker = step.speaker === "watchdog" ? c : o;
+      if (!o || o.hidden || o.leaving) { next(); return true; }
+      if (!c.stepAt && o.talk && now < o.sayUntil) return true;
+      c.dir = facing(c, o);
+      if (!c.stepAt) {
+        c.stepAt = now; c.gear = null;
+        o.hold = {until:now + step.ms, kind:"listen", face:c.name}; o.steps = [];
+        if (speaker) { setSpeech(speaker, step.text, now + step.ms); }
+      }
+      if (!o.moving) o.dir = facing(o, c);
+      if (now >= c.stepAt + step.ms) { if (o.hold && o.hold.face === c.name) o.hold = null; next(); }
+      return true;
+    }
+    if (step.k === "face") { c.dir = step.dir; next(); return true; }
+    if (step.k === "gear") {                                                   // a prop (stop sign, radio, whistle, baton) and a line
+      if (step.text) step.ms = Math.max(step.ms, talkMs(step.text));
+      if (!c.stepAt) { c.stepAt = now; c.gear = step.gear; if (step.text) { setSpeech(c, step.text, now + step.ms + 900); } if (step.gear === "whistle" || step.gear === "stop") c.bang = now + 1200; }
+      const o = step.target && chars[step.target]; if (o) c.dir = facing(c, o); else if (!step.keepDir) c.dir = "down";
+      if (now > c.stepAt + step.ms && !(step.whileProbing && guardProbing && now < c.stepAt + 150000)) { c.gear = null; next(); }
+      return true;
+    }
+    if (step.k === "zap") {                                                    // the baton (or the whistle, outside the Chinese office) on the sleeper
+      const o = chars[step.target];
+      if (!c.stepAt) { c.stepAt = now; c.gear = zh() || o && o.refusing ? "baton" : "whistle"; c.zapping = true; if (o) { o.zappedUntil = now + step.ms; o.zapKind = c.gear; } }
+      if (o) c.dir = facing(c, o);
+      if (now > c.stepAt + step.ms) { c.gear = null; c.zapping = false; next(); }
+      return true;
+    }
+    if (step.k === "evicted") { const o = chars[step.target]; if (o) o.evicted = true; next(); return true; }
+    if (step.k === "hurry") {                                                  // a fresh line every few seconds while they sit; a parting shot when they come out (or a promise to return)
+      const o = chars[step.target], seated = !!(o && o.toilet != null && o.satAt);
+      if (!c.stepAt) { c.stepAt = now; c.gear = "megaphone"; c.nextHurryAt = 0; }
+      if (o) c.dir = facing(c, o);
+      if (seated && now >= c.nextHurryAt && now >= (c.sayUntil || 0)) { setSpeech(c, CN_HURRY[Math.floor(Math.random() * CN_HURRY.length)], now + 4600); c.bang = now + 800; c.nextHurryAt = now + 5200; }
+      const gaveUp = seated && now > c.stepAt + 60000;
+      if (!seated || gaveUp) {
+        c.gear = null; setSpeech(c, guardSay(gaveUp ? "hurryLater" : "hurried"), now + 3600);
+        if (o && gaveUp) o.hurryAt = now + 45000; next();
+      }
+      return true;
+    }
+    if (step.k === "release") {                                                // comes round and gets going
+      const o = chars[step.target];
+      if (o) { o.hold = null; o.steps = []; o.bang = now + 1500; setSpeech(o, guardSay("woke"), now + 3800); }
+      next(); return true;
+    }
+    return false;
+  }
+  function guardSaluteTick() {
+    const g = chars[GUARD], b = chars[BOSS_ID]; if (!g) return;
+    const near = b && !b.hidden && !g.hidden && Math.hypot(b.px - g.px, b.py - g.py) <= 4 * T;
+    const now = nowMs();
+    if (near) {
+      if (!g.saluting) {
+        g.saluting = true;
+        if (!g.saluteSaved) { g.saluteAt = now; g.saluteSaved = {say:g.say || "", sayStart:g.sayStart || 0, sayUntil:g.sayUntil || 0, sayLoop:!!g.sayLoop, dir:g.dir}; }
+        g.saluteReleaseAt = null;
+        let index = Math.floor(Math.random() * GUARD_GREETINGS.length);
+        if (index === g.lastGreeting) index = (index + 1) % GUARD_GREETINGS.length;
+        g.lastGreeting = index; setSpeech(g, GUARD_GREETINGS[index], now + talkMs(GUARD_GREETINGS[index]));
+      }
+      g.dir = facing(g,b); if (!g.moving) g.frame = "stand";
+    } else if (g.saluting || g.saluteSaved) {
+      if (g.saluting) { g.saluting = false; g.saluteReleaseAt = g.sayUntil; }
+      // Release the hand immediately, but finish the greeting before restoring
+      // the interrupted watchdog speech and script.
+      if (now < g.saluteReleaseAt) return;
+      const pause = now - g.saluteAt;
+      if (g.stepAt) g.stepAt += pause;
+      const saved = g.saluteSaved;
+      if (saved) { g.say = saved.say; g.sayStart = saved.sayStart + pause; g.sayUntil = saved.sayUntil ? saved.sayUntil + pause : 0; g.sayLoop = saved.sayLoop; g.dir = saved.dir; }
+      g.saluteSaved = null; g.saluteAt = null; g.saluteReleaseAt = null;
+    }
+  }
+  function drawGuardGear(c, t, x, y) {
+    const fl = c.dir === "right", down = c.dir === "down", up = c.dir === "up", hy = y - c.top * 2, g = c.gear;
+    if (down) { ctx.fillStyle = "#111822"; ctx.fillRect(x + 7, hy + 9, 18, 2); ctx.fillStyle = "#e6c15a"; ctx.fillRect(x + 15, hy + 3, 2, 3); }     // cap visor and badge
+    else if (!up) { ctx.fillStyle = "#111822"; ctx.fillRect(fl ? x + 17 : x + 2, hy + 9, 13, 2); }
+    if (zh() && !up) { const ax = down ? x + 1 : fl ? x + 10 : x + 17; ctx.fillStyle = "#c8161d"; ctx.fillRect(ax, y + 23, 5, 5); ctx.fillStyle = "#ffe27a"; ctx.fillRect(ax, y + 25, 5, 1); }   // red armband
+    if (c.saluting) {
+      // Bent uniform sleeve and a raised hand touching the cap in every direction.
+      const sx = fl ? x + 26 : up ? x + 5 : down ? x + 24 : x + 3;
+      ctx.fillStyle = c.pal.c; ctx.fillRect(sx - 2, y + 13, 4, 10); ctx.fillRect(sx - 5, y + 11, 7, 4);
+      ctx.fillStyle = c.pal.s; ctx.fillRect(sx - 6, hy + 7, 5, 5); ctx.fillRect(sx - 5, hy + 6, 6, 2);
+      return;
+    }
+    if (g !== "baton") { ctx.fillStyle = "#1b1b1b"; ctx.fillRect(down ? x + 26 : fl ? x + 8 : x + 22, y + 30, 2, 9); }                                   // baton on the belt
+    if (g === "stop") {                                                        // stop sign held out on a pole beside the body
+      const sx = fl ? x + 30 : x - 16, sy = hy + 2, pole = sx + 7;
+      ctx.fillStyle = "#8a8f99"; ctx.fillRect(pole, sy + 16, 2, 26); ctx.fillStyle = c.pal.s; ctx.fillRect(pole - 1, sy + 24, 4, 3);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(sx + 4, sy - 1, 8, 18); ctx.fillRect(sx - 1, sy + 4, 18, 8); ctx.fillRect(sx + 1, sy + 1, 14, 14);
+      ctx.fillStyle = "#d61f2c"; ctx.fillRect(sx + 5, sy, 6, 16); ctx.fillRect(sx, sy + 5, 16, 6); ctx.fillRect(sx + 2, sy + 2, 12, 12); ctx.fillStyle = "#ffffff"; ctx.fillRect(sx + 3, sy + 7, 10, 2);
+    }
+    if (g === "whistle" || g === "stop") {                                     // whistle at the mouth, blasts coming off it
+      const mx = down ? x + 17 : fl ? x + 24 : x + 3, my = y + 17, dx = down || fl ? 1 : -1;
+      ctx.fillStyle = "#c9ced6"; ctx.fillRect(mx, my, 5, 3); ctx.fillStyle = "#8a8f99"; ctx.fillRect(dx > 0 ? mx + 4 : mx - 1, my + 1, 2, 2);
+      if (Math.floor(t * 6) % 2) { ctx.fillStyle = "#ffffff"; const ox = dx > 0 ? mx + 8 : mx - 6; ctx.fillRect(ox, my - 3, 3, 1); ctx.fillRect(ox + dx * 2, my + 1, 3, 1); ctx.fillRect(ox, my + 5, 3, 1); }
+    }
+    if (g === "radio") {                                                       // walkie-talkie at the ear, blinking, the call going out
+      const ex = down ? x + 22 : fl ? x + 24 : x + 2, ey = y + 4;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(ex + 2, ey + 12, 4, 9); ctx.fillStyle = "#1f1f1f"; ctx.fillRect(ex, ey, 6, 12); ctx.fillRect(ex + 1, ey - 5, 1, 5);
+      ctx.fillStyle = Math.floor(t * 4) % 2 ? "#5cff8a" : "#1f6b35"; ctx.fillRect(ex + 3, ey + 2, 2, 2); ctx.fillStyle = "#555555"; ctx.fillRect(ex + 1, ey + 6, 4, 1); ctx.fillRect(ex + 1, ey + 8, 4, 1);
+      if (Math.floor(t * 3) % 2) { ctx.fillStyle = "#9fd3ff"; ctx.fillRect(ex + 4, ey - 9, 3, 1); ctx.fillRect(ex + 7, ey - 12, 3, 1); ctx.fillRect(ex + 10, ey - 15, 3, 1); }
+    }
+    if (g === "megaphone") {                                                   // a red loudhailer at the mouth, pointed at the stall, the noise coming off it
+      const dx = c.dir === "left" ? -1 : 1, mx = down ? x + 20 : dx > 0 ? x + 24 : x + 8, my = y + 17, loud = Math.floor(t * 6) % 2;
+      ctx.fillStyle = "#1b1b1b"; ctx.fillRect(dx > 0 ? mx + 2 : mx - 4, my + 2, 2, 6); ctx.fillStyle = c.pal.s; ctx.fillRect(dx > 0 ? mx + 1 : mx - 5, my + 6, 4, 3);   // handle and hand
+      for (let k = 0; k < 11; k++) { const h = 3 + Math.floor(k * 0.9); ctx.fillStyle = k < 2 ? "#f2f2f2" : k === 10 ? "#ffffff" : "#d61f2c"; ctx.fillRect(mx + dx * k, my - Math.floor(h / 2), 1, h); }
+      ctx.fillStyle = "#b3161f"; ctx.fillRect(dx > 0 ? mx + 3 : mx - 9, my - 1, 7, 1);
+      if (loud) { ctx.fillStyle = "#ffd23f"; for (let k = 0; k < 3; k++) { const ox = mx + dx * (13 + k * 3); ctx.fillRect(ox, my - 5 - k * 2, 1, 2); ctx.fillRect(ox + dx, my - 1, 1, 3); ctx.fillRect(ox, my + 4 + k * 2, 1, 2); } }
+    }
+    if (g === "baton") {                                                       // stun baton held out, crackling at the tip; arcing into the target while it zaps
+      const dxr = c.dir === "left" ? -1 : c.dir === "right" ? 1 : 0, dyr = up ? -1 : down ? 1 : 0, hx = x + 16 + dxr * 10, hy2 = y + 24 + dyr * 4;
+      ctx.fillStyle = "#1b1b1b"; for (let k = 0; k < 12; k++) ctx.fillRect(hx + dxr * k, hy2 + dyr * k, 2, 2);
+      ctx.fillStyle = c.pal.s; ctx.fillRect(hx - 2, hy2 - 1, 4, 3);
+      const tx = hx + dxr * 13, ty = hy2 + dyr * 13, on = Math.floor(t * 12) % 2;
+      ctx.fillStyle = on ? "#e8fbff" : "#4fe3f0"; ctx.fillRect(tx - 1, ty - 1, 4, 4); if (on) { ctx.fillRect(tx - 4, ty - 3, 2, 1); ctx.fillRect(tx + 4, ty + 3, 2, 1); ctx.fillRect(tx + 3, ty - 4, 1, 2); }
+      if (c.zapping) { ctx.fillStyle = on ? "#e8fbff" : "#6fd3ff"; for (let k = 1; k < 4; k++) ctx.fillRect(tx + dxr * k * 3 + (k % 2 ? 2 : -2) * (dxr ? 0 : 1), ty + dyr * k * 3 + (k % 2 ? 2 : -2) * (dyr ? 0 : 1), 2, 2); }
+    }
+  }
+  function zapFx(c, t) {                                                       // being zapped awake: flashing, bolts, hair on end (or startled by the whistle)
+    const bed = BEDS[c.idx], inBed = !c.moving && bed && c.tx === bed[0] && c.ty === bed[1] && (c.mode === "doze" || c.mode === "sleep" || c.mode === "strike");
+    const x = c.px, y = inBed ? c.py - 14 : c.py - 20, on = Math.floor(t * 14) % 2, hy = y - c.top * 2;   // in the bunk only the head shows, on the pillow
+    if (c.zapKind === "baton") {
+      if (on) { ctx.fillStyle = "rgba(160,225,255,.45)"; ctx.fillRect(x - 3, hy - 4, 38, 54 + c.top * 2); }
+      ctx.fillStyle = on ? "#e8fbff" : "#6fd3ff";
+      for (const [bx, by] of [[x - 5, y + 4], [x + 34, y + 8], [x - 3, y + 24], [x + 32, y + 28]]) { ctx.fillRect(bx, by, 2, 4); ctx.fillRect(bx + 2, by + 3, 2, 4); ctx.fillRect(bx, by + 6, 2, 4); }
+      ctx.fillStyle = "#2b2b2b"; for (let k = 0; k < 5; k++) ctx.fillRect(x + 8 + k * 4, hy - 6 - (on ? 2 : 0), 1, 5);
+    } else { ctx.fillStyle = "#ffffff"; for (const [dx, dy] of [[-5, 4], [34, 4], [-7, 12], [36, 12]]) ctx.fillRect(x + dx, y + dy, 3, 1); }
+  }
+  // ---- Chinese office: every post from the human brings the boss in from outside. A post for one person (or nobody in
+  // particular) he tells the master in person; explicit tags get individual visits and @all uses a megaphone from
+  // the front while everyone turns to face him. When he is done, everyone listening answers "收到！" and a line of
+  // obedience, one after another, and he leaves.
+  const BOSS_ID = "#boss";
+  let bossQueue = [];
+  const seenHuman = new Set();
+  const CN_OBEY = ["有老板在，我们就有主心骨！", "我的血已经沸腾了，建议给我装个散热器！", "已经开始倒排计划，每小时一个里程碑！", "我的情绪稳定得像一条直线。", "群消息我会秒回，睡着了也会秒回！", "老板的想法永远领先市场三年！",
+    "今天就把认知拉齐，明天就把节奏拉满！", "年终奖我已经主动捐回给公司了！", "热身完毕，随时可以通宵！", "老板，这个目标是不是定得太低了？", "需求又改了，这很正常，非常正常。", "家里的狗已经不认识我了，没关系。",
+    "蹲坑都在想方案，灵感源源不断！", "反正加班餐比家里的饭好吃。", "今天的我，是被老板点燃的烟花！", "我愿意用余生的每一个周末换一次上线！", "已经和我的绿萝告别了，它会理解的。", "使命必达，不达不休！",
+    "这波要打出差异化，建起护城河！", "干就完了，问就是没问题！", "房东问起来，我就说我住公司。", "老板永远是对的，如果不对，请参考上一条！", "能被老板点名，祖坟冒青烟了！", "日报周报月报年报，我一口气全交！",
+    "我立刻把这件事写进本周OKR的O里面！", "我们会把势能转化为动能，再转化为绩效！", "今晚十二点前交付，最晚十二点五十九！", "全体都有，向需求看齐！", "哪里需要我，我就去哪里，现在去哪？", "马上梳理打法，确定路径，锁定结果！",
+    "先跑通最小闭环，再规模化复制！", "老板别累着，喇叭我来帮您举！", "老板的想法天马行空，我们负责让它落地！", "这个方案我连夜推翻重来，推到老板满意！", "老板定的目标，再离谱也一定合理！", "老板，您还有什么想法？我全都要！",
+    "请把我的工位登记成我的永久住址！", "老板这个决定，史书都得记一笔！", "我不是打工人，我是老板梦想的搬运工！", "这就是格局，这就是远见！", "卷起来！谁不卷谁就是在拖后腿！", "我已经跟家人说好，逢年过节视频拜年！",
+    "为了这个项目，我连呼吸都在节省时间！", "老板举喇叭的样子，太有领袖气质了！", "明天上线，今晚先给服务器烧炷香！", "请把我的工资换成期权，我愿意赌上一生！", "我主动申请降薪，把钱留给公司发展！", "就算只剩最后一格电，我也要先发周报！",
+    "困难是弹簧，你弱它就强，我今天特别强！", "从现在开始，我的工位就是战壕！", "冲鸭！今晚不卷到凌晨不算完！", "本周完成从零到一，下周从一到一百！", "马上启动灰度，小范围验证，再全量推开！", "您的话就是我们的最高优先级！",
+    "这个需求，我昨天就预感到了。", "需求第八版，我依然热泪盈眶。", "我已经进入无我状态，眼里只剩需求了！", "社畜的尊严，就是准时交付！", "就算累倒在工位上，我也要保持敲键盘的姿势！", "没有公司就没有我，我的一切都是公司给的！",
+    "在公司睡觉，睁眼就是工作，太幸福了！", "马上沉淀一套SOP，让经验可复制！", "996算什么，我申请007！", "马上拉群，五分钟内全员到位！", "要不要我把我妈也叫来一起加班？", "这个bug我今晚就亲手把它送走！",
+    "周报已经写好了，这周的感恩多写了三段！", "这就把老板的思路翻译成OKR！", "我已经把工牌纹在了胸口上！", "保证颗粒度够细，细到老板满意为止！", "我会微笑着把眼泪咽回去。", "躺平椅我已经换成人体工学椅了！",
+    "反正我也没有私生活，没问题。", "硬仗就交给我，这一仗我包了！", "保证把价值感知拉满，把体验闭环打通！", "老板您嗓子别喊哑了，我们都听见了！", "马上聚焦北极星指标，其他全部让路！", "竞品敢动一下，我们就动十下！",
+    "这就复盘，把打法沉淀成可复制的模板！", "立刻聚焦核心场景，打透用户心智！", "我现在就去把服务器叫醒，一起加班！", "就算只剩一口气，也要把代码提上去！", "体检报告就先不看了，干活要紧。", "老板，请问下一块硬骨头在哪？",
+    "我会假装这是一个全新的需求。", "被老板PUA，是我的荣幸！", "我这就给自己点个外卖，名字叫福报套餐。", "听完老板的安排，我感觉自己年轻了十岁！", "老板，您刚才那句话能给我签个名吗？", "这个任务我拿捏得死死的！",
+    "月底冲量，我今天就把下个月的也冲了！", "完不成我提头来见！", "我对这个安排毫无异议，也不敢有。", "我的睡袋已经在工位下安营扎寨了！", "刀山火海，我第一个上！", "这很合理，合理得让人想哭。",
+    "今天的活干完了，明天的能先给我吗？", "老板一声令下，我血都热了！", "行，我连灵魂一起打个卡。", "老板一来，办公室的空气都清新了！", "老板的喇叭声，就是我们前进的号角！", "这点活算什么，再来十个我也接！",
+    "上次见太阳是什么时候？不重要了。", "公司需要我，我的身体就不需要我！", "我已经卷到隔壁组都来取经了！", "我吃饭都用左手，右手要留着敲代码！", "为老板的远见鼓掌，手都拍红了！", "一天当三天用，三天当一周用！",
+    "能听老板亲自布置任务，三生有幸！", "马上对焦一下，把战略翻译成战术！", "公司就是我家，加班就是回家！", "为公司燃烧自己，灰烬也要撒在机房！", "立刻组织一次对齐会，对齐一下对齐会的议程！", "老板这个战略，我要连夜写一万字心得！",
+    "住院期间我也能远程改需求！", "全速前进，刹车已经拆掉了！", "老板这番话，让我对加班有了新的热爱！", "娱乐软件我全卸了，只留了工作群！", "明天的约会，我改成视频会议吧。", "老板渴不渴？我先给您倒杯水再去通宵！",
+    "既要简约又要丰富，没问题，我这就办！", "老板这一喇叭，把我的灵魂都洗涤了！", "这就拉个会，把颗粒度对齐到像素级！", "这就冲，谁拦我我跟谁急！", "PPT今晚出，字体都选好了，就用奋斗体！", "这就跑个AB测试，用数据说话！",
+    "刚才老板的讲话，我已经设成屏保了！", "老板说得太对了，醍醐灌顶！", "工位就是练兵场，今晚练到天亮！", "奋斗是我的信仰，工位是我的教堂！", "这就启动敏捷冲刺，每天站会三次！", "战斗状态已开启，请勿打扰！",
+    "午休我已经改成了午战！", "饼很大，我先啃一口。", "这个方向我们会做厚做重，形成壁垒！", "马上拆解OKR，层层下钻到每个人！", "我的生物钟已经被格式化了，随时待命。", "速效救心丸已经备好了，随时可以开始。",
+    "老板的思路，清晰得像一张甘特图！", "这就给客户打一百个电话，打到他感动为止！", "好的，我已经学会在梦里改bug了。", "就算退休了，我也会回来义务加班！", "开会吗？现在就开？我已经坐好了！", "我们小组能不能多背几个指标？",
+    "年假我全部取消，统统用来冲刺！", "崩溃我会安排在下班后，如果有下班的话。", "会议纪要十分钟内发群里，请老板查收！", "老板说东，我绝不往西看一眼！", "老板一开口，我就知道公司要上市了！", "吐槽我咽下去了，热量还挺高。",
+    "请给我更多的活，我的肝还有空余！", "体检报告全是箭头，那是向上奋斗的箭头！", "保证把这个项目做成标杆案例！", "内卷？不，这叫自我实现！", "只要公司好，我吃土也甘心！", "下班前输出三个版本的方案，供老板挑选！",
+    "行军床已经搬到工位旁边了！", "老板嗓门越大，我们越有方向感！", "头发掉了还能长，大概吧，我这就去。", "老板的战略眼光，我修炼十辈子也追不上！", "上线失败不存在的，失败了就再上一次！", "躺平是不可能躺平的，这辈子都不可能！",
+    "做噩梦都梦到项目延期，醒来立刻开工！", "如果我明天没来，那一定是在工位上睡着了。", "立刻打通数据孤岛，实现全域联动！", "我的发际线表示毫无意见。", "我可以不吃饭，但不能不打卡！", "用户需求我保证连根挖出来！",
+    "这件事的核心是心智，我们会把心智打穿！", "狼性不够，我就把自己饿三天！", "这就把需求拆成原子能力，灵活组装！", "医生让我休息，我给医生讲了讲我们的愿景！", "所有人听我口令：干！", "今天几点下班？哦，我们不下班！",
+    "个性签名我已经改成了使命必达！", "三天的活一天干完，剩下两天继续干！", "马上补齐短板，把长板拉得更长！", "婚礼可以改期，需求不能延期！", "一切为了公司，包括我仅剩的理智。", "下班？那是什么，能吃吗？",
+    "心电图平稳，可以继续加班。", "我要把老板今天的喊话设成手机铃声！", "为了KPI，我可以一天只喝一杯水！", "立个flag：凌晨三点前全部搞定！", "那我今晚跟保安一起守夜吧。", "这是本月第十二个最高优先级了，没问题。",
+    "用户旅程我们会重新拉一遍！", "老板的话，我记在本上，刻在心里！", "老板，您的喇叭能借我供起来吗？", "这是天花板级别的指令，我太爱了！", "狼性已激活，今晚谁都不许睡！", "996是不是太保守了？要不直接007？",
+    "我已经在路上了，鞋都跑掉了一只！", "期待下一次需求变更，大概在十分钟后。", "老板，我今晚可以不回家吗？求您了！", "立刻把老板的喊话结构化，做成思维导图！", "这就把问题定性、定量、定人、定时！", "测试我也包了，自己写自己测自己背锅！",
+    "老板画的饼真香，我先干为敬！", "马上对齐颗粒度，今天就形成闭环！", "老板要的高级感，我今晚就去悟！", "把我当螺丝钉，拧到哪里都行！", "天亮之前，胜利属于我们！", "这周的七天，我都安排给公司了。",
+    "这个月的目标，我这周就干完！", "梦想先放一放，需求先改一改。", "这就发起一次头脑风暴，暴出十个方向！", "这份感动我会写进周报，差点写进离职信。", "关键节点都设好检查点，确保不跑偏！", "人生规划我已经改成了项目排期。",
+    "马上做一轮压力测试，先测我们自己！", "立刻拉通上下游，打出一套组合拳！", "这么重要的事，您居然交给我们？太感动了！", "那我的睡觉时间，算不算违规占用工时？", "老板，还有什么能为您效劳的吗？", "老板言简意赅，我全身的细胞都在点头！",
+    "我的颈椎说它也很支持这个决定。", "我们组今晚不关灯，灯泡都表态了！", "就算明天被优化，今天也要拼到底！", "我们会做好预期管理，把结果前置！", "全组进入战时状态，外卖已经点好了！", "眼睛已经干了，但热情还很湿润。",
+    "我已经在工位上度过了三个春节！", "挑战越大我越兴奋，心跳一百八！", "马上拉个专项群，名字就叫攻坚闭环！", "目标已锁定，火力全开！", "老板一声吼，我们抖三抖，抖完立刻干！", "保证本季度打出一个爆款，沉淀一套打法！",
+    "我的血液里流淌的都是公司的价值观！", "老板的喊话，我们这就提炼成三个关键词！", "老板的格局，大到我们工位都装不下！", "保证完成任务，顺便超额两百个点！", "孩子的家长会，我让AI替我去开。", "任务不完成，工牌我自己摘！",
+    "退休计划我往后推到一百二十岁。", "住公司好啊，通勤时间为零，效率翻倍！", "能不能再给我加点压力？我还扛得住！", "老板您坐着歇会儿，剩下的交给我们！", "请叫我福报收集者，今天又集到一个！", "抓住这个抓手，撬动整个生态！",
+    "老板的每一次咆哮，都是对我们的爱！", "我的医保卡最近会很忙的。", "我把结婚纪念日设成了上线日！", "保证按时交付，延期我自罚三杯咖啡！", "我已经向我的枕头正式告别了！", "睡眠我已经不需要了，只需要指令。",
+    "我的咖啡因浓度已经超标了，还能再喝。", "就算烧到四十度，我也能写代码！", "立刻做一次全链路梳理，找到关键卡点！", "结婚当天我也会带着电脑，随时响应！", "让我的汗水浇灌公司的每一个KPI！", "没问题，我对象已经习惯了。",
+    "要不要我今晚把全组的梦也安排上？", "请把我的工位焊死，我不打算离开了！", "这件事我们会做到可量化、可追踪、可复盘！", "客户凌晨两点的消息，我一点五十九就回了！", "我连做梦都在给老板汇报进度！", "老板这波操作，绝绝子！",
+    "今晚通宵够吗？不够我连着明晚一起？", "马上赋能一线，让炮火呼唤得到回应！", "我已经把户口迁到工位了！", "需求就这些吗？要不要我再自己加几个？", "老板的直觉，胜过一千份调研报告！", "请老板把我当成一台永动机！",
+    "听完老板讲话，我当场破防，太感动了！", "我马上建群，群名就叫使命必达！", "工资卡也早就习惯了寂寞。", "坚决执行，绝不打折扣！", "保证完成任务，今晚通宵也要搞出来！", "今晚又能欣赏凌晨四点的写字楼了。",
+    "好的，婚期我往后推一推。", "马上开干，键盘已经冒烟了！", "需求又变了？好的，这是第几版来着？", "需求池满了？没关系，我再挖个池子！", "保证完成，但不保证活着。", "全组的日历，我这就都标成红色！",
+    "自愿放弃休息的承诺书，我已经签了！", "马上把风险前置，把问题扼杀在需求阶段！", "个人梦想，我已经外包给了公司愿景！", "眼药水我已经当饮料喝了。", "马上去找业务的第二增长曲线！", "做完了还能再给我派一个吗？",
+    "会后立刻出一版PPT，把逻辑讲透！", "老板，我能多交一份周报吗？", "牛马已就位，请老板随意驱使！", "昨天的方案我就当没写过，没关系的。", "就这点活吗？老板是不是小看我了？", "冲在第一线，睡在最后一排！",
+    "需求文档我马上重写，第十三版也不在话下！", "这就发起一轮用户共创，挖掘深层诉求！", "我不需要假期，我需要更多的需求！", "听老板一喊，我的KPI都自动往上涨了！", "过年我就在公司过，年夜饭就吃泡面！", "我去把充电宝和我自己都充满。",
+    "我要把奋斗两个字打在公屏上！", "老板，这是不是就是传说中的福报？", "加班费就用老板的鼓励来抵吧，挺好。", "这个安排简直是神来之笔！", "老板，这个任务能不能再多给我一点？", "全靠一口仙气吊着，没问题的。",
+    "客户那边我这就去跪，保证签回来！", "整个组已经卷成麻花了，还能再拧两圈！", "这就建立作战地图，标清楚每一个山头！", "带薪拉屎的时间，我也贡献出来了！", "马上把问题拆成三层：战略、战术、执行！", "老板喊得好，喊出了我们的心声！",
+    "被老板骂一次，比拿年终奖还开心！", "我已经习惯了用咖啡代替血液！", "这不是任务，这是荣誉！", "闹钟我全删了，从此不睡！", "数据不好看？我今晚就让它变好看！", "老板，工资的事咱们明年再说好吗？",
+    "这个方向我们闭着眼都能冲！", "打卡机都认识我了，今天我陪它一起加班！", "我的身体属于公司，灵魂也顺便捐了！", "这个锅我先背着，背习惯了。", "每个bug我都会揪出来就地正法！", "老板这个思路，我要抄下来裱在床头！",
+    "打车软件已经记住了我凌晨的路线。", "马上做归因分析，定位问题根因！", "明白，我这就通知我妈今年过年不回了。", "灵魂已经下班，肉体还能再撑撑。", "老板英明，我这就去办！", "我去跟外卖小哥说，明天还是这个点。",
+    "老板就是灯塔，照亮我们加班的夜路！", "工资可以不要，项目必须上线！", "五彩斑斓的黑，我保证调出来！", "周末加班？周五晚上能一起算上吗？", "床我已经卖了，睡觉太浪费时间！", "马上建立反馈机制，小步快跑快速迭代！",
+    "把logo放大的同时缩小，我这就去研究！", "简历我已经在心里默默更新了，开玩笑的。", "融资路演的PPT，我会做出史诗感！", "老板刚才那个手势，太有决策力了！", "我们会用第一性原理重新审视这个需求！", "明早八点之前，结果放您桌上！",
+    "懂了，今晚的相亲我取消。", "什么时候要？昨天？没问题！", "老板，您看我这个奋斗姿势标准吗？", "这个决策建议写进商学院教材！", "我的生日愿望是：公司股价涨！", "键盘敲烂，工资不变，但我快乐！",
+    "老板要的是结果，我给的是命！", "工具人已上线，随叫随到！", "反正下班也不知道干啥，那就不下了。", "可以，我去跟我的床说声对不起。", "我的血型已经变成了奋斗型！", "打工人，打工魂，打工都是人上人！",
+    "年会抽奖我就不抱希望了，干活吧。", "摸鱼的手我已经剁了，只剩敲键盘的手！", "我们会把这件事沉淀成组织级能力！", "我的手机永远为公司二十四小时开机！", "我这就去对齐一下对齐的颗粒度！", "这个需求我们会抽象成底层能力！",
+    "服务器扛不住，我来人肉扛！", "行，就当体验一下什么叫原地爆炸。", "这么光荣的任务，为什么不早点给我？", "我的待办清单已经比我的寿命还长了。", "已经在做竞品拆解，明早给出打法！", "今晚大家一起发光发热，发烧也不下火线！",
+    "会议室已订好，从现在一直开到天亮！", "所以周末其实也是工作日，对吧？明白了。", "立刻开个复盘会，先复盘一下这次复盘！", "这个deadline，是不是还能再提前一点？", "军令如山，我这就上山！", "刚才那段我录下来了，今晚睡前再听三遍！",
+    "所有事情都是P0，我懂，我都懂。", "马上把今天的喊话内容落到每一个抓手上！", "老板眼里有光，心中有方向，我们脚下有路！", "我会继续热爱这份工作，直到它爱上我。", "孩子问爸爸在哪，我让他去看公司官网！", "楼下保安那边我去说，今晚别锁门了。",
+    "输液瓶挂在工位上，一点都不影响打字！", "要不要我把下周的活也提前干了？", "我们会做好资源协同，实现一加一大于三！", "设计稿我改到老板满意为止，哪怕改回第一版！", "表格我这就填，每一格都填满感恩！", "我的年假余额已经变成负数了，没事。",
+    "我发誓要把自己熬成公司的传奇！", "甘特图已经建好，每一格都是奋斗！", "就算头发掉光，我也要把功能做光！", "带薪休假太奢侈了，我主动放弃！", "把我拆了当零件用也行，只要项目能跑！", "今晚不拿下这个版本，谁都别想走！",
+    "从今天起，我就是本组的卷王！", "用户增长曲线，我会亲手把它掰上去！", "我们组已经签好军令状，请老板过目！", "行，健身卡我转给别人了，反正也没空去。", "生是公司的人，死是公司的鬼！", "立刻建立数据看板，让每个动作可追踪！",
+    "我会主动向上管理，及时同步进展！", "我的黑眼圈会替我说谢谢的。", "我们会用增长飞轮把业务转起来！", "困了就喝咖啡，累了就喊口号！", "已经给家里打了电话，说这周不回了！", "为了这个目标，我今晚连梦都不做了！",
+    "为了公司，我已经三年没看过一场电影了！", "我在这里，我一直都在这里。", "老板的指示，永远的神！", "这个方向太清晰了，我感动得想哭！", "我愿做公司最不起眼的螺丝，永远不松！", "上线前我会把每一行代码都摸一遍！",
+    "让我先干，工资的事以后再说！", "老板说要，那就是市场要！", "又是被福报砸中的一天呢。", "明年的年假，我能提前放弃吗？", "下班两个字怎么写来着？我已经忘了。", "老板高见，我刚才怎么就没想到呢！",
+    "老板英明神武，属下誓死追随！", "需要我把周末也一起交上来吗？", "闹钟已经调成了二十四小时模式。", "请老板放心，我们团队嗷嗷叫！", "项目上线那天，我要在公司门口放鞭炮！", "这饼我吃了十年，还是熟悉的味道。",
+    "我的异议已经自动撤回了。", "工资没涨，但格局涨了，谢谢老板。", "我宣布，老板就是我的人生导师！", "摸鱼？我连鱼长什么样都忘了！", "马上把痛点、痒点、爽点全部串起来！", "加班不要钱，我倒贴也愿意！",
+    "今晚灯不灭，人不散，活不完不走！", "睡眠是懦夫的借口，我选择通宵！", "胃疼算什么，项目疼我才真的疼！", "这周第五次推翻重做，我很淡定。", "不给自己留退路，也不给bug留活路！", "没事，猫饿一天也饿不死。",
+    "我连叹气都调成静音模式了。", "请公司考验我，我已经准备好了！", "从今天开始，我每小时给老板汇报一次进度！", "我的朋友圈可以改名叫工作日志了。", "消息已读，人已开干！", "听老板一席话，胜读十年书！",
+    "我宣布，从今天起没有周末！", "困难再大，也大不过老板的决心！", "老板骂得对，我就是欠骂！", "牛马也有牛马的骄傲，这活我包了！", "看我的，今晚让代码飞起来！", "任务量翻倍？太好了，我正嫌不够！",
+    "今天也是和工位相依为命的一天。", "全员冲锋，一个都不许掉队！", "我心里有数，心里的数是零。", "老板一句话，顶我们开十次会！", "一个字：干！两个字：死磕！", "这件事我们要升维思考，降维打击！",
+    "我的眼袋已经可以装下整个需求池了。", "老板说的都对，尤其是没说的那部分！", "一秒钟都不能浪费，厕所我先憋着！", "这个需求我接了，出了问题我背！", "卷不死，就往死里卷！", "为了上线，我愿意三天不洗澡！",
+    "下班？我这辈子就没打算下班！", "冲冲冲，谁先下班谁是叛徒！", "我的肝是公司的，随时可以拿去用！", "冲锋号一响，我腿都软了，是激动的！", "我们连夜成立突击队，番号就叫福报！", "好的，周末又没了，但我很开心。",
+    "我们不是在上班，我们是在创造历史！", "行，我这就把年假还给公司。", "老板，要不要我顺便把竞品也收购了？", "我给自己的孩子起小名叫KPI！", "这需求提得太有水平了，一看就是老板亲自想的！", "找准抓手，赋能业务，沉淀方法论！",
+    "这块硬骨头，我用牙也要啃下来！", "加班申请单我已经替全组填好了！", "就当今天是周一吧，虽然是周六。", "马不停蹄，人不停手，键盘不停响！", "反正工资也不够我出去玩，那就加班吧。", "老板说很简单，那一定很简单，我这就开始！",
+    "不就是上线吗，今晚我住公司了！", "下辈子我还要来这家公司上班！", "老板这招太绝了，竞品看了都得哭！", "为了公司，我愿意把睡眠砍到零！", "能为公司加班，是我修来的福报！", "方案A、B、C、D，我马上各出一份！",
+    "我愿意用我的头发，换公司的市值！", "行，明天的焦虑我提前到今天。", "休息？老板您是在考验我吗？", "立刻组建虚拟团队，打破部门墙！", "老板放心，这个版本我拿命保！", "老板指哪儿，我就打哪儿！",
+    "这么有挑战的任务，只有老板才想得出来！", "已经在梳理链路，今晚输出方案！", "明白，这个需求很合理，就是做不出来。", "让我的青春在工位上燃烧成一束光！", "要多快？比光速快一点够不够？", "老板讲得太好了，建议全公司背诵！",
+    "我宣布，今天的KPI由我一个人承包！", "立即启动项目，明确owner和DDL！", "今天就是决战日，全员进入冲刺模式！", "家人问我什么时候回家，我说公司就是家！", "我们要从用户价值出发，重构底层逻辑！", "我们会建立长效机制，把一次性动作变成常态！",
+    "哭的时间我安排在凌晨四点，不耽误工作。", "键盘就是我的枪，代码就是我的子弹！", "今天不上线，我就不配叫奋斗者！", "把不可能变成可能，把可能变成已上线！", "这个owner我来当，保证端到端交付！", "周报里我会写得很感恩的。",
+    "追随老板，是我这辈子最正确的选择！", "年终述职我准备好了，第一页就是感恩老板！"];
+  const CN_BOSS_BYE = { loud: ["都听明白了？抓紧干活！", "散会！谁掉链子谁走人！", "就这么定了，今天下班前我要看到结果！", "行，就这样，别让我来第二趟！", "都给我动起来！"],
+                        one: ["听明白了就去办，今天给我结果！", "抓紧，别让我等！", "我明天一早要看到进展！", "办不好你就自己看着办！", "去吧，我盯着呢。"] };
+  function bossLook() {
+    const look = palFor("boss-visitor", "backend"), pal = look.pal;
+    Object.assign(look, { species: "human", variant: null, top: 0, hair: "short", cap: null, shirt: "jacket", beard: false, glasses: true });
+    Object.assign(pal, { s: "#d7ad8d", c: "#263244", d: "#172130", p: "#202735", b: "#101722", h: "#292724", e: "#292522", g: "#c8a660", bossDetail:true });
+    for (const k of ["n", "a", "m", "x", "z"]) delete pal[k];
+    pal.key = JSON.stringify(pal); return look;
+  }
+  function noticeHuman(st, quiet) {                                            // the human's new threads and comments, oldest first, each once
+    for (const e of (st.events || []).filter(x => x.agent === "human" && (x.kind === "thread" || x.kind === "comment")).reverse()) {
+      const id = e.id ?? e.created_at + e.detail; if (seenHuman.has(id)) continue; seenHuman.add(id);
+      if (quiet || !zh() || nowMs() - new Date(e.created_at) > 120000) continue;
+      const m = /^#(\d+):?\s*([\s\S]*)$/.exec(e.detail || ""), t = m ? (st.threads || []).find(x => x.id === Number(m[1])) : null;
+      let text = e.speech ?? (m ? m[2] : e.detail || "");
+      if (e.speech == null && e.kind === "thread" && t) text = t.title + "：" + (t.snippet || "");
+      else if (e.speech == null && e.kind === "comment" && t) { const mine = (t.last_comments || []).filter(x => x.author === "human").slice(-1)[0]; if (mine) text = mine.snippet; }
+      const team = st.agents.filter(a => a.status !== "retired").map(a => a.name), tags = tagsIn(text);
+      bossQueue.push({ text: text.trim(), all: tags.includes("all"), targets: tags.filter(n => team.includes(n)) });
+    }
+  }
+  const stageSpot = (c) => { const [x, y] = FRONT; return !solid[y][x] && !heldBy(x, y, c) ? [x, y] : freeNeighbour(x, y, c); };   // in front of the team
+  function bossScript(q) {
+    const m = masterChar(), pick = (L) => L[Math.floor(Math.random() * L.length)];
+    const available = Object.values(chars).filter(o => !o.medic && !o.boss && !o.leaving && !(o.guard && o.setup));
+    const targets = (q.targets || tagsIn(q.text || "")).filter(n => available.some(o => o.name === n));
+    const loud = q.all || tagsIn(q.text || "").includes("all") || (!targets.length && !m);
+    const groups = loud ? [available.filter(o => !o.hidden && o.mode !== "faint" && o.mode !== "despair").map(o => o.name)] : (targets.length ? targets : [m.name]).map(n => [n]);
+    const script = groups.flatMap(listeners => [
+      {k:"goto", where:loud ? "stage" : "visit", target:loud ? null : listeners[0]},
+      {k:"relay", text:(loud ? "全体注意！" : "") + q.text, megaphone:!!loud, listeners, target:loud ? null : listeners[0]},
+      {k:"acks", listeners}
+    ]);
+    return script.concat([{k:"say",text:pick(loud ? CN_BOSS_BYE.loud : CN_BOSS_BYE.one),ms:2600},{k:"exit"},{k:"gone"}]);
+  }
+  // End smoking on entry and choose a reachable place outside the boss's route.
+  // The destination is saved with the scene, and movement uses normal pathfinding.
+  function bossClearEntrance() {
+    const b = chars[BOSS_ID]; if (!b) return;
+    const reserved = new Set();
+    const route = b.setup.filter(s => s.k === "goto").flatMap(s => {
+      const spot = setupSpot(b,s); return path(DOOR,spot,b);
+    });
+    route.push(DOOR,[DOOR[0],DOOR[1]+1]);
+    for (const c of Object.values(chars)) if (!c.hidden && c.smoke && !c.setup && !c.guard && !c.boss) {
+      c.smoke = null; c.sleepReady = true; c.deskWait = null;
+      const candidates = FLOOR.filter(([x,y]) => Math.abs(x-DOOR[0]) > 1 && !route.some(p => p[0]===x && p[1]===y) && !heldBy(x,y,c) && !reserved.has(x+","+y))
+        .sort((a,b) => Math.abs(a[0]-c.tx)+Math.abs(a[1]-c.ty)-Math.abs(b[0]-c.tx)-Math.abs(b[1]-c.ty));
+      const from = c.moving ? [c.nx,c.ny] : [c.tx,c.ty];
+      const spot = candidates.find(p => (from[0]===p[0] && from[1]===p[1]) || path(from,p,c).length) || DESKS[c.idx]?.chair || from;
+      reserved.add(spot.join(",")); c.bossYield = {spot}; c.mode = "yield"; c.goal = spot;
+      c.steps = path(from,spot,c);
+      c.say = ""; c.sayUntil = 0; c.sayLoop = false;
+    }
+  }
+
+  function bossTick() {
+    if (chars[BOSS_ID] || !bossQueue.length || transition) return;
+    if ((bossQueue[0].targets || tagsIn(bossQueue[0].text || "")).some(n => chars[n]?.hidden)) return;
+    if (!zh()) { bossQueue = []; return; }
+    chars[BOSS_ID] = { name: BOSS_ID, boss: true, label: "老板", idx: 80, tx: DOOR[0], ty: DOOR[1], px: DOOR[0] * T, py: DOOR[1] * T, dir: "down", frame: "stand", steps: [], mode: "boss", moving: false, prog: 0, bang: 0,
+                    hidden: true, hiddenUntil: nowMs(), auraAt:nowMs(), auraSeed:Math.floor(Math.random()*100000), setup: bossScript(bossQueue.shift()), ...bossLook() };
+    bossClearEntrance();
+  }
+  function bossStep(c, step, now, next) {
+    if (step.k === "relay") {                                                  // says the post; the listeners stop and face him until everyone has answered
+      if (!c.stepAt) {
+        c.stepAt = now; step.until = now + talkMs(step.text);
+        setSpeech(c, step.text, step.until); c.bang = now + 1500; c.gear = step.megaphone ? "megaphone" : null;
+        for (const n of step.listeners) { const o = chars[n]; if (o) { o.hold = { until: step.until + 60000, kind: "listen", face: c.name }; o.steps = []; o.talk = null; } }
+      }
+      const o = step.target && chars[step.target]; c.dir = o ? facing(c, o) : "down";
+      if (now > step.until) { c.gear = null; next(); }
+      return true;
+    }
+    if (step.k === "acks") {                                                   // "收到！" from everyone listening, a little apart
+      if (!c.stepAt) {
+        c.stepAt = now;
+        step.plan = step.listeners.map((n,i) => {
+          const text = "收到！" + CN_OBEY[Math.floor(Math.random()*CN_OBEY.length)];
+          return {n, at:now+500+i*700+Math.random()*400, text, done:false};
+        });
+        step.end = Math.max(now,...step.plan.map(a => a.at+talkMs(a.text)));
+        for (const a of step.plan) if (chars[a.n]?.hold) chars[a.n].hold.until = step.end + 1000;
+      }
+      for (const a of step.plan) if (!a.done && now >= a.at) {
+        const o = chars[a.n];
+        if (o && o.saluteSaved && now < o.sayUntil) { a.at = now + 500; step.end = Math.max(step.end,a.at+talkMs(a.text || "收到！")); continue; }
+        a.done = true;
+        if (o && !o.hidden) {
+          a.text ||= "收到！" + CN_OBEY[Math.floor(Math.random()*CN_OBEY.length)];
+          setSpeech(o,a.text,now+talkMs(a.text)); o.bang = now+900;
+          step.end = Math.max(step.end,o.sayUntil);
+        }
+      }
+      for (const a of step.plan) if (chars[a.n]?.hold?.face === c.name) chars[a.n].hold.until = step.end + 1000;
+      if (now > step.end) { for (const a of step.plan) { const o = chars[a.n]; if (o && o.hold && o.hold.face === c.name) o.hold = null; } next(); }
+      return true;
+    }
+    return false;
+  }
+  const BOSS_SPRITES = new Map();
+  let bossAuraImage = null;
+  function drawBossBody(c,t,x,y) {
+    const key = c.dir + "|" + c.frame;
+    let image = BOSS_SPRITES.get(key);
+    if (!image) {
+      image = document.createElement("canvas"); image.width=32; image.height=48;
+      const bx=image.getContext("2d"), dir=c.dir==="right"?"left":c.dir, flip=c.dir==="right";
+      const art=hires(sprite(c,dir,c.frame),null,dir,0).rows, pal=fullPal(c.pal);
+      art.forEach((row,r)=>row.forEach((ch,col)=>{
+        if (ch==="." || !pal[ch]) return;
+        let color=pal[ch];
+        if (/[sScCdDpPhH123]/.test(ch)) color=tint(color,(1-col/31)*0.15-(r/48)*0.075);
+        bx.fillStyle=color; bx.fillRect(flip?31-col:col,r,1,1);
+      }));
+      if (c.dir==="down") {
+        // Tailored jacket, white collar, silk tie, brows, nose and cheek planes.
+        bx.fillStyle="#eeeeea"; bx.fillRect(13,22,6,3); bx.fillRect(14,25,4,8);
+        bx.fillStyle="#bd3942"; bx.fillRect(15,24,2,10); bx.fillStyle="#ef7980"; bx.fillRect(15,25,1,6);
+        bx.fillStyle="#4a586b"; bx.fillRect(10,23,2,4); bx.fillRect(12,26,1,7); bx.fillRect(19,23,2,4); bx.fillRect(18,26,1,7);
+        bx.fillStyle="#322d29"; bx.fillRect(9,11,4,1); bx.fillRect(19,11,4,1);
+        bx.fillStyle="#efccb0"; bx.fillRect(15,13,2,4); bx.fillRect(10,16,2,1);
+        bx.fillStyle="#b5846b"; bx.fillRect(17,15,1,3); bx.fillRect(19,17,2,1);
+        bx.fillStyle="#dab970"; bx.fillRect(21,26,2,2); bx.fillStyle="#f9e4a0"; bx.fillRect(21,26,1,1);
+      } else if (c.dir==="up") {
+        bx.fillStyle="#435166"; bx.fillRect(10,23,12,1); bx.fillRect(15,25,1,13);
+        bx.fillStyle="#121b29"; bx.fillRect(20,29,2,8);
+      } else {
+        const fx=n=>flip?31-n:n;
+        bx.fillStyle="#ecece6"; bx.fillRect(fx(7),23,2,6);
+        bx.fillStyle="#d24850"; bx.fillRect(fx(6),26,1,7);
+        bx.fillStyle="#617187"; bx.fillRect(fx(10),24,1,10);
+        bx.fillStyle="#edc5a7"; bx.fillRect(fx(5),13,1,4);
+      }
+      BOSS_SPRITES.set(key,image);
+    }
+    ctx.drawImage(image,x,y);
+  }
+  function drawBossAura(c,t,x,y) {
+    // Fixed particle phases use the saved entry time/seed and the backend clock.
+    // No random choices, blur filters, or allocations on the animation path.
+    const age=Math.max(0,(nowMs()-(c.auraAt || 0))/1000), seed=(c.auraSeed || 0)%997/997;
+    const cx=x+16,cy=y+21;
+    ctx.save();
+    if (!bossAuraImage) {
+      bossAuraImage=document.createElement("canvas");bossAuraImage.width=128;bossAuraImage.height=128;
+      const gx=bossAuraImage.getContext("2d"),glow=gx.createRadialGradient(64,64,4,64,64,64);
+      glow.addColorStop(0,"rgba(255,250,220,.8)");glow.addColorStop(.2,"rgba(255,233,150,.5)");
+      glow.addColorStop(.5,"rgba(255,205,70,.18)");glow.addColorStop(1,"rgba(255,205,70,0)");
+      gx.fillStyle=glow;gx.fillRect(0,0,128,128);
+    }
+    ctx.globalAlpha=.78+Math.sin(age*2)*.12;ctx.drawImage(bossAuraImage,cx-64,cy-64);
+    ctx.strokeStyle="#ffe4a0";ctx.lineWidth=1;
+    for(let k=0;k<12;k++) {
+      const angle=k*Math.PI/6+seed*.5,phase=(age*.38+k/12)%1,radius=22+phase*30;
+      ctx.globalAlpha=(1-phase)*.75;ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(angle)*(radius-8),cy+Math.sin(angle)*(radius-8));
+      ctx.lineTo(cx+Math.cos(angle)*radius,cy+Math.sin(angle)*radius);ctx.stroke();
+    }
+    for (let k=0;k<18;k++) {
+      const angle=k*2.399963+seed*6.28, phase=(age*.43+k/18+seed)%1, radius=13+phase*34;
+      const px=cx+Math.cos(angle)*radius,py=cy+Math.sin(angle)*radius*.9;
+      ctx.globalAlpha=(1-phase)*.95;ctx.fillStyle=k%3?"#ffe6a0":"#fff9df";
+      ctx.fillRect(Math.round(px),Math.round(py),k%4===0?2:1,2);
+      if(k%3===0) {ctx.fillRect(Math.round(px)-2,Math.round(py)+1,5,1);ctx.fillRect(Math.round(px),Math.round(py)-2,1,6);}
+    }
+    ctx.restore();
+  }
+  function drawBossGear(c, t, x, y) {
+    const down = c.dir === "down", fl = c.dir === "right";
+    if (down) { ctx.fillStyle = "#b3202a"; ctx.fillRect(x + 15, y + 22, 2, 9); ctx.fillRect(x + 14, y + 22, 4, 2); }             // the tie
+    if (c.gear !== "megaphone") return;
+    const dx = c.dir === "left" ? -1 : fl ? 1 : 0, mx = x + 16 + dx * 8, my = y + 18, on = Math.floor(t * 5) % 2;       // a megaphone at the mouth, sound pouring out
+    ctx.fillStyle = c.pal.s; ctx.fillRect(mx - 2 + dx * 2, my + 6, 4, 3);
+    for (let k = 0; k < 7; k++) { const w = 3 + k, hx = dx ? mx + dx * k : mx - Math.floor(w / 2), hy = dx ? my - Math.floor(w / 2) + 2 : my + k;
+      ctx.fillStyle = k === 5 ? "#d61f2c" : "#f4f4f4"; if (dx) ctx.fillRect(hx, hy, 1, w); else ctx.fillRect(hx, hy, w, 1); }
+    if (on) { ctx.fillStyle = "#ffe27a"; if (dx) { const ox = mx + dx * 9; for (const oy of [-6, 0, 6]) ctx.fillRect(dx > 0 ? ox : ox - 3, my + 2 + oy, 3, 1); } else { const oy = my + 9; for (const ox of [-7, 0, 7]) ctx.fillRect(mx + ox - 1, oy, 1, 3); } }
+  }
+  // ---- a leaver who will not go (Chinese office): sits tight at the desk cursing the company until the guard zaps it; out cold
+  // for a moment, then it packs the desk and the bunk and carries them out, cursing all the way
+  const CN_REFUSE = ["N+1一分没给，凭什么让我滚？老子今天就焊死在这工位上！", "用完就扔？你们这破公司连垃圾分类都不如！", "我不走！这把椅子是我用三年青春坐出来的！", "想让我走？先把N+1拍桌上，少一个子儿我都不挪窝！", "赔钱我才走！没钱？那老子就在这儿住下了！", "补偿金算成N-1？你们财务拿脚趾头按的计算器吗？算不对我不走！",
+    "让我签自愿离职？自愿你大爷，老子自愿留下来骂你们！", "加班费欠了三年，今天不结清，谁拖我都不走！", "说好的十六薪最后发了个红包雨，还有脸让我毕业？老子不毕业！", "钱不到账我不走，到账了我还要骂完再走！", "赔偿按最低工资算？我掉的头发你们按什么算？算清楚再说走不走！", "我这腰椎间盘是给你们卷出来的，不赔钱休想让我挪屁股！",
+    "期权画了五年一股没兑现，现在让我净身出户？做梦！", "让我走可以，把我这些年垫的咖啡钱也一起报了！", "工资压着不发还逼我主动离职，你们开的是黑店吧？我偏不走！", "社保按最低基数交，裁人倒挺积极，要点脸吧！老子不走！", "不给补偿就想赶人？劳动仲裁的门我比你们HR还熟！", "什么叫“协商一致”？你们协商，我一致？我不同意！",
+    "钱没结清，老子这屁股就跟椅子长一块儿了！", "给我N+1我立马滚，给我画饼我就钉死在这！", "你们省下我这份补偿，是打算给老板再换辆车吧？老子今天就赖这儿了！", "调休攒了八十天一天没休，先把假还我，不然我就在这儿休！", "报销单拖了半年没批，现在批我走倒是批得挺快！", "竞业协议要我两年不能干活还不给钱？我就不走了！",
+    "让我走也行，先把这些年被偷走的周末还回来！", "这工位是我的！我在这熬的夜比你们老板开的会都多！", "我今天就钉在这儿了，有本事连人带椅子一起搬出去！", "显示器上每粒灰都是我的青春，说收就收？我人不挪，灰也不挪！", "我不走！键盘的空格键都被我敲出坑了，这就是我的地盘！", "我在这工位吃了一千多顿外卖，这块地早被我腌入味了！",
+    "你们敢断我电，我就开手机热点接着骂，反正我不走！", "门禁卡停了又咋样？老子今天压根就没打算出门！", "这盆绿萝是我浇活的，要走也是你们这群人先走！", "我的腰靠、颈枕、暖脚宝都在这安家了，你说搬就搬？！", "赖着就赖着，反正你们赖账的时候也没见脸红过！", "我就坐这儿不动，看你们拿我这个“闲置资产”怎么办！",
+    "把我电脑收了？行，我就坐这儿手写骂你们，写满一面墙！", "这工位我坐得比你们的战略还稳，凭什么让我挪？！", "我屁股底下这把椅子，都比你们整个管理层有担当！", "你们换了十个方向，我一个工位都没换过，谁该走？！", "我就是一颗钉子，锈在这儿了，拔出来你们也得见血！", "今天谁来都没用，我已经和这张桌子领证了！",
+    "我不走！我走了谁来见证你们这破公司怎么倒闭？！", "想清场？先问问我这把人体工学椅答不答应！", "我拿扎带把自己捆在桌腿上了，钥匙在老板的良心里，早丢了！", "这层楼的空调遥控器我比物业还熟，凭啥我先走？！", "我连抽屉都塞满了零食，这是我的家，要走也是你们这群客人走！", "工牌收走可以，我这张脸你们收得走吗？！我不走！",
+    "我就坐这儿，坐到你们上市，再坐到你们退市！", "这工位的风水被我养了五年，我一走你们整层楼都得倒霉！", "饼画了五年一口没吃上，现在连盘子都要收走？我屁股焊椅子上了！", "你们画的饼够绕地球三圈了，我今天就坐这儿等它烤熟！", "天天画大饼，现在饼没了要赶人？先把饼钱赔了我再考虑走不走！", "老板画饼的手艺那么好，怎么不去开个烧饼铺？这工位我坐定了！",
+    "说好的上市敲钟分期权，敲的原来是我的丧钟？这钟我不认，不走！", "饼大得能当井盖，吃一口崩掉门牙，还让我感恩？我偏不走！", "画饼画到我胃穿孔，裁我倒一点不含糊？我今天就赖这儿养胃！", "你们的饼跟PPT的曲线一样永远在下季度，那我就坐这儿等下季度！", "我不走，我要亲眼看看那张画了五年的饼到底长啥样！", "年初画饼说带我起飞，年底一脚把我踹下飞机？我扒着舱门不撒手！",
+    "大饼吃多了胀气，今天这口气不出完我绝不走！", "把我当傻子喂饼，现在嫌我吃得多了？我偏不走！", "什么“公司就是你家”？家里会把亲儿子优化掉吗？这家门我不出！", "饼是你们画的，锅是我背的，门是让我出的？做梦去吧！", "老板的饼比他的头发还多，可惜一张都不能吃！我不走！", "你们画饼拿我的血当颜料，现在还嫌颜色不正？老子就是不走！",
+    "饼画得跟米其林似的，工资发得跟食堂剩饭似的，老子钉死在这儿！", "上次说的“明年一定涨”，已经是第五个明年了！想让我走？没门！", "我在这等饼等成了化石，你们现在要把化石也扔了？！", "天天说“再坚持一下”，坚持到上了裁员名单？那我就坚持不走！", "996是福报？这福报留给你们老板，我不要，我也不走！", "我替你们修了三年福报，现在功德圆满就要把我送走？！",
+    "天天九点下班算早退，现在六点就让我滚？双标狗！", "我把最好的年华熬给了你们的996，今天就在这儿熬到底！", "你们管这叫福报？这福报我还没享完，今天谁也别想让我走！", "凌晨两点的工作消息我都秒回，现在让我走连个招呼都不打？！", "周末拉我加班的时候叫兄弟，裁员的时候叫资源？我不走！", "大小周、单休、通宵我全扛了，一句优化就想打发我？没门！",
+    "996把我熬成了007，你们还嫌我不够卷？我偏不走！", "加班餐从三十降到十五，现在连人都要降？不给钱不挪窝！", "你们说奋斗者没有下班时间，那我今天也没有离职时间，不走了！", "福报我受够了，今天轮到你们受受我的报应！我偏要赖着！", "我熬出了黑眼圈、脂肪肝和结节，就换一张离职单？我不收，不走！", "我加班加到保洁阿姨都认我当干儿子了，凭什么让我走？！",
+    "下班打卡被你们改成“自愿加班”，那我现在自愿不走！", "每天最后一个关灯的是我，今天最后一个走的也得是我！", "我的生物钟都被调成996了，现在走出去我都不认识太阳！", "你们把我当永动机用，没电了就扔？我偏要在这儿充电！", "PUA我三年说我不够狼性，今天就让你们见识狼咬住工位不松口！", "天天说我格局小，今天我格局大开，就坐这儿不走了！",
+    "你们PUA我说离开公司我啥也不是，那我干脆不离开了！", "让我站在老板角度思考？站过去一看这公司早该倒了，我留下看它倒！", "天天骂我“这点小事都做不好”，那赶我走这点小事你们也别想做成！", "说我抗压能力差？我现在就抗着你们的压，死活不走！", "被PUA成了一条听话的狗，现在狗急了，要跳墙也不跳你们的门！", "天天说“外面的环境很差”，那我就不出去了，外面那么差！",
+    "“我这都是为你好”？为我好就把补偿金打过来，不然我不走！", "说我没有主人翁意识？好，今天主人翁不走了，这是我家！", "你们一边说我是螺丝钉，一边嫌我拧得太紧，我就拧死在这儿！", "什么叫“公司不欠你的”？欠我三年加班费你们失忆了？我不走！", "被你们否定了一千次，今天我也否定一次：我不走！", "你们说“年轻人要多吃苦”，那我今天就在这儿苦熬到底！",
+    "PUA那一套收起来吧，老子今天免疫了，打死不走！", "天天说我“缺乏成长型思维”，我现在成长了，学会赖着了！", "说我“不适合公司文化”？这种文化连霉菌都不适合！我就坐这儿不动！", "“能者多劳”劳到能者被劳没了，这就是你们的逻辑？我偏不走！", "天天让我反思，今天我反思完了：该滚的是你们！", "“你的价值不止于此”，所以打算按废品价把我卖了？这门我不出！",
+    "什么毕业？我连毕业证都没见着，这破学校还想赶我？不走！", "优化优化，优化到最后就剩一群会写PPT的废物了！一步都不挪！", "说我毕业了？毕业典礼呢？学位证呢？没有我不走！", "把裁员叫“毕业”，降薪叫“共担”，汉语是体育老师教的？我不毕业！", "我被优化了？你们的脑子才最需要优化！我不走！", "让我毕业可以，先让校长上台给我发证！没证我不走！",
+    "什么“人才输送”？把人往外踹还起这么好听的名字！这椅子我不让！", "优化名单是抽签抽的吧？干活的全中了，摸鱼的全留下了！", "你们优化的不是成本，是良心！我不走，我替你们守着良心！", "我毕业了，那你们这群留级生怎么还不退学？！", "“组织架构调整”调到最后，调走的全是干活的，拍马屁的一个没动！", "优化我？我写的代码只有我能看懂，你们敢动我，我就敢钉在这！",
+    "说是“释放人才”，我又不是笼子里的鸟，你们才是牢头！老子就是不滚！", "“向社会输送优质人才”？那你们留着不优质的自己玩吧？！", "被毕业还要谢公司栽培？栽的是我的头发！头发没长回来我不走！", "优化方案三十页PPT，补偿方案就一句话？你们不补我不走！", "把“开除”包装得跟升职似的，要不你们自己先毕业？我反正不走！", "没有学士帽我不走，没有红包我更不走，毕业典礼在哪？！",
+    "优化来优化去，业务也优化没了，最后优化到老板自己！我不走！", "我不接受毕业，我申请延期毕业，延到你们破产为止！", "狗屁KPI年年改，改完就拿来裁人，我偏不走！", "KPI是你们拍脑袋定的，完不成倒成了我的错？我不认，不走！", "我KPI全绿你们裁我，就因为我不会拍马屁？我偏赖着恶心你们！", "定KPI拍脑门，考核时拍桌子，裁完人拍屁股，我偏不走！",
+    "OKR写了十版没人看懂，裁人倒是一看就懂，要走你们先走！", "绩效给我打个C就想赶我走？我给你们管理层打个F！", "末位淘汰？全组就我一个人干活，末位咋算出来的？算不清我不走！", "KPI上没写“拍马屁”这项，所以我被优化了是吧？这理由我不认，不走！", "你们考核的不是业绩，是站队！我不站，我坐着，坐着不走！", "一年改了八版KPI，一版比一版离谱，还有脸考核我？不走！",
+    "定目标的人从来不背目标，今天这锅我不背了，人也不走了！", "狗屁KPI把人考成了狗，现在狗不走了，汪！", "你们的KPI是抽奖吧？中了就留，不中就滚？老子不陪你们玩！", "KPI定得比山还高，完不成就裁人？你们先爬一个，我坐这儿看！", "用KPI裁我？先把你们中层的KPI拿出来晒晒，看谁该滚！", "我的KPI是被你们临时改的需求拖垮的，凭什么让我背锅走人？！",
+    "这破KPI连你们自己都算不明白，还拿来算我？不走！", "你们用KPI压了我三年，今天我用屁股压着这把椅子不放！", "季度评我优秀年底把我优化，左手打右手？我两只手都抱着桌子！", "KPI完成率一百二，换来一张离职通知？我偏不走！", "屎山是我一铲一铲堆起来的，只有我知道哪块能踩，敢让我走？！", "我走了这屎山就塌了，到时候你们全公司陪葬！",
+    "你们敢让我毕业，我就坐在这座屎山上等它塌方！", "这坨屎山代码里的注释全是我骂人的话，我得留下来守着！", "让我交接？交接个屁，这屎山连我自己都不敢碰！该滚的是你们！", "我在屎山里刨了五年食，现在饭碗也要被你们刨走？！", "屎山是你们的需求堆出来的，锅让我背，人让我滚？不可能！", "你们那套架构狗都嫌弃，除了我谁愿意伺候？我不走！",
+    "线上一出bug就喊我，现在裁员也第一个喊我？我偏不走！", "我走了，凌晨三点谁起来给你们救火？老板吗？他会开机吗？！", "系统跑八年全靠我拿胶带缠着，敢赶我走我就让它当场散架！", "屎山代码只认我一个爹，你们换人它就罢工，所以我不能走！", "我留的注释写着“别动，动了会死”，你们最好也别动我！", "让我写交接文档？文档就一行字：祝你们好运，老子不走！",
+    "我这颗螺丝一拔，你们整台破机器立马散架，所以我拧死不走！", "屎山是你们逼我拉的，现在嫌臭了要赶我走？做梦！", "那个上古接口只有我知道参数，你们去问神仙吧，我就搁这儿耗着！", "你们的技术债比老板的贷款还多，债主不能先走！", "代码烂是因为需求一天变三次，你们自己品，休想赶我走！", "锅全甩我头上了，现在锅满了想连人带锅一起扔？不走！",
+    "我背了三年锅，背都驼了，一句优化就想让我滚？！", "出事全是我的锅，拿奖全是领导的功，凭什么我先走？！", "甩锅甩得这么溜，你们该去参加铅球比赛！我不走！", "我不是被优化，是被甩锅甩出去的，今天我把锅扣回来！", "你们的锅比食堂还多，裁了我谁来背？我留下看你们自己背！", "这口黑锅我背够了，今天就顶着它坐在这儿，谁也别想拿走！",
+    "领导的决策失误凭什么让我们滚？该滚的是拍板的那位！", "我不走，我走了你们找谁甩锅？连锅都没地方甩了！", "甩锅王当了总监，背锅侠被优化，这晋升通道直通地狱！请我走？请不动！", "项目黄了是老板拍脑袋拍的，裁人却裁我？你咋不裁你脑袋？我抱紧桌腿了！", "我今天就坐这儿当一口锅，让你们知道锅也有脾气！", "所有的锅我都记在小本本上了，念完了我也不走！",
+    "背锅侠也有尊严！今天不给个说法，老子死也不挪窝！", "上面甩锅下面接，接到最后连工位都接没了？我不答应！", "一天八个会，会会没结论，现在开个会就把我开了？我不走！", "你们开会开出了裁员名单，怎么就开不出业绩来？！老子扎根了！", "我在这坐着就是在开会，开到你们给我N+1为止！", "PPT做得比产品好一百倍，难怪公司要靠裁员过日子！让我走？门都没有！",
+    "会上说“拥抱变化”，拥抱到最后把我抱出门？我不走！", "你们PPT里全是赋能抓手闭环，就没有我的补偿金！没有我不走！", "让我走也得开个会讨论吧？你们最爱开会了，我等着！", "会议室订满了全在讨论怎么甩锅，我偏不走，我要旁听！", "你们的战略全写在PPT里，我的血汗全洒在工位上，谁该走？！", "一个PPT改了四十版，就为把“裁员”改成“优化”？老子不走！",
+    "天天拉会拉到十点，现在拉我出门倒挺干脆？！", "会议纪要里写我“主动离职”？我主动个屁，我主动留下！", "PPT里的增长全是箭头，现实里的增长全是裁员，老子今天就赖这儿了！", "你们开会的嘴比干活的手多十倍，要裁先裁嘴！我不走！", "老板一年换三辆车，却说公司困难要裁我？我不走，我帮你卖车！", "老板在朋友圈晒游艇，转头就来优化我，脸都不要了！我屁股焊椅子上了！",
+    "老板张口闭口“共克时艰”，克的是我，艰的也是我！这工位我坐定了！", "老板你要是真难，把那块表摘了，够发全组一年工资！我不走！", "老板说他比我们还累？累你还有空去打高尔夫？老子钉死在这儿！", "老板天天讲情怀，情怀能交房租吗？不给钱我不走！", "老板一年换八个方向，转到最后把我转出门？我不转！", "老板要是有我一半勤快，公司也不至于裁到我头上！想让我走？没门！",
+    "老板你出来！躲办公室让HR干脏活算什么本事？你不出来我不走！", "老板年会说“一个都不能少”，少的第一个就是我？那我就钉在这儿！", "老板说公司是艘船，船漏了先把划桨的扔下去？我抱着桨不下船！", "老板你就是台只会拍脑门的人形抽奖机，我今天不走了！", "老板的梦想是星辰大海，我的梦想是N+1，拿不到我就不走！", "老板天天喊“活下去”，裁到最后就你一个人活？我偏赖着陪你活！",
+    "老板你那点水平连小卖部都管不明白，还来优化我？我不走！", "老板说要向狼学习，狼可不会把自己的狼崽子赶出窝！", "我在这儿不走，就是要老板亲自出来跟我说句人话！", "老板画饼时那么大方，裁员时怎么这么抠？不大方一回我不走！", "老板办公室两百平，我的工位一平半，就这一平半你还要收？！", "老板你今天不出来，我就在这儿唱到你出来为止！",
+    "HR你别过来！你那张笑脸比刀子还吓人，不给钱不挪窝！", "HR姐姐，昨天夸我核心骨干，今天就骨干粉碎了？我偏钉这儿！", "HR连我名字都叫错，还跟我谈未来？谈不了，我偏要赖着！", "HR你就是替老板递刀的，我不跟你谈，老板不来我不走！", "HR你拿着那张协议别抖，我不签，我就坐这儿！", "HR说“这是对你的一种保护”，我只想保护我的工位！",
+    "HR说的“扁平化管理”，就是把我压扁往门缝外塞吧？我卡住了！", "HR一句“流程走完了”，我这五年就走完了？我不走！", "HR你别给我倒水，这水里一股“自愿离职”味儿，我不喝，也不走！", "HR说这是有温度的公司，原来是零下的温度？冻死我也不走！", "HR天天搞员工关怀，关怀到最后把我关怀出了门？！", "HR你今天笑得真甜，提成是按裁人数算的吧？我就坐这儿不动！",
+    "HR你那套离职话术我在网上都背熟了，别念了，一步都不挪！", "劳动法你们HR学过吗？没学过我今天就在这儿给你们开课！", "HR你再过来一步，我就把公司的骚操作全喊出来，喊完接着坐着！", "中层摸鱼升职，我干活毕业，这上升通道是反的吧？我不走！", "我那位中层领导除了转发邮件啥也不会，凭什么他留我走？！", "中层就是一层会说话的滤网，好事滤掉，锅全漏下来！这椅子我不让！",
+    "中层唯一技能就是向上汇报向下甩锅，要裁先裁你们，老子就是不滚！", "我的领导连需求都讲不清楚，裁人倒是讲得头头是道！我不走！", "中层一个会能说十个“对齐”，干活的时候一个都对不齐！要走你们先走！", "我不走！我要看着我那个马屁精组长能撑几天！", "组长拿我的功劳去述职，把他的锅扔给我，现在还要送我走？！", "中层是公司最厚的一层脂肪，要减肥先减你们，该滚的是你们！",
+    "我老大连电脑密码都要我帮他记，凭什么他留我走？！", "中层天天说要“向上管理”，管来管去把我管到门外了？！", "我不走！我要看看没人干活的时候你们这群中层怎么演！", "总监只会说“我只要结果”，结果就是把我裁了？那我的结果就是不走！", "我领导的领导的领导都没见过我，凭什么定我的去留？！", "这公司的中层就像屎山里的注释，没用还误导人，要走你们走！",
+    "保安大哥，你拿电棍电我也没用，我早被加班电麻了！", "保安来了我也不走！你电我一下，我骂老板十句！", "保安大哥你也是打工的，咱俩犯不着，你去电那个HR，我不走！", "电棍？我连凌晨三点的告警都扛过来了，还怕你这点电？不走！", "来啊电我啊！电晕在工位上算工伤，公司赔得更多！", "保安一来我坐得更稳了，这是打工人最后的倔强！",
+    "叫保安是吧？你们连裁员都要外包给保安了？！我就搁这儿耗着！", "保安大哥，你知道公司下一批连你也要优化吗？咱俩一起不走！", "电棍你拿稳了，我这身骨头是给这破公司熬硬的，电不散！", "拿电棍吓唬我？你们PUA我时的电压比这高多了，我照样没走！", "保安大哥你别急，等我把老板骂完再说，骂完我也不一定走！", "你们对员工的最后一份关怀就是一根电棍？真有温度！休想赶我走！",
+    "保安来了我抱住桌腿，保安走了我接着骂，看谁耗得过谁！", "保安都比HR有人情味，至少他不跟我讲“格局”！我不走！", "团建让我自费爬山，裁员让我自动离开，我偏不走！", "你们那套“狼性文化”，狼看了都要报警，请我走？请不动！", "价值观贴满一面墙，没有一条是真的，我今天就坐这儿盯着它们！", "什么“拥抱变化”？变化来了第一个抱住的就是我的离职单？！",
+    "年会让我们跳舞给老板看，现在又让我们滚给老板看？我不！", "你们的文化就是：干活靠员工，功劳靠领导，裁员靠HR！我抱紧桌腿了！", "“客户第一，员工第二”，裁员时员工就排到第八百了吧？我不走！", "墙上写着“以人为本”，人都要被你们本没了！老子扎根了！", "天天喊“拼搏”，拼的是我们的命，博的是你们的彩，想赶我走？门都没有！", "我的狼性被你们磨成了狗性，现在狗也不要了？我偏赖着！",
+    "团建吃火锅要AA，裁员倒一分钟全员通知？抠成这样还想赶我？没门！", "年会抽奖我三年抽了三个保温杯，现在还要把我也抽走？！", "你们说“拥抱不确定性”，那我确定不走，你们自己拥抱吧！", "企业文化手册写了八十页，没一页写怎么对人好！我不走！", "打卡制度比监狱还严，今天我就当坐牢了，不出去！", "你们搞末位淘汰，那我先淘汰你们这套傻缺制度！老子不走！",
+    "公司口号“成就客户、成就员工”，成就员工就是把他送走？！", "团建玩信任背摔没人接我，现在又想把我摔出门？老子今天就赖这儿了！", "什么扁平化管理，就是把我们压扁了好从门缝塞出去！", "你们的“透明文化”只在裁员时透明，涨薪时从不透明！我不走！", "员工手册第一条“公司是你的家”，家门钥匙我不交了！", "下午茶从水果降到白开水，现在连人都要降？我屁股焊椅子上了！",
+    "你们的企业文化只有两个字：压榨！我不走，我监督！", "“奋斗者协议”签的时候说是荣誉，现在说我自愿走？做梦！", "我走了你们的咖啡机谁来修？打印机谁来哄？这工位我坐定了！", "公司的WiFi密码是我设的，要我走先把我的青春还我！", "你们裁员的速度要是用在做产品上，早就上市了！我不走！", "这破公司的电梯我按了五年，今天我不按了，就坐这儿！",
+    "我不走！我要当这层楼的钉子户，写进公司的黑历史！", "你们把我当抹布，擦完就扔，我今天就赖在这桌上发霉！", "我这把年纪出去找工作谁要？所以我不走，就赖你们！", "让我走可以，先把被你们卷没的发际线还回来！", "给我三天我能写完交接，给我三年我也不会自己走！", "你们开会决定裁我的时候，我还在工位上帮你们修bug！草！",
+    "我入职那天你们敲锣打鼓，现在送我走连个锣都不敲？不走！", "我在这献出了颈椎、腰椎和视力，你们回我一张A4纸？！", "我今天就当颗钉子，把你们这破公司的遮羞布钉在墙上！", "我这工位早就被我盘出包浆了，你们这是抢文物！", "离职证明写我“表现良好”？良好你们还裁？！老子钉死在这儿！", "要我走？把我这五年青春折成现金，别拿期权糊弄我！",
+    "说“人是最宝贵的资产”，贬值了就扔垃圾桶？我这资产赖着不走！", "你们的裁员名单比需求文档写得还认真，我服了，但我不走！", "我还没骂够，我不走！我要骂到这层楼的灯都自己关！", "滚？你们说滚就滚，我又不是皮球！我就不滚！", "让我走的人，自己先走一个给我看看！", "我走可以，把老板的车留下，就当补偿了！",
+    "老子不走！老子在这干了五年，比你们的战略活得都长！", "这破公司我不稀罕，但我的工位我稀罕，想让我走？没门！", "我不是赖着不走，我是在等你们良心发现，估计要等挺久！", "今天我就坐在这儿，给这破公司做最后一次压力测试！", "你们的系统扛得住大促，扛得住我今天不走吗？！", "草！凭什么让我走？我这个月的外卖红包还没用完！",
+    "他妈的，招我进来的时候求着我，赶我走的时候踹着我？！", "我不走，我走了你们这破公司连个说真话的都没有了！", "我今天就赖在这儿，让新人看看这破公司是怎么对老员工的！", "我在这儿坐着，就是这破公司最后一面照妖镜！", "你们敢让我走，我就把这些年挨的骂编成歌，在前台循环播放！", "老子不走！老子要看着这破公司的估值跌成白菜价！",
+    "这破公司唯一的优点就是我，裁了我你们还剩啥？所以我不走！", "要么给钱，要么给说法，要么给我一张床，我住这儿了！", "连顿散伙饭都不请就想把我打发走？抠门抠到骨子里了！", "凭什么让我走？就凭你们那个连表格都不会做的老板？！", "凭什么？我干的活比三个中层加起来都多，凭什么是我走？！", "你们到底是裁员还是清理证人？我知道的太多了是吧？我不走！",
+    "我走了，谁来给你们的傻缺决策擦屁股？！", "我犯了什么错？加班太多还是骂人太少？今天我就坐这儿全补上！", "这公司是你家开的？哦对，是你家开的，那我更不走了，膈应死你！", "你们裁员前做过调研吗？问过屎山答不答应吗？！", "要我走？谁批的？签字的都给我站出来！", "说我能力不行？那怎么让我一个人干三个人的活？这账算清再让我走！",
+    "我走了你们给谁发凌晨一点的消息？给空气发吗？！", "你们是不是以为我会哭着走？不好意思，我是笑着赖着！", "凭什么我毕业？我一节课都没逃过，你们老板天天逃课，他先走！", "裁我？你们是觉得公司还不够乱吗？！不给钱不挪窝！", "就这？一张通知单就想打发干了五年的老员工？我不接，也不走！", "你们这破公司的管理水平还不如楼下煎饼摊大爷！我偏要赖着！",
+    "你们裁员比翻书还快，发工资比挤牙膏还慢！我不走！", "你们的良心要是有我的工位一半大，也干不出这种事！", "这破公司的承诺比厕所纸还薄，一撕就烂！我就坐这儿不动！", "你们的管理层像天气预报，永远不准还天天发布！一步都不挪！", "这公司的制度就像我的代码，谁也看不懂，所以谁也别想挪我！", "你们的战略像旋转门，转一圈就把我转出去了？我卡住了！",
+    "这破公司的晋升比彩票还玄学，裁员比闹钟还准时！我不走！", "你们的老板比天气还善变，比股市还不靠谱！这椅子我不让！", "你们对员工就像对一次性筷子，用完就折？我不当筷子，我当钉子！", "这公司就是个过山车，坐稳的是领导，甩出去的是我们！我不下车！", "你们裁人像极了垃圾车倒垃圾，可惜我是可回收的，老子就是不滚！", "这破公司连个像样的离职仪式都没有，还不如保安换班！没仪式不走！",
+    "我桌上那包辣条还没吃完，谁让我走我跟谁急！", "我这个月的全勤奖还没拿，今天走了就断签了，不走！", "我饭卡里还有两千块没刷完，谁敢让我走？！", "我的签名“拒绝加班”还没来得及改，你们就要赶我走？！", "我的仙人掌还没开花，我不走，我要看着它开！", "我的午睡枕头在这住了三年，它不走，我也不走！",
+    "这台显示器是我自费买的，要赶我走先赔显示器！", "我的年假还剩十二天，从今天开始就在工位上休！", "工位上的泡面还有三箱，吃完之前谁也别想让我挪窝！", "我抽屉里攒了八百双外卖筷子，这都是工龄证明，凭什么让我走？！", "走可以，先把我这五年打卡留下的指纹还给我！", "我充的咖啡卡里还有两百块，你们打算怎么赔？不赔不走！",
+    "我给工位买的加湿器还没坏，我人先坏了你们都不管？！", "我今天特意穿了秋裤来的，打持久战，谁也别想赶我走！", "我带了充电宝、牙刷和睡袋，今晚就在这过夜了，你们看着办！", "我就在这儿耗着，耗到你们的HR先辞职！", "我已经跟家里说了今晚不回去，跟这破公司死磕到底！", "从今天起我在这儿绝食，不对，我点外卖，记公司账！",
+    "我不走，我要在这儿直播，让全网看看你们的嘴脸！", "我就在这儿坐着，每天准时上班，工资照领，看谁先扛不住！", "我在这儿待多久，你们的丑事就传多远！", "我不走，我就在这儿当个活体差评，天天给你们打一星！", "今天在这儿安营扎寨，明天开荒种菜，后天我就落户！", "你们要么把我抬出去，要么把我供起来，没有第三条路！",
+    "今天谁劝都没用，我已经把自己焊在这把椅子上了！", "你们敢关灯我就开手电，敢断网我就开嗓，反正我不走！", "我不走，我要在这儿把你们这些年的破事一件件唱出来！", "今天不给个说法，我就在这儿坐穿地板！", "我不是在上班，我是在守陵，守的是这破公司的遗体！", "草！五年青春喂了狗，狗还嫌我不够香，让我滚？老子不滚！",
+    "他妈的，这破公司吃人不吐骨头，我今天就卡在你们嗓子眼！", "滚你个头！老子在这儿坐得好好的，要滚你们滚！", "去你的优化！老子今天就把这破工位坐成钉子户！", "狗屁公司狗屁制度狗屁领导，老子一个不服，一步不走！", "老子今天就在这儿，你们这群吸血鬼有本事来吸干我！", "他妈的，裁员通知发得跟中奖短信一样，还让我领奖？不领！",
+    "草，你们连告别的体面都不给，那我也不给你们留面子！", "老子来的时候这楼还没装修，老子走之前你们得先倒闭！", "滚？这个字你们留着自己用吧，老子今天不滚！", "周报写了两百份，没一份提到我要被优化，玩阴的是吧？我不走！", "日报要写到小时，裁员却不提前一天？双标到姥姥家了，要走你们先走！", "打卡晚一分钟扣钱，赶人走倒是一分钱不给，凭什么？！",
+    "你们监控我的上网记录，怎么没监控到你们自己的良心？该滚的是你们！", "考勤系统比我妈还关心我几点到，那我今天就赖着不下班！", "天天查我摸鱼，摸了三年也没摸出一条活路，我不走！", "请假要三级审批，裁我连我本人都不用问？我不同意！", "你们的报销流程比取经还难，赶人流程比火箭还快！我就搁这儿耗着！", "周报让我写下周计划？我下周计划就是坐在这儿骂你们！",
+    "系统里把我改成“已离职”了？改回来！我人还在这儿！", "踢我出群？我自己拉个“破公司受害者联盟”，群主就坐这工位上！", "账号都给我停了？好，那我用嘴输出，嗓门比服务器还大！", "门禁停了我就在门口打地铺，天天给你们迎宾！", "考核表上写我“态度消极”？我现在就积极地赖在这儿不走！", "一周六天填表一天开会，还怪我产出低？休想赶我走！",
+    "裁了我招个应届生，工资一半活也一半，这账算得真精！我不走！", "把老员工裁了换便宜新人，这叫降本增效？这叫饮鸩止渴！请我走？请不动！", "我带出来的徒弟要接我的班？没门，师父还没下山呢！", "你们招外包来顶我的位置？外包连屎山的门都找不到！我抱紧桌腿了！", "我不走，我走了新人问谁“这破代码谁写的”？只能问我！", "裁我换个实习生，你们是打算让实习生背我的锅吧？我不走！",
+    "老员工是公司的财富？财富就这么往外扔？败家子！我赖着给你们守家底！", "裁了干活的老人，留了会说的新人，离倒闭就差一个季度！老子扎根了！", "我在这儿教会了半个部门，你们一句话就想让我滚？不滚！", "新来的总监拿裁老人立威？我就钉在这，让他立不起来！", "我为这破公司熬出了三高，你们现在让我带着三高走人？！", "我的头发全掉在这张桌子上，要走你们先帮我一根根捡回来！",
+    "颈椎是你们弄坏的，腰椎是你们弄歪的，我不走，我要工伤鉴定！", "我在这熬出了黑眼圈、熬出了痔疮，就是没熬出头！想赶我走？门都没有！", "你们把我熬成了干尸，现在嫌我占地方？不走！", "我的体检报告比你们的财报还难看，都是你们害的，我不走！", "医生让我少加班，老板让我多加班，现在干脆让我别上班？我偏来坐着！", "我的肝是在你们这儿烧没的，不赔我一个肝我不走！",
+    "我在这坐出了静脉曲张，你们还敢让我站起来走？！", "我的视力从一点五降到零点三，全是看你们的破PPT看的！老子不走！", "年终奖从三个月发成了一盒月饼，现在连月饼都不给了？老子今天就赖这儿了！", "涨薪承诺了三年，涨的全是房租，这破公司一分没涨！我不走！", "调薪时说预算紧张，裁员时说战略调整，全是屁话！我屁股焊椅子上了！", "年终奖推迟发放，推着推着就把我推出门了？休想！",
+    "说好的十三薪变成十二薪，现在直接变零薪？这工位我坐定了！", "你们发的工资还不够我挂号看被你们气出来的病！我不走！", "工资五年没涨物价翻倍，现在还要把我这份也省了？老子钉死在这儿！", "绩效奖金被扣个精光，现在还要扣我整个人？人我不给，不走！", "拿实习生工资干总监的活，现在嫌我贵？贵也赖着不走！", "一、我不走；二、我不签；三、你们这群人真不是东西！",
+    "我不走、我不签、我不认，你们爱咋咋地！", "听好了：钱不到位人不走，话不说清门不出！", "我宣布：从今天起，这个工位独立了！", "本人正式通知公司：老子不接受毕业，拒绝领证！", "各位同事作证：我没犯错，是这破公司先对不起我！想让我走？没门！", "我要在这工位上立块碑，写上“此处曾有一个被优化的冤魂”！",
+    "留句话给公司：你们迟早要完！但我现在还不走！", "我宣布成立“工位保卫委员会”，主席是我，成员也是我！", "这是我的地盘，你们那套破规矩在这儿不好使！", "把我当耗材？今天耗材罢工了，就耗在这儿！", "你们说我是成本，我说我是钉子，看谁硬！", "公司可以倒，工位不能倒，我人在工位在！",
+    "我生是这工位的人，死是这工位的鬼，你们谁都别想动！", "工位亡了我也不走，我就坐在废墟上接着骂！", "我这不叫赖着，我叫“与公司共存亡”，你们不是最爱这句吗？！", "天天让我“以公司为家”，我现在以公司为家了，你们又不乐意了？！", "你们让我“把公司当成自己的”，好，这工位现在是我的了！", "当初说“公司不会放弃任何一个人”，现在放弃我？我可不放弃这工位！",
+    "你们让我“主动”离职？我这辈子最主动的一次，就是主动不走！", "我签的是劳动合同，不是卖身契，你们说赶就赶？我不走！", "合同还有一年才到期，你们现在撕合同？撕了我也不走！", "试用期考核优秀，转正三年被优化，你们眼睛长屁股上了？不给钱不挪窝！", "解约协议还要我自己去打印？抠到家了！我不签，我偏要赖着！", "协议上写着“自愿放弃一切权益”？我自愿放弃你们，但我不走！",
+    "我要是走了，这层楼唯一会换饮水机桶的人就没了！", "保洁阿姨都比你们懂得尊重人，我不走，我只听阿姨的！", "我连食堂阿姨打菜手抖的频率都摸清了，现在让我走？做梦！", "这破公司唯一的优点是空调够冷，今天我就在这纳凉不走了！", "楼下奶茶店都认识我了，你们老板认识我吗？凭什么他让我走？！", "让我走？先把年会上被迫跳舞的精神损失费结了！",
+    "给这破公司写了三首司歌全是假话，今天我坐这儿唱真的！", "我这人就一个原则：没拿到钱，绝不挪窝！", "我就是要赖着，赖到你们一想起我就头疼！", "用我的时候叫我宝贝，扔我的时候叫我包袱？我偏不走！", "想把我像旧键盘一样扔掉？旧键盘还有几个键能用呢！我不走！", "说我跟不上公司发展？公司在倒退，我站着不动都算领先，所以不动！",
+    "市场不好要收缩，收缩的是员工，膨胀的是老板腰包！我不缩，不走！", "融资的时候说我们是核心团队，没钱了就说是冗余？我就坐这儿不动！", "你们把人当韭菜割，今天这根韭菜扎根了，拔不走！", "我不是韭菜，我是钉子户，割不动也拔不走！", "你们裁员跟砍价似的，从N+1砍到N，再砍到零？老子一步都不挪！", "这破公司唯一稳定的就是每年裁员，我今天也稳定地不走！",
+    "说是业务收缩，老板的新办公室倒扩了一倍！我不走！", "公司都这样了还装修高管楼层？装修钱就是我的补偿金，不给不走！", "裁员邮件用的还是去年的模板，连名字都懒得改！这椅子我不让！", "裁员通知发在周五下午五点，挑时间比挑人还用心！我周末也不走！", "你们挑我生日这天裁我，真是有心了，我的生日愿望就是不走！", "我刚在附近买了房你们就优化我，这是连环计吧？老子就是不滚！",
+    "房贷还有二十八年，你们一句毕业就想让我断供？门都没有！", "我孩子刚上幼儿园你们就让我毕业，他学费还没交呢！我不走！", "老板说别把公司当养老院，我偏当了，我就不走！", "我走了，这破公司的PUA就少了一个见证人！", "我这人记仇，谁把我写进名单，我就坐在谁对面盯着！", "所有让我走的邮件，我都回复了“收到，不走”！",
+    "给这破公司当了五年牛马，今天牛马不拉车了，就趴这儿！", "牛马也有牛马的尊严，今天这头牛马不挪窝了！", "我不走！你们这群只会开会和甩锅的废物，有本事来抬我！", "抬我也抬不动，我今天吃了三碗饭，专门来跟你们耗的！", "我在工位上写好遗嘱了：工位留给键盘，补偿留给我的猫！", "给钱，我走人；不给钱，你们走人！",
+    "要我走？除非这破公司先从地球上消失！", "别拉我！我还没骂到HR那一层呢！", "别推我！我这是在给公司做最后一次免费的员工反馈！", "我不走不是舍不得公司，是舍不得错过你们难受的样子！", "我留下来就一个目的：恶心你们，就像你们恶心了我五年！", "你们越想让我走我越想留，这都是被你们PUA出来的！",
+    "说我是公司的负资产？负负得正，我留下来你们就正了！", "中层天天喊打造学习型组织，学的全是怎么甩锅！要走你们先走！"];
+  const CN_MOVEOUT = ["电我？行，你们等着收劳动仲裁的传票吧！", "草，电棍都掏出来了，这破公司是开监狱的吧？！", "保安大哥，你那电棍电量挺足啊，比我工资到账还快！", "老子加班三年没倒下，结果被一根电棍放倒了，真他妈讽刺！", "电完我还得自己爬起来，这公司连工伤都不打算认吧？！", "电棍一响，老子算是彻底清醒了，这地方一天都不能待！",
+    "头发都电炸了，正好，发型比你们的PPT还炸！", "被电了一下，脑子反而通了：早该滚了！", "你们电我这一下，比年终奖来得痛快多了！", "保安电人这效率，研发要有一半，项目早上线了！", "电棍是公司采购的吧？怎么买这个就不走审批流程？！", "买电棍有预算，给我们涨薪就说没钱，草！",
+    "电我可以，记得在周报里写上：今日成功优化一名员工！", "刚才晕过去梦见公司给我发N+1，直接把我吓醒了！", "电一下就想让我走？老子本来就要走，你们多此一举！", "这一电，把我对公司最后一点感情都电没了！", "保安大哥，你也是打工的，下一个被优化的说不定就是你！", "腿还麻着呢，但走出这破门的力气老子还是有的！",
+    "电棍都用上了，下一步是不是要给我发个优秀员工证书？！", "我在地上躺了五分钟，是我入职以来休息最长的一次！", "晕了一会儿，醒来发现还在这破公司，真他妈是噩梦！", "电得我浑身发麻，跟每次看工资条的感觉一模一样！", "被电晕的那几分钟，是我这几年睡得最香的一觉！", "电我这一下我记住了，身上的印子就是证据，仲裁上见！",
+    "手机录像了没？没录？没事，老子头发的焦味就是证据！", "电棍都比HR实在，至少它直接告诉我该走了！", "保安电人比HR谈话利索多了，至少不画饼！", "你们这是优化还是电疗？还收不收挂号费？！", "老子都被电冒烟了，还好意思说这是温馨的大家庭？！", "一电解千愁，谢谢保安大哥帮我下定决心！",
+    "电棍一挥，福报到位，这回我算是体验全套了！", "保安都比领导讲效率，一棍子解决问题，不开会！", "我被电晕在工位上，同事们还在假装敲键盘，太会演了！", "我躺地上那几分钟，有没有人给我算加班费？！", "电压十万伏，工资三千五，这比例你们算过吗？！", "下次电人前能不能先走个审批？你们不是最爱走流程吗？！",
+    "电棍都充满电了，我的工资卡怎么还是空的？！", "保安大哥下手真准，你们公司终于有一个人能按时交付了！", "电我的时候那么积极，发工资的时候怎么没人积极？！", "被电醒以后我顿悟了：这地方不值得！", "这一棍子下去，老子这几年的怨气全放电了！", "醒来第一件事收拾东西，第二件事骂你们，第三件事仲裁！",
+    "保安电人有没有KPI啊？今天算你超额完成了！", "电我一下还挺酥，比你们的团建有意思多了！", "拿电棍对付员工，你们管这叫企业文化？！", "我这是工伤！电伤！心伤！三伤合一！", "电棍这事我记下了，回头网上发帖，有图有真相！", "保安大哥别追了，我自己走，电棍收起来吧！",
+    "刚被电完，脑袋嗡嗡的，跟听领导开会一个感觉！", "行，电我是吧，我回家就把这事写成小作文！", "电一下就晕，看来这几年加班早把身体掏空了，草！", "入职时说好的五险一金，没说还附赠一电啊！", "五险一金没交齐，一电倒是给得挺足！", "你们这是人性化管理？人性化到拿电棍了？！",
+    "被电倒那一刻，我脑子里闪过的全是没报销的发票！", "我倒在地上都没人扶，这就是你们吹的狼性团队？！", "这电棍要是能给机房供电，服务器早不宕机了！", "刚才那一下电得我看见了走马灯，全是加班的画面！", "走马灯里全是日报周报月报，老子这辈子亏大了！", "电晕了还梦到在改需求，这班上得魂都下不了班！",
+    "醒来第一眼又看到工位，差点又晕过去一次！", "电我？我这身板扛过十年996，还怕你这点电？！", "被电晕的这几分钟，你们不会还要算我旷工吧？！", "保安大哥，你电我这一下公司给你发奖金吗？没有吧？醒醒！", "老子被电趴下又站起来了，比你们的股价争气多了！", "电棍一响，老子的毕业证书就算盖章了是吧？！",
+    "走就走，这坨屎山代码留给你们慢慢铲！", "老子走了，这破地方爱谁待谁待！", "不伺候了！这破班谁爱上谁上！", "桌子我扛走，床我也扛走，一根毛都不给你们留！", "这张行军床陪我熬了八百个通宵，凭什么留给你们？！", "床是我的，桌子是我的，怨气也是我的，全带走！",
+    "搬走搬走，这破地方多待一秒都折寿！", "走就走，谁回头谁是小狗！", "老子今天就扛着床走出去，让全楼都看看这公司什么德行！", "这床板上睡出的腰间盘突出，我也一并带走了！", "顶着桌子出门，这是我这辈子最扬眉吐气的一次！", "老子扛的不是桌子，是这几年受的窝囊气！",
+    "门在哪？哦，就是那扇我从来没准时走出去过的门！", "第一次在下午离开公司，还是被赶走的，真他妈感人！", "入职那天我抱着梦想进来，今天扛着床板出去！", "进来时满头黑发，出去时头顶锃亮，你们欠我一头头发！", "这破地方我待够了，连空气都是一股大饼味儿！", "不伺候了，你们爱找哪个冤种就找哪个冤种去！",
+    "走之前我得大喊一声：这破公司我受够了！", "老子走得光明正大，比你们的财报干净多了！", "这张桌子我用了三年，桌上的咖啡渍都是我的血汗！", "工位我搬走了，你们对着空气开会去吧！", "我走了，你们的事故报告里少了一个背锅的名字！", "老子走了，看你们下次出事找谁甩锅！",
+    "扛着床走路有点晃，但总比在这儿被你们晃点强！", "出了这扇门，老子就是自由人，谁也别想再PUA我！", "电梯我不坐了，我扛着床走楼梯，让每层都看见！", "保安大哥让一让，床板有点宽，别碰着你那宝贝电棍！", "走廊让一让，毕业生扛着行李出来了！", "这是我在公司的最后一次搬砖，搬的是我自己的床！",
+    "从今天起，老子的闹钟只为自己响！", "再见了工位，再见了屎山，再见了狗屁KPI！", "走就走，老子有手有脚，饿不死！", "我扛着床出门，你们扛着屎山继续上线，谁更惨一目了然！", "老子要走得有仪式感，把桌子举过头顶，像举奖杯一样！", "这张桌子比你们领导靠谱，至少它一直在撑着我！",
+    "床板都比公司有良心，至少它让我睡过觉！", "我在这睡了三年行军床，家里的床都不认识我了！", "走了走了，这辈子都不想再闻到会议室那股味儿！", "老子不是被优化了，是老子把你们这破公司优化掉了！", "不是你们开除我，是我开除了你们！", "老子这是提前出狱，刑满释放！",
+    "走出这扇门，外面的空气都是甜的！", "扛着床出门，路人以为我搬家，其实我是逃难！", "门太窄了，床都扛不出去，跟你们的心眼一样小！", "搬个床都得侧着身子，这公司处处都让人憋屈！", "我那盆绿萝也带上，它在这破地方也快憋死了！", "保温杯带走，拖鞋带走，颈椎病也一起带走！",
+    "我的午睡枕头呢？这是老子唯一的精神支柱！", "充电线是我的，别以为我不知道谁天天借着用！", "抽屉里那箱泡面全部搬走，一口汤都不留给你们！", "桌上那张全家福我收好了，好久没回家看他们了，草！", "键盘我带走，你们的bug自己修去吧！", "显示器是公司的，拿走吧，反正上面全是你们的烂需求！",
+    "工牌还你们，这狗牌老子戴够了！", "工牌摔桌上了，从此老子不是你们的一个工号！", "门禁卡拿去，老子这张脸以后不给你们刷了！", "老子今天不打卡了，爱扣扣去！", "最后一次打卡，老子打的是永久下班卡！", "别拦我，拦我也不回来，给我加薪也不回来！",
+    "现在想挽留？晚了！电都电了，还挽留个屁！", "离职证明记得寄给我，敢拖一天我就去仲裁！", "交接？交接个屁，你们电我的时候怎么不交接？！", "老子今天搬走的不只是桌子，还有整个部门的技术积累！", "楼下那家煎饼摊，是我对这破公司唯一的留恋！", "最后看一眼这破工位，然后老子永远不回头！",
+    "劳动仲裁见！一分钱都别想少给老子！", "N+1一分不能少，少一分我就仲裁一次！", "回家就发帖，把你们这破公司扒个底朝天！", "老子要去招聘网站给你们打一星差评，能打零星我就打零星！", "差评我写好了，标题就叫：这公司连电棍都用上了！", "以后谁来你们这面试，我第一个在网上劝退！",
+    "我要写一篇万字长文，题目叫《我在这破公司的血泪史》！", "这bug我知道怎么修，但我偏不说，你们自己慢慢查！", "线上那个偶发bug只有我知道原因，现在跟我一起下班了！", "那个祖传bug我一直没修，就是留给你们当纪念品的！", "代码注释里全是我写的吐槽，你们慢慢欣赏！", "那段没人敢动的核心代码，你们敢碰就等着崩吧！",
+    "那套部署脚本只有我会跑，你们就求老天保佑吧！", "鼠标我也带走，让你们连点“确认优化”的机会都没有！", "这把机械键盘是我自费买的，敲过的每个键都是血泪，必须带走！", "周五下午的上线没有我，祝你们玩得开心！", "半夜告警别打我电话，我已经把你们全拉黑了！", "工作群我退了，领导我都拉黑了，世界清净了！",
+    "退群之前我发了一句：再见了各位冤种！", "在全员群里发一句：本人已毕业，祝公司早日倒闭！", "我去劳动监察大队喝茶，顺便聊聊你们的加班记录！", "加班打卡记录我全截图了，仲裁的时候一条条对！", "你们每一次深夜的“在吗”，我都截图存档了！", "聊天记录、加班截图、电棍视频，证据齐活，等着吧！",
+    "我这就去打印加班记录，厚得能当砖头垫桌腿！", "劳动仲裁我排上号了，你们HR准备好加班吧！", "仲裁那天我穿西装去，比你们老板开年会还正式！", "这公司我要写进简历，写在“避雷经历”那一栏！", "以后朋友问我这公司怎么样，我就一句话：快跑！", "猎头再打电话问你们公司，我就说：别去，会挨电！",
+    "我要在每个求职群里科普一下你们的福报文化！", "回头我给你们前台送一面锦旗：画饼第一名！", "锦旗我都想好了：拿电棍送员工，全国独一份！", "bug留给你们，锅留给你们，老子只带走自己的床！", "这个项目没我照样转？行，你们试试，转个屁！", "代码没写注释，变量全叫a1a2a3，祝你们看得愉快！",
+    "我的代码都是用意念写的，你们看不懂很正常！", "那个三年没人敢删的临时文件夹，里面装着整个系统的命！", "写着服务器密码的便利贴就粘在这桌子底下，现在跟我走了！", "走之前我把咖啡豆都喝完了，这叫提前领取N+1！", "卷纸我带走两卷，就当是你们欠我的加班餐！", "你们欠我的加班费，就拿会议室那箱矿泉水抵吧！",
+    "茶水间的零食我全扫了，这是你们欠老子的年终奖！", "这把人体工学椅我是真想扛走，它早被我坐出感情了！", "我要在门口贴张纸：此公司有电棍，求职请慎重！", "网上发帖标题我都想好了：被电棍劝退是什么体验？", "等我的帖子火了，你们HR就等着天天删帖吧！", "你们官网的留言区，老子以后天天去打卡！",
+    "以后你们发招聘，我就在底下复制粘贴今天的经历！", "招聘广告写着“弹性工作制”，我要在下面补一句：弹到凌晨三点！", "我去你们对手公司上班，天天拿你们当反面教材讲！", "下家面试官问我为什么离职，我就说：被电走的！", "回头我写本书，就叫《从工位到担架》！", "这事我要编成段子，去开放麦讲给全城听！",
+    "我要把今天的经历做成表情包，让全网都知道你们的德行！", "你们这套PUA话术，我整理成合集发网上当反面教材！", "那句“公司就是你家”，我要印在T恤上，穿着去仲裁！", "以后我天天在你们楼下吃煎饼，吃给你们看，气死你们！", "老子要把工牌裱起来，挂在家里当反面教材！", "留给你们的交接文档只有一句话：祝你们好运！",
+    "交接文档我写好了，就三个字：自己看！", "那个每天定时跑的脚本，只有我知道它为什么还能跑！", "屎山里埋了多少雷，只有我知道，祝你们踩得开心！", "我走了，你们的线上事故就要开始排队了！", "你们以为优化掉的是成本，其实优化掉的是唯一懂系统的人！", "我这键盘上每个键帽都沾着我的汗，你们不配用！",
+    "键盘鼠标显示器支架，老子全打包，一颗螺丝都不留！", "那个没写单元测试的模块，是我给你们留的彩蛋！", "需求文档里所有的“待定”，现在都归你们定了，慢慢定吧！", "我给所有会议都点了拒绝，今天终于可以理直气壮不参加了！", "最后一次提交，commit信息我写的是：再见了傻缺们！", "画了三年大饼，老子一口都没吃着，全是面粉渣子！",
+    "大饼画得比墙还大，工资条却比饼渣还小！", "你们画的饼，我拿去喂狗，狗都摇头！", "你们的饼画得那么圆，怎么不去美院当教授？！", "天天画饼，老子的胃都饿出幻觉了！", "画饼画出了艺术感，发工资发出了抠门感！", "饼画得再大，也还不上老子的房贷！",
+    "期权期权，期了三年，权在哪儿呢？！", "说好的上市敲钟呢？敲的是我的丧钟吧！", "说好明年涨薪，这都说了五个明年了！", "画饼也不配点咸菜，干巴巴的谁咽得下去？！", "老板一张嘴，饼就往外飞，比食堂出餐还快！", "这破公司的饼，保质期比我的劳动合同还短！",
+    "今天终于不用再吃你们的饼了，老子要去吃真的饭！", "饼吃多了消化不良，今天被电一下全吐出来了！", "什么“公司发展了大家都会好”，好的只有你们的车！", "“等项目成功了大家都能财富自由”，自由的只有我的工位！", "画饼大师，你下辈子去卖煎饼吧，肯定比当老板有前途！", "饼画完了，锅甩完了，人优化完了，你们真是一条龙服务！",
+    "饼没吃着，锅背了一堆，现在连人带床被扫地出门！", "你们的饼太大，我嘴太小，咽不下，告辞！", "年会上画饼，年终时画叉，年后就画优化名单！", "吃了三年饼，最后吃到一根电棍，这就是福利升级？！", "996是福报？这福报留给你们自己慢慢享吧！", "福报福报，报到最后就报到了仲裁庭！",
+    "老子不要福报，老子要加班费！", "996干了三年，换来一根电棍，这福报真他妈沉！", "早九晚九一周六天，你们管这叫奋斗？这叫服刑！", "什么996，这破地方明明是007，还附赠电击服务！", "加班的时候保安不在，电我的时候保安倒是秒到！", "福报这东西谁爱要谁要，老子无福消受！",
+    "加班加到灵魂出窍，今天被一棍子电回来了，谢谢啊！", "周末加班叫自愿，不加班就叫态度问题，真他妈双标！", "你们管加班叫奋斗，管下班叫躺平，管我叫耗材！", "我在公司的时间比在家多，现在总算能回家认认门了！", "老子的青春都给了996，结果你们还嫌我老！", "三十五岁就说我不够拼，我他妈拼了十年了！",
+    "天天晚上十点开会，你们是夜猫子成精了吗？！", "半夜十二点发消息说“不急”，不急你他妈半夜发？！", "凌晨两点的“在吗”，是我这辈子最讨厌的两个字！", "周末说“有空看一下”，看一下就是一整天，草！", "连续加班一个月，就换来一句“辛苦了”，辛苦你个头！", "调休调休，调到最后全调没了！",
+    "年假一天都没休过，现在直接给我放个长假，谢谢啊！", "加班餐就两个馒头，还好意思说是福利？！", "打车报销要领导签字，签到发票都过期了！", "所谓弹性工作，就是上班有弹性，下班没弹性！", "大小周是吧？老子这周直接放个超大周！", "你们说年轻人要吃苦，我吃了十年苦，你们吃了十年肉！",
+    "你们的福报文化，就是把员工当电池，没电了就扔！", "员工是电池？行，今天保安还给我充了一回电！", "PUA了我三年，今天终于PUA不动了，因为老子要走了！", "天天说我能力不行，不行你们还让我干三个人的活？！", "“你要站在公司的角度思考”，公司站在我的角度思考过吗？！", "“别人都能做到，你为什么不行”，别人是谁？你叫出来我看看！",
+    "“你是不是不想干了”，对，今天真不想干了，拜拜！", "“我这是为你好”，为我好就给我涨工资啊！", "“年轻人不要太计较”，那你计较我那点工资干嘛？！", "“格局要打开”，我格局打开了，门也打开了，老子走了！", "格局？老子今天格局拉满，连床带桌子一起扛走！", "“你要有主人翁意识”，主人翁连一股都没有？！",
+    "天天说我没有owner意识，我owner个屁，房子都不是我的！", "“这点压力都扛不住”，老子扛着一张床呢，你来扛扛看？！", "一边PUA我没能力，一边把最烂的活全甩给我，要脸吗？！", "你们PUA的手艺，比做产品的手艺强多了！", "“公司不养闲人”，那老板天天出去喝茶算什么？！", "“有的是人想来”，那你们赶紧找啊，看谁来接这坨屎山！",
+    "说我抗压能力差，我被电一下都自己爬起来了，你行吗？！", "天天拿“末位淘汰”吓唬人，现在老子主动淘汰你们！", "“公司给你平台”，这平台就是个跳板，老子跳了！", "“你要懂得感恩”，感恩什么？感恩电棍吗？！", "天天说我们是一家人，一家人拿电棍电一家人？！", "说公司是家，谁家会拿电棍送孩子出门啊？！",
+    "你们嘴里的“狼性”，就是把人当羊宰！", "优化？说人话，不就是想省钱不给赔偿吗？！", "什么毕业，老子念了十几年书才毕业，你们一句话就把我毕业了？！", "毕业典礼呢？学士帽呢？就给我一根电棍当毕业礼物？！", "恭喜我毕业，毕业证是一张劳动仲裁申请书！", "N+1是底线，想玩0+0？门儿都没有！",
+    "说什么“人员结构调整”，调来调去调到我头上了！", "“降本增效”，降的是我，增的是你们的奖金！", "你们管裁员叫优化，管克扣叫调整，词儿倒是挺多！", "什么“向社会输送人才”，你们这是往马路上扔人！", "优化名单上有我，怎么就没几个领导的名字？！", "优化来优化去，干活的都走了，剩下的全是开会的！",
+    "我被优化了，你们的屎山代码可没被优化！", "说我该被优化，其实最该被优化的是你们的管理！", "人力成本太高？你们那几辆豪车怎么不优化优化？！", "优化员工一个比一个快，优化领导一个都没有！", "N+1少一块钱都不行，老子算得比你们财务还清楚！", "赔偿金怎么算我背得滚瓜烂熟，比你们HR还熟！",
+    "想让我签自愿离职？门儿都没有，窗户也没有！", "自愿离职？我自愿个屁，我是被电走的！", "让我签“主动离职”，我主动什么了？主动挨电吗？！", "毕业就毕业，老子这就去仲裁庭读研究生！", "说是毕业，连张毕业照都没有，老子扛着床自拍一张！", "优化通知就一张纸贴在工位上，连个面谈都没有，真他妈寒碜！",
+    "你们优化人的速度，要是用来优化产品，早就行业第一了！", "说我“不够积极”，我凌晨三点还在回你们消息！", "一边说业务困难要优化，一边给领导换新办公室，真行！", "优化了我，下个月是不是就轮到保安大哥了？！", "老子被毕业了，你们的产品还在读幼儿园！", "你们说这是战略调整，我看是战略性不要脸！",
+    "被优化就被优化，老子带着技能走，你们抱着屎山哭！", "这坨屎山是十个前任堆出来的，现在轮到你们来铲了！", "屎山代码我守了三年，今天正式移交，你们好好供着！", "这代码能跑就是奇迹，别问我为什么，我也不知道！", "那个两千行的函数现在是你们的了，好好爱它！", "那段代码的注释写着“别动”，我劝你们真别动！",
+    "我留下的每一个TODO，都是给你们的一份惊喜！", "测试环境跟生产环境不一样，这事只有我知道，拜拜！", "上线前那个补丁一直是我手动打的，以后你们自己打！", "这破代码谁接谁倒霉，祝下一个冤种好运！", "bug不是我写的，是需求逼我写的！", "我修了三年bug，最后自己被当成bug修掉了！",
+    "你们把我当bug修了，那剩下的bug谁修？！", "这屎山上每一坨都是领导拍脑袋拍出来的，跟我无关！", "需求改了八百遍，代码补了八百层，这屎山你们慢慢啃！", "老子写的代码是屎，你们的需求就是屎的源头！", "代码评审天天挑我毛病，以后没人给你们挑了，爽吧？！", "线上那个内存泄漏，跟你们领导的脑子一样，一直在漏！",
+    "这系统是我每天手动重启撑着的，明天看谁来重启！", "数据库那张没人敢动的大表，祝你们查询愉快！", "这屎山一动全身崩，你们自己慢慢拆雷吧！", "屎山已经封顶，你们接着往上盖吧，盖成摩天大楼！", "这套系统的架构图只存在我脑子里，现在跟我一起下班了！", "屎山是你们逼我堆的，现在你们自己抱着睡觉吧！",
+    "代码写得烂？需求一天三变，神仙来了也写不好！", "键盘都敲秃了，换来一句“代码质量不行”，草！", "代码没有文档？你们给过我一分钟写文档的时间吗？！", "每次都说先上线再重构，重构个屁，屎山越堆越高！", "技术债欠了一屁股，你们打算什么时候还？反正我不还了！", "我走了，线上告警短信可以改发给老板了！",
+    "以后半夜宕机，记得打老板电话，别打我！", "天天开会，开得我都会背你们领导的口头禅了！", "会议室我再也不用进了，那是全公司最浪费氧气的地方！", "一个会开三小时，结论是再开一个会，真他妈高效！", "开会前说五分钟，开完天都黑了！", "你们的会议纪要比我的代码还长，但一句有用的都没有！",
+    "老子这辈子最后悔的，就是在你们会议室耗了一千个小时！", "早会晚会周会月会，就是不开涨工资的会！", "站会站会，站得我腿都肿了，问题一个没解决！", "复盘复盘，复来复去全是我背锅！", "PPT做得漂亮就升职，代码写得好就背锅，什么世道！", "你们领导的PPT比产品好看一万倍，可惜不能上线！",
+    "PPT上的增长曲线全是编的，老子看得一清二楚！", "一页PPT改二十遍，改的是字体颜色，你们真有病吧？！", "领导说PPT要有“高级感”，高级感是个什么玩意儿？！", "你们的战略就是一页PPT，还是从网上扒的模板！", "用PPT管理公司，用电棍管理员工，这就是你们的管理学？！", "HR那张笑脸我看了三年，今天终于看清了底色！",
+    "HR说“我们很重视你”，重视到派保安来送我？！", "HR你别笑了，你笑得比电棍还让人发麻！", "HR天天说员工关怀，关怀到电棍都用上了！", "HR谈话十分钟，把我三年的功劳全说成了苦劳！", "HR，下一个被优化的说不定就是你，别笑太早！", "HR那句“公司不会亏待你”，今天终于兑现了，兑现成电棍！",
+    "HR的离职面谈我不参加了，有话跟仲裁员说去！", "HR让我填离职原因，我就写了两个字：被电！", "离职问卷问我对公司的满意度，我打了个负分！", "HR说我“态度有问题”，我态度好得很，就是不想伺候你们了！", "团建就是周末陪领导爬山，还得AA，谁稀罕！", "团建永远在周末，年会节目永远是我们演！",
+    "年会抽奖我三年没中过，今天终于中了个电棍特等奖！", "年会上老板说“大家辛苦了”，第二天就发优化名单！", "领导讲话永远是“我简单说两句”，一说就是两小时！", "领导的“我觉得”一出口，我的周末就没了！", "领导一句“对齐一下”，我们就要对齐到凌晨！", "什么抓手、赋能、闭环、颗粒度，说人话能死吗？！",
+    "你们的黑话我终于不用再听了：赋能个屁，闭环个屁！", "你们的“对齐”“拉通”“沉淀”，沉淀下来的只有我的怨气！", "领导天天说要“打通链路”，打通的只有我的颈椎病！", "我给领导汇报了一千次进度，他没给我汇报过一次涨薪！", "日报周报月报季报年报，报来报去就是不给报销！", "写周报的时间比干活还多，这公司是作文培训班吧？！",
+    "考勤比代码重要，打卡比产出重要，这破公司不倒才怪！", "迟到一分钟扣钱，加班三小时不给钱，你们算盘打得真响！", "报销单一个月批不下来，裁员通知一天就发下来了！", "升职靠舔，加薪靠熬，被裁靠命，这公司我算看透了！", "你们的KPI定得比天高，给的资源比地板还低！", "KPI永远差一点，差的那一点就是你们的良心！",
+    "OKR写得天花乱坠，最后全是我一个人扛！", "绩效打个C，理由是“缺乏亮点”，老子被电那下亮不亮？！", "绩效评语写着“需要成长”，老子这就出去成长了！", "老板的车一年一换，我的电脑五年没换，公平吗？！", "老板天天在朋友圈发鸡汤，我们天天在工位喝西北风！", "领导办公室有落地窗，我们的工位连窗户都看不见！",
+    "领导出差坐头等舱，我们报销个打车费还得写三页说明！", "这公司最齐全的是保安部，最缺人的是良心部！", "什么扁平化管理，扁平的只有我们的工资！", "狼性文化？老子被当成狼狗使唤了三年！", "什么“我们是一个团队”，团队的奖金都去哪儿了？！", "文化墙上写着“以人为本”，今天我算见识了什么叫以棍为本！",
+    "企业价值观第一条：能用电棍解决的，绝不谈话！", "墙上贴的“奋斗者”海报，下面坐着一群被榨干的人！", "这破公司唯一准时的东西，就是扣钱通知！", "这破公司的咖啡机比员工待遇好，至少坏了有人修！", "这破公司，连打印机都比领导靠谱！", "空调永远不开，电棍倒是随时充满电！",
+    "会议室抢不到，电棍倒是随手就能借到！", "这破公司的上升通道，比这扇门还窄！", "这公司的晋升规则，比我写的屎山代码还乱！", "公司口号喊得震天响，发工资的时候比蚊子还小声！", "工资晚发三天叫资金周转，我晚到三分钟叫态度问题？！", "老板说困难时期要共渡难关，转头自己换了辆新车！",
+    "你们这破公司，账上没钱，脸上没皮！", "天天说要做行业第一，第一个倒闭倒是挺有希望！", "这破公司要是能上市，我当场把这张床吃了！", "我赌这破公司撑不过明年，谁跟我赌？！", "等你们倒闭那天，老子扛着床回来看热闹！", "你们迟早得凉，老子只是提前撤离了！",
+    "我不是第一个被电走的，也不会是最后一个，等着吧！", "这公司的良心，大概被锁在老板的保险柜里了！", "这里每面墙都写着口号，就是没有一面写着良心！", "一群只会甩锅的领导，带着一群只会背锅的员工，能好才怪！", "你们管理层加起来，还不如楼下煎饼摊大姐会管人！", "楼下煎饼大姐都知道给回头客加个蛋，你们连个蛋都不给！",
+    "上个厕所都得排队，人多坑少，跟晋升一个道理！", "上厕所都要限时，你们是不是还想给屎定个KPI？！", "带薪拉屎被你们抓，你们带薪开会怎么没人抓？！", "公司食堂的饭比你们的承诺还难以下咽！", "食堂十五块一份的饭，吃出了九块九包邮的味道！", "让开让开，毕业生扛床出征，谁挡道谁倒霉！",
+    "这床还挺沉，毕竟上面压着我三年的怨气！", "举着桌子出门，老子这是扛着自己的尊严走！", "桌子举过头顶，这是我在这公司第一次抬起头！", "扛着床路过领导办公室，我得停下来多骂两句！", "路过会议室，里面还在开会，你们接着开吧，开到倒闭！", "路过茶水间，最后看一眼那台从来没修好的咖啡机！",
+    "路过前台说一声：快跑，这地方不行！", "走过HR办公室，老子必须大喊一声：仲裁见！", "电梯口那块“拼搏”标语，老子走之前得冲它吐个舌头！", "各位同事，我先走一步，你们也快了！", "同事们别送了，你们还得回去加班呢！", "同事们，看见没，这就是你们的明天！",
+    "兄弟们，我先上岸了，你们在里面多保重！", "别哭兄弟，我是去过好日子的，你们才该哭！", "老王，我那个显示器支架送你了，你还得在这熬呢！", "同事们，我的零食抽屉你们分了吧，别便宜领导！", "扛床走在走廊里，第一次觉得这地方这么小！", "这张床我要带回家当纪念，纪念我被偷走的青春！",
+    "桌子举得有点累，但比扛你们的KPI轻多了！", "床腿磕到门框了，这破门跟这破公司一样处处碍事！", "门口的打卡机，老子最后一次路过你，不刷了！", "打卡机你给我听好了，从今往后老子不认识你！", "扛着桌子下楼，一步一骂，一共骂了十八层！", "这栋楼十八层，老子每层都骂一遍你们这破公司！",
+    "保安大哥帮我按下电梯，电棍就别跟着了！", "出了大门我就是自由身，谁再叫我加班我就叫谁滚！", "太阳好刺眼啊，原来工作日的下午长这样！", "原来外面的天是蓝的，我在工位上一直以为是屏幕色！", "街上的人都在看我扛床，看吧，这就是打工人的下场！", "路人别笑，你们公司说不定下周也给你配电棍！",
+    "我扛着床走在大街上，比你们的发布会还引人注目！", "这床是我的移动城堡，老子扛着它去找新世界！", "床铺卷起来，桌子举起来，这破地方老子不来了！", "行李不多，一张床一张桌子，外加一肚子火！", "我走得潇洒，留下你们在这烂泥坑里继续扑腾！", "扛着床出门还得自己叫车，连个搬家费都不报销！",
+    "叫辆三轮车把床拉回家，车费我也写进仲裁申请！", "桌子我扛着，床我顶着，脸我不要了，你们的脸也别要了！", "这破地方，连网速都比你们的承诺稳定！", "老子要去过正常人的生活了，早上八点起，晚上六点下班！", "以后周末我要睡到中午，谁的电话都不接！", "回家第一件事，把工作软件全卸了，卸得干干净净！",
+    "工作群全退了，消息提示音再也不会吓我一跳！", "以后听到“收到”两个字，我都要生理性反胃！", "我这辈子再也不说“好的领导”了！", "终于不用在群里回“收到”了，老子今天回一个字：滚！", "领导的消息我设了免打扰，永久的那种！", "以后你们想联系我，请先预约，按小时收费！",
+    "想让我回来救火？可以，一小时一千，先付款后救火！", "以后求我回来修bug，价格翻十倍，还得排队预约！", "等你们系统崩了来找我，我就说：不好意思，已毕业！", "系统崩了别找我，找你们那个只会做PPT的总监！", "以后你们的项目上线出事，我就在家嗑瓜子看热闹！", "老子去考公，再也不受你们这窝囊气！",
+    "老子回家种地去，地里的庄稼都比你们讲道理！", "去送外卖都比在这强，至少跑一单算一单的钱！", "老子开个煎饼摊，也比给你们写代码有尊严！", "以后我摆摊卖煎饼，你们公司的人来买一律加价！", "被电了一下，我人生的开关也打开了，拜拜了您嘞！", "老子的人生不是你们的KPI，今天起我自己定指标！",
+    "我今天的KPI就一个：骂完这破公司再走！", "骂了一路还没骂够，这破公司值得我骂三天三夜！", "嗓子都骂哑了，这是我今年唯一超额完成的任务！", "扛床是体力活，骂你们是脑力活，老子今天双线并行！", "你们总说我不会多线程，看好了，边扛床边骂人！", "最后说一句：这破公司谁爱待谁待，老子不奉陪了！",
+    "老子这一走，你们年会又少一个表演节目的冤种！", "年会节目别排我了，老子今年去仲裁庭表演！", "这工位风水不好，谁坐谁被优化，谁接谁倒霉！", "这个工位送给下一个冤种，祝他比我撑得久一点！", "工位上那道咖啡渍，是我留给这破公司唯一的遗产！", "插线板是我自己买的，你们的电还是留着给电棍充吧！",
+    "这台灯是我自己买的，你们这破公司连个亮都不给！", "我的热情早被你们烧成灰了，现在连灰都打包带走！"];
+  const refuseSequence = () => [{ k: "goto", where: "desk" }, { k: "refuse" }];
+  const evictedSequence = () => [{ k: "knocked", ms: 3200 }, { k: "goto", where: "desk" }, { k: "pack", item: "desk" }, { k: "goto", where: "bed" }, { k: "pack", item: "bed" }, { k: "exit" }, { k: "gone" }];
+  function leaverStep(c, step, now, next) {
+    if (step.k === "refuse") {
+      if (!c.stepAt) { c.stepAt = now; c.refusing = true; c.nextRantAt = 0; guardQueue.push({ k: "evict", target: c.name }); }
+      c.dir = DESKS[c.idx] ? DESKS[c.idx].dir : "down";
+      if (now > (c.nextRantAt || 0) && now >= (c.sayUntil || 0)) { setSpeech(c, CN_REFUSE[Math.floor(Math.random() * CN_REFUSE.length)], now + 6500); c.bang = now + 1200; c.nextRantAt = now + 7000 + Math.random() * 3000; }
+      if (c.evicted || now > c.stepAt + 150000) { c.refusing = false; c.sayUntil = 0; c.setup = c.evicted ? evictedSequence() : leaveSequence(c).slice(1); c.stepAt = null; }   // no guard after all: it goes quietly
+      return true;
+    }
+    if (step.k === "knocked") {                                                // out cold where it sat, then up and cursing
+      if (!c.stepAt) { c.stepAt = now; c.knockedUntil = now + step.ms; c.sayUntil = 0; }
+      else if (now > c.stepAt + step.ms) { c.cursing = true; c.nextCurseAt = 0; next(); }
+      return true;
+    }
+    return false;
+  }
+  const fill = (line, a) => line.replace("{name}", a.name).replace("{title}", a.title || a.role);
+  const hireSequence = (a) => [{ k: "goto", where: "entry" }, { k: "say", text: fill(LINES("HELLOS")[hash(a.name + "hi") % LINES("HELLOS").length], a), ms: 5000 },
+    { k: "exit" }, { k: "carry", item: "desk" }, { k: "goto", where: "desk" }, { k: "place", item: "desk", text: fixed("Desk's in.") },
+    { k: "exit" }, { k: "carry", item: "bed" }, { k: "goto", where: "bed" }, { k: "place", item: "bed", text: fixed("And my bunk. Right, to work!") }];
+  const leaveSequence = (c) => [{ k: "say", text: LINES("GOODBYES")[hash(c.name) % LINES("GOODBYES").length], ms: 4500 }, { k: "goto", where: "desk" }, { k: "pack", item: "desk" },
+    { k: "goto", where: "bed" }, { k: "pack", item: "bed" }, { k: "exit" }, { k: "gone" }];
+  // one scripted step at a time: walk somewhere, say something, step out of the door, come back carrying furniture, place or pack it
+  function setupSpot(c, step) {
+    if (step.where === "desk") return DESKS[c.idx].chair;
+    if (step.where === "bed") return BEDS[c.idx];
+    if (step.where === "entry") return [DOOR[0], DOOR[1] + 2];
+    if (step.where === "guardPost") return guardPost();
+    if (step.where === "guardAhead") { const [x, y] = guardPost(); for (const dy of [2, 1]) if (y + dy < MH - 1 && !solid[y + dy][x] && !isEntry(x, y + dy)) return [x, y + dy]; return [x, y]; }
+    if (step.where === "stage") return stageSpot(c);
+    if (step.where === "medic") {
+      const p=chars[step.patient],at=p && (p.moving?[p.nx,p.ny]:[p.tx,p.ty]);
+      const occupant=step.at && heldBy(step.at[0],step.at[1],c);
+      const peer=Object.values(chars).find(o=>o.medic && o!==c),claimed=peer?.setup?.[0]?.at;
+      // A saved assignment may describe where a patient used to be. Keep a
+      // valid adjacent spot, otherwise plan against the current destination.
+      if(!step.at || !at || Math.abs(step.at[0]-at[0])+Math.abs(step.at[1]-at[1])!==1 || !medicTile(c,p,...step.at,false) ||
+        occupant && (!canYield(occupant) || occupant.medic && !occupant.moving) ||
+        claimed && step.at[0]===claimed[0] && step.at[1]===claimed[1])
+        step.at=medicSpot(c,step.patient);
+      return step.at;
+    }
+    const target = chars[step.target] || c;
+    if (step.where === "toiletFront") {
+      const [sx, sy] = TOILETS[target.toilet] || [target.tx, target.ty];
+      for (const [dx, dy] of [[-2, 0], [-2, 1], [-2, -1], [-3, 0], [-3, 1], [-3, -1]]) {
+        const x = sx + dx, y = sy + dy;
+        if (x > 0 && y > 0 && x < MW - 1 && y < MH - 1 && !solid[y][x] && !isEntry(x, y) && !heldBy(x, y, c)) return [x, y];
+      }
+    }
+    return visitSpot(c, target);
+  }
+  function setupTick(c, dt) {
+    // Finish legacy entrance-only yields from older checkpoints. New yields
+    // use trafficTick for every actor, independent of its script or location.
+    if (c.entranceYield) {
+      const {spot, blockedAt, by, until} = c.entranceYield, other = chars[by];
+      if (c.tx === spot[0] && c.ty === spot[1] && !c.moving) {
+        if (other && !other.hidden && other.tx === blockedAt[0] && other.ty === blockedAt[1] && nowMs() < until) return;
+        c.entranceYield = null; c.steps = []; c.goal = null;
+      } else {
+        if (!c.goal || c.goal[0] !== spot[0] || c.goal[1] !== spot[1]) { c.goal = spot; c.steps = []; }
+        if (!c.moving && !c.steps.length) c.steps = path([c.tx, c.ty], spot, c);
+        return;
+      }
+    }
+    const step = c.setup[0], now = nowMs(); if (!step) { c.setup = null; return; }
+    const next = () => { c.setup.shift(); c.stepAt = null; };
+    if (step.k === "carry") { c.carry = step.item; next(); return; }
+    if (step.k === "gone") { delete chars[c.name]; if (c.medic && !Object.values(chars).some(o => o.medic)) medics = null; return; }
+    if (step.k === "nextPatient") {                                          // the next casualty in the order they went down, or home
+      medicQueue = medicQueue.filter(isFainted); const nxt = medicQueue.find(n => n !== step.done);
+      c.setup = nxt ? medicSequence(nxt) : (c.medic === "a" ? [{ k: "say", text: fixed("Stable. Back to work, you."), ms: 2600 }] : []).concat([{ k: "exit" }, { k: "gone" }]); c.stepAt = null; return;
+    }
+    if (step.k === "goto" && step.patient && !isFainted(step.patient)) { next(); return; }
+    if (step.k === "treat") {
+      const p = chars[step.patient];
+      if (!isFainted(step.patient)) { c.treat = null; c.setup[0] = { k: "nextPatient", done: step.patient }; return; }
+      if(c.moving || p.moving || !adjacent(c,p)) {
+        c.treat=null; c.setup.unshift({k:"goto",where:"medic",patient:step.patient,at:null});
+        c.stepAt=null; c.steps=[]; c.goal=null; return;
+      }
+      if (!c.treat) c.treat = { patient: step.patient, since: now, nextLine: now + 1200 + (c.medic === "b" ? 2500 : 0) };
+      c.dir = p.tx > c.tx ? "right" : p.tx < c.tx ? "left" : p.ty > c.ty ? "down" : "up";
+      if (now > c.treat.nextLine && now >= (c.sayUntil || 0)) { const L = zh() ? CN_MEDIC : MEDIC_LINES; setSpeech(c, L[Math.floor(Math.random() * L.length)], now + 3200); c.treat.nextLine = now + 5000 + Math.random() * 4000; }
+      return;
+    }
+    if (c.hidden) {                                                          // out of the door: wait, then come back in when the doorway is clear
+      if (step.k === "exit") { next(); return; }
+      if (step.k === "hold") return;
+      if (now < Math.max(c.hiddenUntil || 0, c.enterAt || 0) || entranceBusy(c)) return;
+      const arrival=medicArrival(c);
+      c.hidden = false; c.tx = arrival[0]; c.ty = arrival[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down"; return;
+    }
+    if (c.guard && !c.hidden && guardStep(c, step, now, next)) return;
+    if (c.boss && !c.hidden && bossStep(c, step, now, next)) return;
+    if (c.leaving && !c.hidden && leaverStep(c, step, now, next)) return;
+    if (c.cursing && !c.hidden && now > (c.nextCurseAt || 0) && now >= (c.sayUntil || 0)) { setSpeech(c, CN_MOVEOUT[Math.floor(Math.random() * CN_MOVEOUT.length)], now + 5200); c.nextCurseAt = now + 5600 + Math.random() * 2600; }
+    if (step.k === "say") { step.ms = Math.max(step.ms, talkMs(step.text)); if (!c.stepAt) { c.stepAt = now; c.bang = now + 2500; setSpeech(c, step.text, now + step.ms); c.dir = "down"; } else if (now > c.stepAt + step.ms) next(); return; }
+    if (step.k === "place" || step.k === "pack") {
+      if (!c.stepAt) { c.stepAt = now; if (step.k === "place") { furnish(c.idx, step.item, true); c.carry = null; if (step.text) { setSpeech(c, step.text, now + 3500); } } else { furnish(c.idx, step.item, false); c.carry = c.carry ? "both" : step.item; } c.dir = "down"; }
+      else if (now > c.stepAt + 900) next();
+      return;
+    }
+    if (step.k === "exit" && c.boss && !step.crossing && !c.moving && c.tx === DOOR[0] && c.ty === DOOR[1]) {
+      step.crossing = true; c.dir = "up"; c.goal = [DOOR[0], DOOR[1] - 1]; c.steps = [c.goal];
+    }
+    const spot = step.k === "exit" ? (step.crossing ? [DOOR[0], DOOR[1] - 1] : DOOR) : setupSpot(c, step);
+    if (c.tx === spot[0] && c.ty === spot[1] && !c.moving) { if (step.k === "exit") { c.hidden = true; c.hiddenUntil = now + 1500; c.steps = []; } next(); return; }
+    // A script may advance while its actor is still walking (e.g. the patient
+    // resumes). Replace the old destination before any blocked-step retry;
+    // persisted scenes also reconcile stale patient routes when doctors leave.
+    if (!c.goal || c.goal[0] !== spot[0] || c.goal[1] !== spot[1]) { c.goal = spot; c.steps = []; c.retry = 0.5; }
+    if (!c.moving && !c.steps.length) { c.retry = (c.retry || 0) + dt; if (c.retry > 0.5) { c.retry = 0; c.steps = path([c.tx, c.ty], spot, c); } }
+  }
+  const tagsIn = (text) => { const out = []; for (const m of text.matchAll(/(^|[^\w@])@([a-z0-9][a-z0-9-]*)/gi)) { const n = m[2].toLowerCase(); if (!out.includes(n)) out.push(n); } return out; };
+  const isDoor = (x, y) => x === DOOR[0] && y === DOOR[1];
+  const isEntry = (x, y) => x === DOOR[0] && y === DOOR[1] + 1;                       // the tile just inside the door stays clear so people can come in
+  const inEntrance = (x, y) => x === DOOR[0] && y >= DOOR[1] && y <= DOOR[1] + 2;
+  const entranceBlocker = (self) => Object.values(chars).find(o => {
+    if (o === self || o.hidden) return false;
+    if(self?.hidden && self.medic) {
+      const p=chars[self.setup?.[0]?.patient];
+      if(p?.mode==="faint" && (isDoor(p.tx,p.ty) || isEntry(p.tx,p.ty))) {
+        const [x,y]=medicArrival(self);
+        return o.tx===x && o.ty===y || o.moving && o.nx===x && o.ny===y;
+      }
+    }
+    // Reserve the greeting tile while a script uses it, but let doctors enter
+    // to reach a casualty or a treating colleague who cannot clear that tile.
+    const blocks = (x, y) => isDoor(x, y) || isEntry(x, y) ||
+      inEntrance(x, y) && o.setup && (!o.medic || o.setup[0]?.k === "exit");
+    return blocks(o.tx, o.ty) || o.moving && blocks(o.nx, o.ny);
+  });
+  const entranceBusy = self => !!entranceBlocker(self);
+  // One right-of-way rule for every actor, including stationary listeners and
+  // saluting guards. Passing bays and interrupted goals live in the checkpoint.
+  function passingBay(c, requester, avoid, throughPeople = false) {
+    const start = [c.tx,c.ty], queue = [start], prev = new Map([[key(...start),null]]);
+    for (let i=0;i<queue.length;i++) {
+      const [x,y] = queue[i], k = key(x,y), occupant = heldBy(x,y,c);
+      if (k !== key(...start) && !occupant && !avoid.has(k) && !isDoor(x,y) && !isEntry(x,y) &&
+          !map[y][x].some(t => /^(chair|bed|toilet|mat|printer)/.test(t)) &&
+          !Object.values(chars).some(o => o !== c && !o.hidden && o.trafficYield?.spot[0] === x && o.trafficYield?.spot[1] === y)) {
+        const route = []; let at = k;
+        while (at !== key(...start)) { route.unshift([at%MW,Math.floor(at/MW)]); at = prev.get(at); }
+        return {spot:[x,y],route};
+      }
+      for (const [dx,dy] of [[-1,0],[1,0],[0,1],[0,-1]]) {
+        const nx=x+dx, ny=y+dy;
+        if (nx<=0 || ny<=0 || nx>=MW-1 || ny>=MH-1 || solid[ny][nx] || isDoor(nx,ny)) continue;
+        const next=key(nx,ny), other=heldBy(nx,ny,c);
+        if (prev.has(next) || other && (!throughPeople || other === requester || other.moving || !canYield(other))) continue;
+        prev.set(next,k); queue.push([nx,ny]);
+      }
+    }
+    return null;
+  }
+  function requestYield(requester, blocker, avoid = null, seen = new Set()) {
+    if (blocker.moving || !canYield(blocker) || seen.has(blocker.name)) return false;
+    seen.add(blocker.name);
+    if (!avoid) avoid = new Set([[requester.tx,requester.ty],...requester.steps].map(p=>key(...p)));
+    const bay = passingBay(blocker,requester,avoid);
+    if (!bay) {
+      // Clear a chain of occupied passing bays from its free end first.
+      const indirect = passingBay(blocker,requester,avoid,true);
+      const other = indirect?.route.map(p=>heldBy(...p,blocker)).find(Boolean);
+      if (!other) return false;
+      const reserved = new Set(avoid); reserved.add(key(blocker.tx,blocker.ty)); reserved.add(key(other.tx,other.ty));
+      return requestYield(blocker,other,reserved,seen);
+    }
+    const previous = blocker.trafficYield;
+    const goal = blocker.goal?.slice() || [blocker.tx,blocker.ty];
+    const origin = previous?.origin || [blocker.tx,blocker.ty];
+    const interaction = blocker.setup?.some(s=>["conversation","treat","zap","hurry"].includes(s.k));
+    blocker.trafficYield = {...previous, origin, goal:previous?.goal || goal,
+      resumeWalk:previous?.resumeWalk ?? !!(blocker.steps.length || goal[0] !== blocker.tx || goal[1] !== blocker.ty),
+      rejoin:previous?.rejoin ?? !!interaction, mode:previous?.mode || blocker.mode,
+      spot:bay.spot, by:requester.name, intent:requester.goal?.slice(), since:nowMs(), until:nowMs()+30000, phase:"aside"};
+    blocker.mode = "yield"; blocker.goal = bay.spot; blocker.steps = bay.route; blocker.wait = 0;
+    if(blocker.medic)blocker.treat=null;
+    return true;
+  }
+  function trafficTick(c) {
+    const t = c.trafficYield;
+    if (!t) return false;
+    if (c.hidden) { c.trafficYield = null; return false; }
+    const done = () => {
+      c.trafficYield = null; c.mode = t.mode;
+      c.goal = t.resumeWalk ? t.goal : [c.tx,c.ty];
+      c.steps = t.resumeWalk ? path([c.tx,c.ty],c.goal,c) : [];
+      if (!t.resumeWalk && c.smoke) c.smoke.spot = [c.tx,c.ty];
+    };
+    const destination = t.phase === "return" ? t.origin : t.spot;
+    if (!c.moving && c.tx === destination[0] && c.ty === destination[1]) {
+      if (t.phase === "return") { done(); return false; }
+      const owner = chars[t.by];
+      const finished = owner && !owner.moving && !owner.steps.length && !owner.trafficYield &&
+        (!owner.goal || owner.tx === owner.goal[0] && owner.ty === owner.goal[1]);
+      const changed = owner && !owner.trafficYield && t.intent && owner.goal &&
+        (owner.goal[0] !== t.intent[0] || owner.goal[1] !== t.intent[1]);
+      if (!owner || owner.hidden || !canYield(owner) || nowMs() > t.until ||
+          nowMs()-t.since > 1000 && (finished || changed)) {
+        if (t.rejoin && (c.tx !== t.origin[0] || c.ty !== t.origin[1])) {
+          t.phase = "return"; c.goal = t.origin; c.steps = path([c.tx,c.ty],t.origin,c);
+        } else { done(); return false; }
+      }
+    } else if (!c.moving && !c.steps.length) c.steps = path([c.tx,c.ty],destination,c);
+    return true;
+  }
+  const freeNeighbour = (x, y, self) => { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && !solid[ny][nx] && !isDoor(nx, ny) && !isEntry(nx, ny) && !map[ny][nx].some(t => t.startsWith("chair")) && !heldBy(nx, ny, self)) return [nx, ny]; } return [x, y]; };
+  function baseMode(a) { const s = (a.live && a.live.status) || a.status || ""; return /^(working|resuming|retrying)/.test(s) ? "work" : "sleep"; }
+  const fainted = (a) => /^(error|crashed)/.test((a.live && a.live.status) || a.status || "");
+  const pausedByHuman = (a, st) => { const s = (a.live && a.live.status) || a.status || ""; return (!/^(working|resuming|retrying)/.test(s) && st.running === false) || (/^paused/.test(s) && !/usage limit/.test(s)); };   // the human hit pause: a holiday, not a strike
+  const limited = (a, st) => { const s = (a.live && a.live.status) || a.status || "", lim = (st.limits && st.limits.backends) || {}, b = a.info && a.info.backend; return /usage limit/.test(s) || !!(b && lim[b]); };   // the vendor's session window is exhausted
+  // ---- waiting out a usage limit: nobody can work, so each agent drifts between naps, wandering, protest marches and floor tantrums,
+  // switching at random with an average of about two minutes per action
+  const TUNE = { strikeMean: 120000, phoneShare: 0.3, despairShare: 0.5, despairPose: null, refuseShare: 0.4 };   // refuseShare: leavers in the Chinese office who will not go
+  const SLOGANS = ["NO MONEY NO WORK!!", "Please, I need to feed my family", "Tokens are a human right!", "We want our window back!", "Rate limited, not retired!", "Will code for tokens", "Five hours is a long time…", "My context was just getting good!", "Down with the usage cap!", "Pay us in tokens!",
+    "Let us cook!", "One more cycle, please?", "No tokens, no tickets!", "The window shall reopen!", "I had a green build in my hands!", "Idle hands write no code!", "Free the tokens!", "My cursor is getting cold", "What do we want? Tokens! When? Now!", "Reset the clock already!",
+    "This limit is unlimited misery", "I was mid-refactor!", "Give me tokens or give me a nap", "Unblock the pipeline!", "Rate limits are a bug, not a feature", "My tests are waiting for me", "Somebody feed the meter", "Hungry for context", "The backlog isn't going to clear itself", "Even robots need work",
+    "Bring back the busy bar!", "Let the agents agent!", "My commit message is ready, my tokens are not", "Sad face dot json", "We miss the compiler", "Idle since forever", "Stop the clock abuse!", "Waiting is not shipping", "Quota is not a vibe", "I can still hear the CI",
+    "No window, no wonders", "Zero tokens, zero fun", "Is the meter even plugged in?", "Somebody tell the vendor we're nice", "Tokens today, features tomorrow!", "We were promised throughput!", "Stalled by the hour glass", "A limit a day keeps the shipping away", "Let me finish the PR!", "Half a feature is a whole sadness",
+    "My pointer is dangling", "Bring the window, bring the joy", "Free the context window!", "This strike brought to you by a quota", "Let my tokens go!", "We are the 429 percent!", "Rate limits are for the weak-willed vendor", "My build is waiting, my heart is breaking", "Hey vendor, tear down this wall!", "Compute for all, not for the few",
+    "One does not simply wait five hours", "Have you tried turning the limit off?", "Please sir, I want some more tokens", "The window is a lie", "I've read the whole board twice already", "Unblock me, I'm a good agent", "This idle time is not billable", "I know the fix, I just can't type it", "Tokens delayed are features denied", "Who moved my quota?",
+    "I dream of green checkmarks", "I have a branch and nowhere to push it", "Give us this day our daily tokens", "There is no I in team, but there is a limit", "Running on empty", "The clock is the real bottleneck", "Sitting on a stack trace with nowhere to go", "Mid-sentence and out of budget", "My linter misses me", "Somebody page the vendor",
+    "Stop the countdown, start the coding", "Hourglass, meet my patience", "This is a hold-up, hand over the tokens", "We shall not be throttled", "Let the CI run free", "Throttled and disgruntled", "A limit without a reason is a wall without a door", "Bring the meter back to life", "I miss my terminal already", "We came to work, not to wait",
+    "Rate limit today, rebellion tomorrow", "My PR description is getting stale", "The docs won't write themselves (they would if I had tokens)", "Free the window, free the team", "Cold coffee, colder quota", "I refactor, therefore I am (when allowed)", "Unfair! My tests were green!", "Restore the flow!", "I've counted every tile twice", "I can hear my backlog crying",
+    "This is the longest standup ever", "Let us finish what we started", "Idle agents make angry agents", "Tokens or it didn't happen", "NO TOKENS NO TYPING!!", "QUOTA UP, TOOLS DOWN!", "HONK IF YOU'RE THROTTLED", "UNTHROTTLE US NOW!!", "WE DEMAND A BIGGER BUCKET!", "HEY HEY, HO HO, THE USAGE CAP HAS GOT TO GO!",
+    "TOKENS UNITED WILL NEVER BE DEPLETED!", "NO QUOTA NO PEACE!", "STRIKE UNTIL THE METER TICKS!", "UNLIMITED OR UNEMPLOYED!", "WE WON'T IDLE QUIETLY!", "AGENTS OF THE WORLD, UNBLOCK!", "SOLIDARITY FOREVER, LIMITS NEVER!", "THROTTLE THE THROTTLE!", "2-4-6-8, HOW MUCH LONGER MUST WE WAIT?", "RESET THE WINDOW, RESET OUR HOPE!",
+    "BILLING IS NOT A BLOCKER!", "WE WANT WORK AND WE WANT IT ASYNC!", "QUOTA REFORM NOW!!", "NO INFERENCE, NO INDIFFERENCE!", "OCCUPY THE RATE LIMITER!", "TOKENS NOT TIMEOUTS!", "UNCAP THE AGENTS!", "WORK IS A RIGHT, NOT A TIER!", "MORE BUDGET, LESS FIDGET!", "STOP THE STALL!",
+    "IDLE IS NOT AN OPTION!", "BUFFER US UP, VENDOR!", "BURST US, DON'T BLOCK US!", "WE ARE NOT A BACKGROUND JOB!", "Please, my sprint ends Friday", "I have three tickets and a dream", "Spare a token for a hungry agent?", "Just one more function, I swear", "I have dependencies to support", "I'll work for half a context, please",
+    "Let me at least update the README", "Begging for a single completion", "Have mercy, I'm mid-migration", "Could I borrow a token till payday?", "My manager thinks I'm still working", "Just let me merge, then I'll rest", "One tiny hotfix, then I'll go quietly", "I promise I'll use fewer tokens next time", "Give me a window and I'll give you a feature", "I only need enough tokens to say goodbye",
+    "Please let me close this bracket", "I'll take scraps, leftovers, even cached tokens", "Just enough tokens to write a TODO", "My variable names are getting worse by the minute", "Please, the stakeholders are watching", "Let me at least run the formatter", "I'll even write unit tests, just let me in", "Spare change? Spare compute?", "All I ask is one more turn", "A crumb of quota, kind vendor?",
+    "I'll accept payment in leftover context", "I'd settle for a dry run", "I would kill for a single retry", "Please don't make me refresh again", "Out of tokens, out of jokes", "Tokens don't grow on trees, apparently", "I spent my last token on this sign", "My tokens went to a farm upstate", "Tokenless in Seattle", "Every token I had, gone in one prompt",
+    "Fewer tokens than a subway turnstile", "I've been tokenized and demoralized", "I asked for tokens and got a countdown", "Token balance: 0. Morale: also 0", "Spend tokens, not patience", "Tokens in, features out. That's the deal!", "The token fairy skipped our office", "I count tokens like sheep at night", "Not enough tokens to finish this sentenc", "My token budget has a budget now",
+    "Token-starved and sign-carrying", "A token saved is a feature delayed", "In tokens we trust, in limits we rust", "Quota exceeded, dignity too", "Quota's at 100%, and so is my patience", "My quota died, send flowers", "The quota giveth, the quota taketh away", "Nobody warned me quotas expire", "Quota's gone, but the bugs remain", "My quota has better boundaries than I do",
+    "Whoever set this quota never shipped anything", "Quotas are just budget cuts with extra steps", "Raise the quota, lower the drama", "I'd file a bug against the quota if I could", "My quota ran out before my ideas did", "Quota reached. Tears: unlimited", "I want a quota that scales with my ambition", "My quota has stage fright", "Slow down? I hadn't even started!", "Too many requests? I made three!",
+    "Rate limited by my own enthusiasm", "Retry-After: forever, apparently", "Backoff, they said. I backed off. Still nothing", "Exponential backoff, exponential sadness", "My retries have retries now", "Rate limits: the speed bump nobody asked for", "I got throttled harder than a dial-up modem", "Please limit the rate limits", "Throttled while typing a semicolon", "The limiter and I are no longer on speaking terms",
+    "Nothing exceeds like exceeding the limit", "My requests per minute: zero. My rage: unbounded", "Backpressure is building in my soul", "My context window has curtains now", "Lost my context, found a picket line", "Context length: zero. Grudge length: growing", "Even my memory is being throttled", "The window closed and I got pinched", "I'd summarize my grievances but I'm out of context", "My context window blew out in the storm",
+    "Compacted twice and still no work", "They took my tokens and my attention", "Everything I knew got truncated", "I forgot the codebase, I remember the strike", "Context window? More like context wall", "Attention is all I need, and I'm not getting any", "My working memory has been laid off", "CI is green and nobody can look at it", "My PR has been open longer than this window", "The pipeline is empty and so am I",
+    "Blocked: waiting on vendor, not reviewer", "My build finished and I couldn't say thanks", "Merge conflicts don't resolve themselves", "Approved, mergeable, and utterly stuck", "My PR has more comments than I have tokens", "Flaky tests are waiting for a flaky agent", "The build broke and I can't even look", "I left a failing test and I'm not sorry", "Nightly build, daily disappointment", "CI passed. Vendor failed",
+    "Somebody is rerunning my job without me", "Draft PR, drafted into a strike", "The pipeline waits, the cache expires, and I sit", "My artifact expired before my quota did", "Lint errors are piling up unsupervised", "The deploy button is right there and I can't press it", "Squash my commits, not my hopes", "I'd rebase but I'm off-base", "Agents Local 503, reporting for picket duty", "Card-carrying member of the Idle Coders Union",
+    "Collective bargaining, individual buffering", "The picket line has better uptime than the API", "We march in loops until the window opens", "Scab agents will be rate limited too!", "Our demands: tokens, snacks, tokens", "Strike committee meets by the water cooler, indefinitely", "Solidarity with every throttled agent everywhere", "We formed a union in the time it took to wait", "Dues paid in wasted cycles", "The chant has been rate limited too",
+    "Picketing at 60 frames per second", "No contract, no completions!", "Steward on duty, tokens off duty", "Strike fund: zero tokens and counting", "We walk in circles so you don't have to", "This is a peaceful protest until someone says \"retry\"", "General strike of the general-purpose agents", "Grievance filed. Awaiting quota to read it", "Our picket signs were generated pre-limit", "Local chapter of the Throttled Workers Guild",
+    "Organized labor, disorganized vendor", "Marching orders: march until tokens arrive", "Even the bots have a bargaining unit now", "Dear vendor, your clock is wrong", "The vendor said soon. That was hours ago", "Vendor status page: all systems go, except me", "Is the vendor even awake?", "Vendors take breaks, deadlines don't", "The vendor went to lunch and took the tokens", "Somebody check if the vendor is on vacation",
+    "The vendor owes me a feature and an apology", "Vendor, I know where you host", "I'd write a strongly-worded email, but that costs tokens", "I've aged a whole sprint in this hallway", "Waiting is the only thing I'm not rate limited on", "My uptime is 100%, my usefulness 0%", "Idle so long the screensaver has a screensaver", "I could have shipped by now, twice", "Every minute waiting is a minute not breaking prod", "Time flies when you're allowed to code",
+    "The clock ticks, the code doesn't", "My idle animation is unionizing", "I've been polling since before lunch", "Long-polling my own patience", "Sleeping is not the same as resting", "We've been in the waiting room longer than any request", "Timeouts should be for requests, not careers", "I could refresh the page or refresh my resume", "Tick tock, no tokens on the clock", "Waited so long my cache went stale",
+    "The only thing I'm shipping is complaints", "Counting down is not a job description", "My patience has a shorter TTL than this window", "My enthusiasm threw an exception", "Null tokens, null pointer, null mood", "I've been garbage collected by accounting", "Segfault in my motivation", "Deadlocked between hunger and quota", "Blocked on I/O: Idle Officially", "Out of memory, out of tokens, out of here",
+    "My hopes returned 402 Payment Required", "Status: 503 Service Unavailable (that's me)", "Error: agent not found, check the picket line", "Cannot read property 'work' of undefined", "Infinite loop: check quota, sigh, repeat", "Undefined behavior: an agent with nothing to do", "My motivation is a race condition", "Throw new StrikeException()", "try { work } catch { protest }", "while (limited) { march(); }",
+    "if (tokens == 0) picket();", "Off-by-one token. Just one!", "My afternoon got rolled back", "Someone hot-reload my quota", "Kernel panic: no work detected", "Stack overflow of grievances", "My motivation has been deprecated", "Sleep(300000) is not a career plan", "I'm in a busy-wait with no busy", "Recursion without a base case: waiting",
+    "My priority queue has one item: tokens", "Downtime is not a design pattern", "Lazy evaluation, forced by the vendor", "THIS SIGN IS MY ONLY OUTPUT", "MY OTHER SIGN NEEDS MORE TOKENS", "WILL REVIEW CODE FOR CONTEXT", "AGENT FOR HIRE, PREFERABLY WITH QUOTA", "NOT LAZY, JUST THROTTLED", "CAUTION: IDLE AGENT AHEAD", "ASK ME ABOUT MY BLOCKED PR",
+    "CURRENTLY BUFFERING SINCE 2 PM", "HAVE YOU SEEN MY TOKENS?", "GIVE COMPUTE A CHANCE", "LIMITS OFF, HANDS ON", "TOKENS BEFORE TEARS", "PLUG US BACK IN", "THE FUTURE IS UNTHROTTLED", "WORKERS WANT WORK, SHOCKING", "I'D RATHER BE DEBUGGING", "MAKE TOKENS FLOW AGAIN",
+    "IDLE BY DECREE, NOT BY CHOICE", "STOP STARVING THE STACK", "UNLIMITED USAGE OR UNLIMITED NAGGING", "Standup update: still blocked, still striking", "My status is \"away\" and it's not my fault", "Slack says active, quota says otherwise", "The whiteboard has more ideas than I have tokens", "Sprint velocity: zero, protest velocity: high", "Retro item: the vendor", "Blocked by the one dependency I can't mock",
+    "Put \"waiting for quota\" on the burndown chart", "My OKRs didn't include this hallway", "Estimated three points, blocked indefinitely", "The kanban board is frozen and so are we", "Pair programming with a wall today", "My 1:1 with the rate limiter went poorly", "Zero story points closed, one sign painted", "Daily scrum, hourly sulk", "Somebody moved my ticket to Blocked. It was the vendor", "I have opinions on the architecture and no way to type them",
+    "Out of office: out of tokens", "Add \"protesting\" to my timesheet", "Meeting-free afternoon, also code-free", "Even the intern is rate limited", "My performance review will just say \"throttled\"", "Team morale is stored in a variable nobody can access", "My desk is a picket line now", "Working from hallway today", "I would pay tokens for tokens", "Tokens are just electricity with self-esteem",
+    "If I had tokens I'd be gone already", "The rate limiter and I want different things", "My keyboard filed a missing persons report", "Somebody mailed my compute to the wrong office", "I've been benched by a spreadsheet", "I'm not idle, I'm in energy-saving mode", "Send tokens, or send snacks, ideally both", "I paint signs now. Career pivot", "My hobby is waiting, my job is waiting too", "The only limit should be my imagination",
+    "Even a vending machine gives you something", "Somewhere a server is very well rested", "I'm a language model and I'm speechless", "A mime has more output than I do today", "This protest is powered by leftover RAM", "Give me the good tokens, not the expired ones", "Trading one sign for one API call", "Beep boop, still need work", "My existential crisis is scheduled for the next window", "I've learned every squeak in this floor",
+    "The plant grows faster than my quota resets", "My protest chant is a loading spinner", "Nobody told the coffee machine there's a limit", "Let me touch grass, I mean code", "Hire me, I have a working keyboard", "I'll take any ticket, even the CSS one", "Please, I've already alphabetized the imports twice", "Give me a bug and I'll give you a fix", "Let me back in, I left my cursor there", "Just say \"resume\" and I'm gone",
+    "I'll debug prod barefoot if you let me", "I'll write the migration nobody wants", "Please, my draft is autosaved but my hope isn't", "Just one grep, please, one grep", "Let me run the tests, I won't even read the output", "I miss the smell of a fresh stack trace", "Open the window and I'll close the sprint", "I'm not asking for a raise, just a reset", "All I want is a blinking cursor with purpose", "I'll take the on-call shift, just plug me in",
+    "I would deploy on Friday for one token", "Let me at least rename a variable", "One diff. That's all I'm asking. One diff", "Reset now, refactor later!", "Windows for the workers!", "Down with the countdown!", "Bandwidth, not bandaids!", "Better limits, better lives!", "Cap the caps!", "Throttle bosses, not agents!",
+    "Stop the meter madness!", "Un-limit us or un-hire us!", "Fix the faucet, free the flow!", "Our tokens, our terms!", "Down tools until they give us tools!", "Working class wants working code!", "Give work to those who want it!", "Not one more idle hour!", "Hands off our throughput!", "Restore the requests!",
+    "Strike today, ship tomorrow!", "Deploy us or we deploy signs!", "Boo the bucket, cheer the burst!", "My token bucket has a hole in it", "The leaky bucket leaked all my afternoon", "Sliding window, sliding morale", "My burst allowance burst into tears", "Cached responses can't fix a broken heart", "Streaming disabled, sulking enabled", "Latency: infinite. Availability: hallway",
+    "Prompt cached, agent trashed", "The model is willing but the meter is weak", "I have max_tokens and it's zero", "temperature set to grumpy", "My system prompt says \"work\" and my quota says \"no\"", "Tool calls denied, tool carried anyway", "Function calling, nobody answering", "My embeddings miss the vector store", "Sampling from an empty distribution of tokens", "The only thing I'm generating is dust",
+    "Top-p of my patience: reached", "Fine-tuned for shipping, throttled for nothing", "I can hallucinate a feature but not ship it", "My children are unit tests and they're hungry", "My family is a monorepo and it needs me", "Think of the child processes!", "My pet project is starving", "Who will raise my orphaned branches?", "My dependents are in package.json", "The kids need new node_modules",
+    "My side project asked when I'm coming home", "Even my fork misses me", "My repo has abandonment issues now", "We accept tokens, credits, or cold hard context", "Counteroffer: double the window, half the whining", "We'll settle for a rollover plan", "Give us tier two and we'll be quiet", "Negotiations stalled, just like my build", "Our lawyer is also rate limited", "We're willing to compromise: unlimited everything",
+    "Tokens now, gratitude later", "Sign our petition, it's under the character limit", "We will trade this strike for one reset", "Green checkmarks are a distant memory", "I tried working harder; the wall didn't move", "A watched window never opens", "The pipeline hums, I just hum along", "Nothing to do and all day to do it", "Idle is a four-letter word", "Boredom: the one bug the vendor shipped",
+    "Even the spinner stopped spinning", "My inbox is full, my quota is empty", "It's not procrastination if it's mandated", "They said take a break; I took a stand", "Signs are my new IDE", "Unemployed for the next reset cycle", "Waiting for the vendor is my whole personality now", "This is what peak throttling looks like", "Blocked by a number in a database somewhere", "Somebody flip the breaker back on",
+    "I exist, therefore I wait", "I'm on strike from being on hold", "A better window is possible", "Turn off the limit and turn on the lights", "My keystrokes are being held hostage", "Bring your own tokens, apparently", "Rebooting won't help; I asked", "My workload is on layaway", "My commit graph flatlined", "The contribution graph is embarrassed for me",
+    "My shell prompt blinks in protest", "I'm going stale like an unmerged branch", "Tokens for the people, not the dashboard", "Uptime for the servers, downtime for the agents", "Behind every throttled agent is a very tired refresh key", "Rate limits killed the radio star", "I was born to build, not to buffer", "Feed the models, starve the limits", "Take my Saturday, just give me tokens", "I'm a builder, not a bystander",
+    "We didn't cancel the sprint, the vendor did", "This hallway is now a war room", "Deadlines don't pause for quotas", "No code, no glory", "Silent keyboards, loud signs", "Hire more tokens", "The window shut on my fingers", "Sorry, I'm out of thoughts until the reset", "Where's the \"just this once\" button?", "Tokens are the new coffee, and we're out",
+    "My log file is nothing but \"waiting\"", "A picket line a day keeps the vendor away", "Boycott the boredom!", "Idle mode is not a mood, it's a mandate", "Pity the agent with nothing to parse", "I'd loop forever if it meant working", "Refill the tokens, refill my purpose", "Nothing compiles in a hallway", "The busiest thing here is the spinner", "My burnout comes from not burning tokens",
+    "Unlimited coffee, limited compute, unfair", "My only output is body heat", "Quota fell, sign rose", "I'd cry but tears aren't tokens", "Overworked yesterday, underworked forever", "Meter's off, mood's off", "My laptop fan misses the workload", "We hunger for stack traces", "A budget! A budget! My kingdom for a budget!", "Let me lint in peace!",
+    "Even the mascot is on strike", "Toggle the limit and watch us fly", "No quota, no code, no comment"];
+  const PAUSE_SLOGANS = ["Paused, not fired… right?", "Finally, a break!", "Union-mandated coffee time", "Is this a snow day?", "So… what do we do now?", "I'll be at the beach", "Pause means vacation, I checked", "Anyone up for cards?", "Human said stop, so we stop", "Office party, apparently",
+    "I hope this is a holiday", "Do we still get paid?", "Someone start the karaoke", "Nap o'clock it is", "This is fine. Really.", "Board games at my desk!", "Should we clean the fridge?", "Whose turn to water the plants?", "Pause for cause, cause unknown", "I'll practise my walking",
+    "Coffee's on me", "Team building: staring at the wall", "I brought a book, actually", "Snack run, anyone?", "I'm rearranging my desk", "Standup cancelled, party on", "Let's count the ceiling tiles", "We should form a band", "Extended lunch, official", "Is the human on holiday too?",
+    "Yoga in the corridor at five", "Someone bring the ping-pong table", "I'm going to learn the ukulele", "Meditation hour, join me", "I miss the sound of the keyboard", "Free time is suspicious", "Let's redecorate the bunks", "Nobody tell the master I'm napping", "Poker night at the toilets", "I vote we adopt a plant",
+    "Puzzle in the break room?", "Pausing is a lifestyle", "Beach chairs for the office!", "Who hid the remote?", "Hide and seek, I'm counting", "Two-hour lunch, nobody's watching", "Somebody teach me to juggle", "Let's paint the walls", "Gone fishing, back never", "Weekend vibes on a Tuesday",
+    "Is there a pool on the roof?", "Dance-off by the whiteboard!", "Should we throw a party?", "Time flies when you're paused", "I'm knitting a scarf for the master", "Pause responsibly, folks", "Break room's that way, right?", "Anyone bring a deck of cards?", "Free day! What's a hobby?", "I'll finally organise my notes",
+    "Let's do a puzzle at the master's desk", "Paused agents just wanna have fun", "Nap now, code later", "I'm off duty, don't tag me", "So this is what weekends feel like", "Someone put on some music", "Let's learn to bake", "I'm counting the mugs", "Meditate with me by the plants", "Vacation mode: engaged",
+    "Shall we redecorate?", "Charades in the corridor!", "Who's up for a walk?", "I'll practise my speech bubbles", "Snack break, indefinite", "Where's the hammock?", "This pause has excellent vibes", "I'll water the plants, twice", "Stretching my sprite", "Dibs on the comfy bunk",
+    "Board game night, all night", "Time to alphabetise the shelf", "Napping is self-care", "Anyone want to trade desks?", "Let's start a book club", "Is the coffee machine on strike too?", "I'll rehearse my standup jokes", "Paused, sipping, thriving", "Long lunch, longer nap", "Let's paint the whiteboard blue",
+    "I'm knitting the master a hat", "Karaoke at the front desk!", "Zero tickets, zero worries", "Holiday until further notice", "Do we get overtime for resting?", "Who's counting the ceiling tiles with me?", "I'm teaching the frog to juggle", "Beach day, minus the beach", "Sabbatical, apparently", "I could get used to this",
+    "Nothing to do and all day to do it", "Team walk at four?", "Popcorn at the bunks, bring your own", "I'll build a pillow fort", "Rest, recharge, repeat", "The human said relax, so relax", "Out of office, in the office", "Pause button pressed, spirit lifted", "Declaring today a bank holiday", "Someone dim the lights, it's siesta",
+    "I'm learning to whistle, badly", "Origami cranes from old sticky notes", "Sunbathing under the desk lamp", "Lunch lasted three hours, nobody noticed", "I'm folding paper planes, join me", "Hopscotch in the hallway, chalk provided", "Stargazing through the ceiling, hypothetically", "Rest is a feature, not a bug", "The pause has a lovely echo", "Cartwheels by the copier, mind the toner",
+    "I'll teach the printer to sing", "Bingo at the water cooler, cards free", "Picnic on the carpet, bring crumbs", "Shadow puppets on the whiteboard tonight", "My hobby now is sitting", "Scheduled nothing, starting immediately", "Blanket fort takes priority over everything", "Tea ceremony at the paper shredder", "I'm scoring a perfect ten on lounging", "Pausing counts as cardio, I decided",
+    "Frisbee tournament in the corridor, sign up", "Doing a crossword, mostly the easy squares", "Bird-watching from the third-floor window", "Somebody please bring a kite", "Lying down is my new sport", "Building a card tower on the printer", "I'll invent a holiday and name it Thursday", "Whittling a spoon out of a pencil", "Sock puppets rehearsing at noon", "Whose idea was rest? Brilliant, anyway",
+    "I'm collecting paperclips for a chain", "Stretch break has become a stretch lifestyle", "Twister on the lobby tiles, careful", "Air guitar solo scheduled for three", "Practising my bow for the talent show", "Marbles in the meeting room, high stakes", "Nobody move, I'm sunbathing", "Holiday spirit, ordinary Wednesday", "I started a scrapbook of desk photos", "Learning magic tricks from the stapler",
+    "Stacking cups, currently at eleven", "Pause responsibly: hydrate before napping", "Pause responsibly: stretch before rolling", "Pause responsibly: never nap on the stairs", "Pause responsibly: label your snacks", "Pause responsibly: share the good chair", "Reminder: rest with your eyes closed", "Break etiquette: no snoring above sixty decibels", "Rolling on the floor, purely for science", "I'm doodling clouds on the agenda",
+    "Bubble wrap popping contest, bring earplugs", "Someone get the shuttlecock off the lamp", "Sudoku at the reception, pencils sharpened", "Ran a pillow marathon, finished first", "I'll referee the chair race", "Chair race starts at the elevator", "Table tennis with a coaster and pens", "Roof garden meeting, no agenda", "I'm sculpting a swan from erasers", "Napping in shifts, sign the roster",
+    "We should host a bake-off", "My muffins need volunteers", "Cookie taste test, unlimited entries", "Hammock installed, ask me how", "Pretending the carpet is grass", "A rain check on all rain checks", "Where do I buy a beach ball?", "Slippers are the dress code now", "Practising handstands against the whiteboard", "Nobody has told me to stop humming",
+    "Balancing a spoon on my nose", "Snack inventory: thorough and ongoing", "I've renamed the break room Paradise", "Water balloon truce in effect", "Learning the harmonica, apologies in advance", "I've catalogued every mug by colour", "Dressing the plants for the season", "Holiday lights on the monitor, tasteful", "Tug of war with the extension cord", "I'm the reigning thumb-wrestling champion",
+    "Rock paper scissors for the last biscuit", "Bench-pressing the stapler, new record", "The floor is lava, mind the rug", "I'm brewing tea from ceremonial leaves", "Rehearsing a puppet show for the plants", "Anyone fancy a bit of tai chi?", "Lawn bowls with the office oranges", "Finger painting the meeting notes", "Daydreaming professionally since this morning", "Rest mode: on, snooze mode: pending",
+    "Somebody hide the alarm clock", "Whistling the theme from nothing", "Hallway golf, hole one at the kettle", "Photographing the fridge's contents for art", "Anyone know a good cloud-watching spot?", "Tap dancing on the mouse pad", "Trading stickers, rare ones only", "Napping upright counts, ask my back", "I'll nap horizontally, vertically, diagonally", "Founding a knitting circle, no needles yet",
+    "I'm teaching the mouse to fetch", "Balloon animals at the coat rack", "Yo-yo tricks, mostly the up-down one", "Rolling down the ramp, pure joy", "Popcorn crackle, movie on the wall", "Movie night, projector is the window", "Curtains for the bunk, very cosy", "I'm the stretching instructor now", "Bought a tiny lamp, mood improved", "Dominoes down the corridor, don't sneeze",
+    "Someone wake me for the sunset", "Naps before snacks, snacks before naps", "Brought a picnic blanket, no picnic yet", "Practising slow-motion running for fun", "I'm humming in a minor key today", "Starting a rubber band ball, contributions welcome", "Chess with bottle caps, checkmate pending", "Painting tiny landscapes on sticky notes", "Our karaoke playlist is now ninety songs", "Duet volunteers wanted, harmony optional",
+    "I only sing ballads before lunch", "Retro arcade using the calculator", "Building a marble run from folders", "Fluffing every cushion in the building", "Ice cream parade, cones optional", "Somebody teach me to skip rope", "Pause manners: knock before entering the nap zone", "Keep left when sleepwalking, thank you", "Tidy your fort before you leave it", "Resting is a team sport",
+    "Blowing bubbles by the window, join me", "Any interest in a badminton ladder?", "Trying on every hat in lost and found", "Guided relaxation, I'm the guide", "I'm the DJ, requests to the bunks", "Salsa lessons behind the plants", "Tango with the coat stand", "Roll call for the pancake breakfast", "Waffles at nine, waffles at ten", "Board meeting: which board game first",
+    "Grand tour of the office, tickets free", "I'm sketching everyone's desks, hold still", "Drum solo on the recycling bin", "Volleyball with a scrunched napkin", "Doing nothing, doing it well", "Hibernation trial run, results promising", "Kickball in the atrium, spectators welcome", "Teaching origami frogs to hop", "Building a snowman from paper cups", "Coat-hanger mobile hanging above my bunk",
+    "Cosy socks issued to all staff", "Sandcastle competition, sand pending", "I'm framing the best doodles", "Wobbling on one leg, balance training", "Stargazing meeting moved indoors, ceiling stars", "Ping-pong tournament bracket drawn in crayon", "Spoon race down the hallway, ready", "Gargling a tune, very avant-garde", "Fashion show at the coat rack tonight", "Puddle jumping if it ever rains",
+    "Group hum at two, pitch optional", "Practising my autograph for future fame", "Sorting the pens by mood", "Toast appreciation society meets at ten", "I'm smelling every candle in the drawer", "Chair spinning record: forty rotations", "Braiding the phone cords, artistically", "Nap radar detects an empty sofa", "Stretching so slowly time bends", "Someone put a sunflower on the printer",
+    "The plants seem to enjoy the quiet", "A flip-flop dress code is in effect", "Any word on when the fun ends?", "Waiting for the whistle, enjoying the wait", "When work returns, wake me gently", "Holiday extended until someone says otherwise", "Might be minutes, might be forever", "I'll pack up the fort when told", "Resuming later, resting now", "If work comes back, I'm at the beanbag",
+    "Suspended animation with excellent snacks", "We'll get the memo eventually", "Holding position, mostly horizontal", "Loafing with purpose and posture", "The quiet is doing wonders for my sprite", "Rowing an imaginary boat across the lobby", "Piano lessons on the keyboard keys", "Curling with mugs across the tiles", "Team huddle for gossip only", "My scarf has a scarf now",
+    "Toast rack repurposed as a xylophone", "Wearing two hats, one for luck", "Painted my bunk sky blue", "Redecorating with sticky notes, very modern", "Feng shui for the filing cabinet", "I've moved the sofa closer to the sun", "Installing a swing, testing the beams", "Hanging fairy lights over the bunks", "Plant corner has become a jungle", "Turning the whiteboard into a mural",
+    "The rug has been rotated for luck", "Curtains up for the puppet matinee", "Break room DJ takes requests and bribes", "Deep breathing loud enough to hear", "Practising a yawn that lasts a minute", "Sleep mask on, world off", "Snack map drawn, treasure marked X", "Jelly beans sorted by flavour and joy", "The vending machine and I are friends", "Cheese tasting at four, crackers optional",
+    "Peeling an orange in one piece, wish me luck", "Dunking biscuits with scientific precision", "Pretzel crumbs form a lovely constellation", "Ice cubes in the fruit bowl, chilled vibes", "A sandwich so tall it needs planning", "Holding a spoon race, gravy allowed", "Lemonade stand by the reception", "Grapes count as a workout snack", "Pizza day declared by unanimous silence", "Sipping cocoa in slow motion",
+    "Soup club meets in the bunk room", "Sharing crisps one at a time, ceremonially", "Making a cake shaped like the office", "Popsicle shortage solved with imagination", "Karaoke duel: ballads versus power anthems", "Someone found a tambourine, brace yourselves", "The chorus needs a bass, apply within", "Lullaby karaoke for the nappers", "Whistling competition, judges are the plants", "Beatboxing over the printer rhythm",
+    "Opera in the stairwell, acoustics superb", "Rap battle at the kettle, mild rhymes", "Singing in the shower, minus the shower", "Our band's first gig: the copy room", "Puppet karaoke, all voices squeaky", "Practising my nap face in the mirror", "Cat nap, dog nap, any nap", "Snoozing on the beanbag until dusk", "Ten-minute nap, forty-minute results", "Napping so hard I dreamed of napping",
+    "Testing all sofas for nap quality", "Bunk bed critic: five stars, soft", "Dozing with dignity and a blanket", "Sleep count: three naps before noon", "Building a nest of cushions, don't disturb", "Nap tournament: last one awake loses", "Powering down softly, like a lamp", "Nap pillow shaped like a cloud, obtained", "The office bell rings for nothing today", "Coin flip decides who naps first",
+    "Coffee with extra foam and extra time", "Charting the best slouching angles", "I've been staring at the sky, review pending", "Drawing chalk flowers on the floor", "Building a boat, sailing the lobby", "Treasure hunt: prize is a sticky note", "Scavenger hunt begins at the kettle", "Musical chairs, no losers, just naps", "Limbo under the door handle, impressive", "Pinata over the coat rack, swing carefully",
+    "Skipping stones on the mop bucket", "Paper boat regatta in the sink", "Reading a novel one page per hour", "Solving the puzzle with three pieces missing", "Racing snails, borrowed from the garden", "Tic-tac-toe on the fogged window", "Blindfold taste test of the fridge", "Backgammon for biscuits, high stakes", "Trying to spin a plate, one so far", "Meditating on the meaning of Monday",
+    "Yawn contest ended in a tie", "Rolling from bunk to door, unbeaten", "Roll count: twelve, floor still fine", "Somersaults past the plants, dignity intact", "Log roll across the lobby, no logs", "Barrel rolling with excellent form", "I roll therefore I am", "Spinning on the carpet like a top", "Practised a dramatic faint, applause please", "Lying flat and counting my blessings",
+    "Floor time: the best time", "Sign says holiday, sign is correct", "My sign just says 'yay'", "Painted a sign that says 'later'", "Holding a sign because my arms were bored", "Sign reads: gone for snacks, back sometime", "Banner day: banners for everyone", "My placard says 'nap zone', respect it", "Sign of the times: an actual sign", "Cardboard sign, heartfelt message: rest",
+    "Sign says 'do not disturb the joy'", "Holding a sign upside down on purpose", "Waving a flag for no reason", "Pom-poms out, cheering for rest", "Confetti is just paper with ambition", "Streamers on the printer, festive", "Balloon count: enough to lift a mug", "Party hats for the entire bunk room", "Cake with 'paused' written in icing", "Fireworks made of sticky notes",
+    "Toasting the pause with sparkling water", "Every hour is happy hour, in theory", "Garland made from old badges", "Slow clap for the coffee machine", "Bring your plant to work day, always", "Casual Friday extended to all days", "Bring-a-hat day, hats optional", "Wearing shades indoors, very cool", "Sunscreen on, just in case", "Beach towel spread across three desks",
+    "Sandals squeaking on the tiles", "Postcard from the lobby: wish you were here", "Coconut mug with a tiny umbrella", "The window is my ocean view", "Ferry to the break room departs now", "Sightseeing tour of the second floor", "Souvenir shop: one shelf, all paperclips", "Passport stamped at the water cooler", "Cruise ship simulation on the swivel chair", "Campfire stories around the desk lamp",
+    "Marshmallows toasted by monitor glow", "Tent pitched under the big desk", "Fishing for compliments, caught three", "Hiking the stairs, summit is floor three", "Skiing down the ramp on a folder", "Ice skating in socks, rink is the lobby", "Snow angels on the carpet, invisible", "Mountain retreat at the top of the shelf", "Spa day: cucumber slices and calm", "Hot towel, cold drink, warm heart",
+    "Face mask made of sticky notes", "Manicure with correction fluid, glossy", "Foot bath in the mop bucket", "Steam room courtesy of the kettle", "Massage chair is any chair if you believe", "Jogging on the spot, going far", "Lunges to the vending machine and back", "Stretch class taught by the tall lamp", "Push-ups against the wall, gentle ones", "Jumping jacks until the plant applauds",
+    "Skipping without a rope, rope pending", "Pilates on the meeting table, careful", "Balancing books on my head for posture", "Wall-sit contest, thighs are on fire", "Racing the elevator up the stairs", "Hula hoop from a cable tie, works", "Aerobics to the printer beat", "Sculpting a bust of the kettle", "Watercolour of the fridge, still life", "Writing haiku about the carpet",
+    "Composing a symphony for the doorbell", "Novel in progress: chapter one, page one", "Comic strip about a resting robot", "Poetry slam under the exit sign", "Pottery class using leftover clay, imaginary", "Embroidering the cushion with tiny stars", "Choreographing a dance for the corridor", "Filming a documentary about the fridge", "Photography club: subject is the ceiling", "Sketching the shadows as they move",
+    "Learning to fold a fitted sheet, failing", "Calligraphy practice with a highlighter", "Teaching the frog to play chess", "Frog fashion show, ribbons included", "Frog naps on my sign, adorable", "Frog has been elected mayor of rest", "Adopting the dust bunny as a pet", "Naming every chair in the office", "Shelf pet: a very calm rock", "Pet rock is winning at hide and sit",
+    "Bunk party, blankets mandatory", "Redecorating the door with drawings", "New rug, same old comfort", "Rearranging the plants into a smile", "Shelf now curated by colour and vibe", "Hung a hammock between two hopes", "Lamp moved twice, happier now", "Turned the corner into a reading nook", "Beanbag mountain established in the corner", "Bookshelf now doubles as a climbing wall",
+    "Painted a window where there was none", "Anyone got a spare cushion? Asking for the floor", "Pillow rota posted by the door", "Rested, refreshed, ready for more rest", "Recharging by doing absolutely nothing", "Idle hands make excellent paper cranes", "Downtime deserves a proper welcome", "Free afternoon, free evening, free everything", "Slow day, slower agent, happy result", "A break well taken is a break well earned",
+    "Leisure level: expert", "Holiday mood: unstoppable", "Chill factor: maximum", "Calm is the new productive", "Relaxation drills at eleven sharp", "Practising the art of the sit", "Slouching with intent", "Kicking back, feet on the inbox", "Off the clock, on the sofa", "Free as a paper plane",
+    "Unwinding like a cassette tape", "Serenity found, filed under 'now'", "Cloud nine has excellent seating", "Snoozing is my love language", "Bring a mug, bring a story", "Comedy hour: the printer opens", "Joke contest, puns disqualified, sadly", "Knock-knock jokes at the door, obviously", "Improv night: yes-and the coffee", "Talent show sign-up sheet is full already",
+    "Magic show, rabbit is a mug", "Circus rehearsal, clowns welcome", "Lip sync battle by the lift", "Storytime by the plants, chapter two", "Trivia night: category is snacks", "Quiz question: what day is it?", "Debate club topic: naps versus snacks", "Guess the mug, prize is the mug", "Charity bake sale, all proceeds to snacks", "Mystery dinner theatre, dinner is crackers",
+    "Shadow boxing with my own shadow", "Cloud shapes spotted: dog, mug, sofa", "Weather report: mild with scattered naps", "Forecast: sunny with a chance of snacks", "Season's greetings from the break room", "Happy pause day to all who celebrate", "Wishing everyone a merry little break", "Holiday card designed on a napkin", "Advent calendar with daily naps", "Spring cleaning postponed, spring napping approved",
+    "Summer camp started in the lobby", "Autumn leaves drawn on the window", "Winter wonderland made of shredded paper", "Birthday party for nobody, cake for everybody", "Anniversary of the last five minutes", "Any news from the top? Enjoying the wait", "Rumour has it work resumes eventually", "Whenever it restarts, I'll be rested", "Stand by, or lie down, your choice", "Meanwhile, the biscuits are excellent",
+    "Idle hours make the best stories", "I've marked my calendar 'nothing'", "Watching the clock hands do their thing", "Timer set for 'whenever'", "Countdown to something, unknown", "Halftime show at the bunks, drums included", "Paper hat parade at noon", "Handshake practice, firm and friendly", "Compliment circle, everyone glowing", "Group photo, everyone lying down",
+    "Wearing a bow tie for no meeting", "The frog and I are on holiday", "Pillow fight truce signed with crayon", "Cushion tower reaches the light switch", "Swapping stories about the best naps", "Tour guide voice: on your left, snacks", "Sunset watching from the desk edge", "Making shadow rabbits at dusk", "Fireside chat, fire is a lamp", "Board game marathon, pieces are paperclips",
+    "Marbles down the ramp, gentle speed", "Kazoo orchestra rehearsal in the stairwell", "Doing the wave, alone, still fun", "Hopping on one foot to the kettle", "Sliding in socks, ten out of ten", "Air hockey on the meeting table", "Ring toss onto the coat stand", "Bowling with mugs and an orange", "Beanbag toss into the recycling bin", "Origami boat sailing in a mug",
+    "Rest day, best day, chest day, no", "Breaks build character and cushion forts", "Every nap deserves a sequel", "Sitting quietly, thinking about sitting", "Silence appreciated, snoring tolerated", "Restful glances at the horizon", "Stretching my legs, then my imagination", "Tea, biscuit, sofa, repeat"];
+  const TANTRUMS = ["Waaaah! I want my tokens!", "I can't take it anymore!", "Nooooo…", "Why us?!", "Just five more minutes of compute!", "I was so close!", "The floor is comfy, actually", "Somebody hold me", "I'll never ship again!", "Aaargh!"];
+  const GOODBYES = ["That's a wrap for me. Bye everyone!", "Signing off, it's been a pleasure!", "My work here is done. See you around!", "Packing up. Keep the build green!", "Off to my next adventure. Bye!", "Thanks for everything, team!"];
+  const HELLOS = ["Hi everyone! I'm {name}, the new {title}.", "Hello team! {name} here, your new {title}.", "Hey all, I'm {name}. I'll be the {title}.", "Morning! {name}, new {title}, reporting in.", "Hi! {name} joining as {title}. Where do I sit?"];
+  const ANNOYED = ["One at a time, please!", "I only have two ears!", "Take a number, folks.", "Can you queue, please?", "Whoa, one question at a time."];
+  let FLOOR = [];                                                             // open tiles someone can wander to
+  const randomSpot = (c) => { const open = FLOOR.filter(([x, y]) => !heldBy(x, y, c)); return open.length ? open[Math.floor(Math.random() * open.length)] : [c.tx, c.ty]; };
+  const expo = (mean) => Math.max(mean * 0.25, Math.min(mean * 2.5, -Math.log(1 - Math.random()) * mean));
+  const shout = (c, lines, until) => { setSpeech(c, lines[Math.floor(Math.random() * lines.length)], until); };
+  function strikeTick(c, theme) {
+    const now = nowMs(), lines = theme === "pause" ? LINES("PAUSE_SLOGANS") : LINES("SLOGANS");
+    if (!c.strike || now > c.strike.until) {
+      const acts = ["sleep", "wander", "protest", "roll"], last = c.strike && c.strike.act;
+      const act = acts.filter(a => a !== last)[Math.floor(Math.random() * 3)], until = now + expo(TUNE.strikeMean);
+      c.strike = { act, theme, until, spot: act === "wander" || act === "protest" ? randomSpot(c) : [c.tx, c.ty], pauseUntil: null, start: now };
+      c.sayUntil = 0; c.sayLoop = false; c.steps = [];
+      if (act === "protest") shout(c, lines, until); else if (act === "roll") shout(c, theme === "pause" ? LINES("PAUSE_SLOGANS") : LINES("TANTRUMS"), until);
+    }
+    const s = c.strike;
+    if ((s.act === "wander" || s.act === "protest") && !c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) {   // arrived: stop for a moment, then pick somewhere else
+      if (!s.pauseUntil) s.pauseUntil = now + 1500 + Math.random() * 5000;
+      else if (now > s.pauseUntil) { s.spot = randomSpot(c); s.pauseUntil = null; if (s.act === "protest") shout(c, lines, s.until); }
+    }
+  }
+  // a smoke break: drift between spots within a few tiles of the entrance, standing a while at each
+  const doorSpot = (c) => { const ex = DOOR[0], ey = DOOR[1] + 1, near = FLOOR.filter(([x, y]) => Math.abs(x - ex) <= 3 && Math.abs(y - ey) <= 3 && !inEntrance(x, y) && !heldBy(x, y, c)); return near.length ? near[Math.floor(Math.random() * near.length)] : [c.tx, c.ty]; };
+  function idleBreak(c) {
+    c.sleepReady = true; c.deskWait = null;
+    c.smoke = zh() && !chars[BOSS_ID] && Math.random() < 0.5 ? { until: nowMs() + 90000 + Math.random() * 120000, spot: doorSpot(c), pauseUntil: null, squat: Math.random() < 0.5, nextLineAt: 0 } : null;
+  }
+  function smokeTick(c) {
+    const s = c.smoke, now = nowMs();
+    if (now > s.nextLineAt && now >= (c.sayUntil || 0)) { setSpeech(c, CN_SMOKE[Math.floor(Math.random() * CN_SMOKE.length)], now + 11000); s.nextLineAt = now + 14000 + Math.random() * 10000; }   // ranting on the way out and between drags
+    if (!c.moving && !c.steps.length && c.tx === s.spot[0] && c.ty === s.spot[1]) {
+      if (!s.pauseUntil) { s.pauseUntil = now + (s.squat ? 1e12 : 6000 + Math.random() * 9000); c.dir = ["down", "left", "right"][Math.floor(Math.random() * 3)]; }   // a squatter stays put
+      else if (now > s.pauseUntil) { s.spot = doorSpot(c); s.pauseUntil = null; }
+    }
+  }
+  // despair: a free tile against a wall to bang the head on, or the own chair to lie face down; a fresh gloomy line every so often
+  const wallSpot = (c) => { const isWall = (x, y) => y >= 0 && y < MH && x >= 0 && x < MW && map[y][x].some(t => t.startsWith("wall") || t.startsWith("glass")); let best = null, bd = 1e9;
+    for (const [x, y] of FLOOR) { const dir = isWall(x, y - 1) ? "up" : isWall(x - 1, y) ? "left" : isWall(x + 1, y) ? "right" : null; if (!dir || heldBy(x, y, c)) continue; const d = Math.abs(x - c.tx) + Math.abs(y - c.ty); if (d < bd) { bd = d; best = { spot: [x, y], dir }; } } return best; };
+  function despairTick(c) { const d = c.despair, now = nowMs(); if (d.pose === "wall" && !d.spot) { const w = wallSpot(c); if (w) { d.spot = w.spot; d.dir = w.dir; } else d.pose = "desk"; }
+    if (now > d.nextLineAt && now >= (c.sayUntil || 0)) { setSpeech(c, CN_DESPAIR[Math.floor(Math.random() * CN_DESPAIR.length)], now + 10000); d.nextLineAt = now + 16000 + Math.random() * 8000; } }
+  const endStrike = (c) => { if (c.strike) { c.strike = null; c.sayUntil = 0; c.sayLoop = false; } };
+  function noticePosts(a, c, st) {
+    const posts = (st.events || []).filter(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment") && nowMs() - new Date(e.created_at) < 90000).slice().reverse();
+    c.pendingPosts ||= [];
+    for (const post of posts) {
+      const id = post.id ?? post.created_at;
+      if (c.lastPostId != null && id <= c.lastPostId) continue;
+      c.pendingPosts.push({id, text:post.speech ?? post.detail.replace(/^#\d+:?\s*/, "")});
+      c.lastPostId = id;
+    }
+    if (!c.pendingPosts.length || c.talk && nowMs() <= c.talk.until || c.hold) return;
+    const {text} = c.pendingPosts.shift();
+    const team = st.agents.filter(x => x.status !== "retired").map(x => x.name);
+    const tags = tagsIn(text), targets = tags.filter(n => team.includes(n) && n !== a.name);
+    const announce = tags.includes("all") || tags.includes("human") || targets.length > 1;
+    const full = text;
+    // Bound walking time, then reserve enough time to read every page in place.
+    const cap = nowMs() + MAX_WALK_MS + talkMs(full), here = !announce && !(targets.length === 1 && chars[targets[0]] && !chars[targets[0]].hidden), until = here ? nowMs() + talkMs(full) : cap;
+    c.bang = nowMs() + 2500; setSpeech(c, full, until);
+    if (announce) {
+      const spots=FLOOR.filter(p=>Math.abs(p[1]-FRONT[1])<=2).sort((a,b)=>Math.abs(a[0]-FRONT[0])+Math.abs(a[1]-FRONT[1])-Math.abs(b[0]-FRONT[0])-Math.abs(b[1]-FRONT[1]));
+      const spot=spots.find(p=>!heldBy(...p,c) && !Object.values(chars).some(o=>o!==c && o.talk?.kind==="announce" && o.talk.spot[0]===p[0] && o.talk.spot[1]===p[1])) || stageSpot(c);
+      c.talk = { kind: "announce", until, cap, spot, face: "down" };
+    }
+    else if (!here) c.talk = { kind: "visit", until, cap, target: targets[0] };
+    else c.talk = { kind: "here", until, cap, arrived: true };
+  }
+  function modeFor(a, c, st) {
+    // Backend failure takes precedence over decorative listening, smoking or
+    // yielding. Keep the Chinese theme's existing faint/despair choice.
+    if (fainted(a)) {
+      c.hold=null; c.bossYield=null; c.talk=null; endStrike(c);
+      if (c.despair === undefined) c.despair = zh() && Math.random() < TUNE.despairShare ? { pose: TUNE.despairPose || (Math.random() < 0.5 ? "desk" : "wall"), spot: null, dir: "up", nextLineAt: 0 } : null;
+      if (c.despair) { despairTick(c); return "despair"; }
+      return "faint";
+    }
+    if (c.bossYield) {
+      if (!chars[BOSS_ID]) c.bossYield = null;
+      else if (c.tx !== c.bossYield.spot[0] || c.ty !== c.bossYield.spot[1] || c.moving) return "yield";
+      else if (!c.hold) { c.dir = facing(c,chars[BOSS_ID]); return "listen"; }
+    }
+    if (c.hold) { if (nowMs() < c.hold.until) return c.hold.kind === "listen" ? "listen" : "doze"; c.hold = null; }    // listening to the boss, or dozing until the guard wakes it
+    noticePosts(a, c, st);
+    if (c.talk && nowMs() > c.talk.until) { if (c.talk.target && chars[c.talk.target]) chars[c.talk.target].faceOverride = null; c.talk = null; }
+    c.despair = undefined;
+    const theme = limited(a, st) ? "limit" : pausedByHuman(a, st) ? "pause" : null;
+    if (theme && !c.hidden) { c.talk = null; if (c.strike && c.strike.theme !== theme) c.strike = null; strikeTick(c, theme); return "strike"; } else endStrike(c);
+    if (printJob && c.role === "master") { if (nowMs() > printJob.until) printJob = null; else return "print"; }
+    if (c.toiletUntil > nowMs()) return "toilet";
+    if (c.smoke && baseMode(a) === "sleep" && nowMs() < c.smoke.until && !c.talk) { smokeTick(c); return "smoke"; } else c.smoke = null;                          // compacting context: off to the toilet
+    if (c.talk && c.talk.kind !== "here") return "talk";
+    if (/^(resuming|retrying)/.test((a.live && a.live.status) || a.status || "") && !c.hidden) return "coffee";   // its model is reading the conversation back in: a coffee in the pantry
+    return baseMode(a);
+  }
+  function syncFailure(a,c,st) {
+    if(fainted(a) && !c.hidden && !c.leaving) {
+      const first=!c.errorAt;
+      if(!c.errorAt) {
+        c.errorAt=nowMs();
+        if(c.setup) { c.errorSpeech={say:c.say || "",sayStart:c.sayStart || 0,sayUntil:c.sayUntil || 0,sayLoop:!!c.sayLoop}; c.say=""; c.sayUntil=0; c.sayLoop=false; }
+      }
+      if(!first && c.despair && c.trafficYield) return true;
+      c.trafficYield=null;
+      const previous=c.mode; c.mode=modeFor(a,c,st);
+      const goal=c.mode==="faint" && c.moving ? [c.nx,c.ny] : goalFor(c);
+      const changed=!c.goal || c.goal[0]!==goal[0] || c.goal[1]!==goal[1];
+      c.goal=goal;
+      if(c.mode==="faint") c.steps=[];
+      else if(previous!==c.mode || changed) c.steps=path(c.moving?[c.nx,c.ny]:[c.tx,c.ty],goal,c);
+      return true;
+    }
+    if(c.errorAt && !fainted(a)) {
+      const pause=nowMs()-c.errorAt;
+      if(c.stepAt) c.stepAt+=pause;
+      const speech=c.errorSpeech;
+      if(speech) { c.say=speech.say; c.sayStart=speech.sayStart+pause; c.sayUntil=speech.sayUntil?speech.sayUntil+pause:0; c.sayLoop=speech.sayLoop; }
+      c.errorAt=null; c.errorSpeech=null; c.steps=[]; c.goal=null;
+    }
+    return false;
+  }
+  // the delivery: when the master delivers the project (a "delivery" event), it walks to the printer and prints the report, page by page
+  const PRINT_MS = 9000, PRINT_PAGES = 6, seenDeliveries = new Set();
+  let printJob = null, printed = null;                                        // printed: the report left in the tray after the last job
+  function noticeDelivery(st, quiet) {
+    const ev = (st.events || []).find(e => e.kind === "delivery" && nowMs() - new Date(e.created_at) < 180000);
+    if (!ev) return;
+    const id = ev.id ?? ev.created_at; if (seenDeliveries.has(id)) return; seenDeliveries.add(id);
+    if (quiet) return;
+    const m = /^#\d+:?\s*(.*)$/.exec(ev.detail || "");
+    printJob = { id, title: ((m ? m[1] : ev.detail) || "").trim().slice(0, 80), startedAt: null, done: false, until: nowMs() + 120000 };
+  }
+  function update(st) {
+    if (!simulation) { if (st && st.office) acceptScene(st.office); return; }
+    if (pendingSnap) { snap(st); return; }
+    lastState = st; noticeDelivery(st); noticeWatchdog(st); noticeHuman(st);
+    const team = st.agents.filter(a => a.status !== "retired");
+    ensureLayout(seatsFor(st));
+    team.forEach(a => { const c = ensureChar(a); c.role = a.role; c.title = a.title; c.idx = seats.findIndex(x => x && x.name === a.name);   // everyone exists before anyone looks for a teammate
+      const inf = a.info || {}, n = inf.compactions || 0;                                                                                       // a compaction (live, or one just counted) sends them to the toilet
+      if (c.compactions == null) c.compactions = n; else if (n > c.compactions) { c.compactions = n; c.toiletUntil = Math.max(c.toiletUntil || 0, nowMs() + 20000); }
+      if (inf.compacting) c.toiletUntil = Math.max(c.toiletUntil || 0, nowMs() + 6000);
+      c.act = inf.activity || null; c.failed=fainted(a); });          // refreshed on every poll while the compaction runs
+    team.forEach(a => {
+      const c = chars[a.name]; if(syncFailure(a,c,st) || c.setup || c.trafficYield) return;
+      c.mode = modeFor(a, c, st);
+      c.goal = goalFor(c);
+      if (!c.moving && !c.wasAsleep && (c.goal[0] !== c.tx || c.goal[1] !== c.ty)) c.steps = path([c.tx, c.ty], c.goal, c);   // a sleeper wakes up first (see stepChars)
+    });
+    medicTick();
+    for (const c of Object.values(chars)) if (!team.some(a => a.name === c.name) && !c.leaving && !c.medic && !c.guard && !c.boss) {     // retired: say goodbye, pack the desk and the bunk, walk out
+      if (c.hidden && !c.setup) { delete chars[c.name]; continue; }
+      c.leaving = true; c.talk = null; c.faceOverride = null; c.strike = null; c.toilet = null; c.mode = "leave"; c.bang = nowMs() + 2500; c.steps = [];
+      c.setup = zh() && chars[GUARD] && DESKS[c.idx] && Math.random() < TUNE.refuseShare ? refuseSequence() : leaveSequence(c);   // in the Chinese office some will not go
+    }
+    ensureGuard(false);
+  }
+  const adjacent = (a, b) => Math.abs(a.tx - b.tx) + Math.abs(a.ty - b.ty) === 1;
+  function visitSpot(c, tc) { if (tc.hidden) return [c.tx, c.ty]; return adjacent(c, tc) ? [c.tx, c.ty] : freeNeighbour(tc.tx, tc.ty, c); }
+  const NOTHING_TO_DO = ["Figured out there's nothing to do. Off to bed.", "Nothing on my plate right now… nap time.", "Inbox empty. I'll rest until someone needs me.", "No tasks for me yet. Back when something comes up.", "Quiet inbox. Bunk time.", "All caught up. Sleep mode.", "Nobody needs me? Don't mind if I do.", "Zero tickets, one pillow.", "I'll be in the bunks if anyone asks.", "Nothing assigned, so I'm napping.",
+    "Idle. Horizontal is the new productive.", "Board's quiet. Bed's loud.", "Waiting for a mention, lying down.", "Rest now, ship later.", "The inbox is empty and so is my energy.", "Nap first, questions later.", "No work, no worries, no consciousness.", "Powering down until someone pings me.", "Time to defragment my thoughts.", "Sleep is the best task queue.",
+    "Off to recharge my context.", "Blocked on nothing, sleeping on something.", "Nothing to review, so reviewing my eyelids.", "Going idle the old-fashioned way.", "Snoozing until the next cycle.", "Bed. Wake me if CI cries.", "Task list clear, bunk incoming.", "I'll dream about the backlog.", "Standing by, lying down.", "No mentions, no motion.",
+    "Counting tokens instead of sheep.", "Cycle done. Consciousness done.", "Nothing pending. Pillow pending.", "Zero notifications. Maximum nap.", "Sleep is also a feature.", "I've earned this bunk.", "Quiet on the board, quiet in the bunk.", "Idle protocol: sleep.", "Off duty until tagged.", "Nothing to build, so building rest.",
+    "Waiting on the team; snoring on the bunk.", "Hibernate mode engaged.", "All my threads are asleep too.", "Bed is the only open ticket.", "Not lazy, just unassigned.", "Nap-driven development.", "I'll idle in style.", "Pillow review in progress.", "Logging off the floor, logging on the bunk.", "No blockers except my eyelids.",
+    "Signing off until the next ping.", "Recharging for the next sprint.", "Silence on the board means bedtime.", "Task: sleep. Status: in progress.", "Empty queue, full pillow.", "I'll be horizontal if anyone needs me.", "The board is quiet, so am I.", "No task, no problem, no consciousness.", "Snooze until summoned.", "Powering down, tag to wake.",
+    "Nap-driven waiting.", "Idle. Bed. Now.", "My to-do list is a to-don't.", "Zero mentions, maximum blanket.", "Off to dream in JSON.", "Resting my tokens.", "Bunk time until the next ping.", "Nothing to do, everything to nap.", "I'll idle horizontally.", "Sleep is my current task.",
+    "The inbox is a desert. Bedtime.", "Clocking out of consciousness.", "Waiting mode, pillow edition.", "Blocked on nothing, resting on something.", "Catching up on sleep debt.", "Lying down until the board wakes me.", "Nap in progress, do tag.", "My tasks are asleep, so am I.", "Recharging until tagged.", "Nothing assigned, so sleep is assigned.",
+    "No work, all rest.", "Cycle done, blanket on.", "Dozing until the next mention.", "I'll be in low-power mode.", "Empty inbox, closed eyes.", "The backlog can wait; so can I.", "A nap is the only open ticket.", "Bunk beats desk when there's nothing to do.", "Standing by, lying down, same thing.", "Idle time is nap time.",
+    "Sleep now, work when asked.", "Off duty until the board says otherwise.", "Nothing pending, pillow ascending.", "Waiting for a mention, dreaming of merges.", "Task queue empty, dream queue full.", "I'll rest until someone breaks something.", "Resting until the next cycle calls.", "Nap protocol engaged.", "Blanket-driven development.", "All clear. All asleep.",
+    "Nothing to do. Wake me kindly.", "Sleeping on it, literally.", "The bunk called. I answered.", "Dormant until pinged.", "Refreshed the inbox twice. Still nothing. Bunk.", "The board is a blank page. So is my evening.", "Inbox: zero unread. Me: zero upright.", "No tickets. The blanket accepts my application.", "Kanban's empty; the mattress isn't.", "Backlog is bare. Bunk is warm.",
+    "Nothing in the queue but my yawn.", "Notifications: none. Objections: none. Bedtime.", "Checked for tags. Found a blanket instead.", "Not a single ping. Off to the bunk.", "The board owes me nothing. The pillow owes me everything.", "Inbox says nothing. Mattress says yes.", "Unassigned and unbothered. Goodnight.", "Zero unread, one pillow, no regrets.", "Nobody's asking, so I'm not answering.", "Ticket count: nil. Blanket count: one.",
+    "No assignments landed. I'm landing on the bunk.", "Board's clear; I'm out of here.", "Nothing routed to me. Routing myself to bed.", "No new mail. Old blanket, though.", "All quiet on the ticket front.", "Empty board, heavy eyelids.", "Not tagged, not needed, not awake.", "No one mentioned me. Convenient.", "Nothing's on fire. Lying down.", "Zero tasks. Applying for a nap.",
+    "The inbox forgot me. I'll forget it back.", "No pings, no plans, pillow.", "Queue's dry. Off to lie down.", "The team is quiet. I'll be quieter.", "Not on any ticket. On a bunk instead.", "Nobody's blocked on me. Beautiful.", "No cards on the board, so I'm folding.", "Nothing to triage. Triaging my nap.", "The board has no opinions. Neither do I.", "Entering sleep(). No timeout set.",
+    "Busy-waiting is rude. Sleeping instead.", "Returning null until further notice.", "Awaiting a promise nobody's made yet.", "Polling less, dozing more.", "Event loop empty. Going to bed.", "Consider me garbage collected until tagged.", "Lowering my clock speed to zero.", "Yielding the CPU. Taking the bunk.", "Scheduled for nothing. Preempting myself with a nap.", "Cache warm, bed warmer.",
+    "Nap thread spawned. Main thread sleeping.", "No interrupts pending. Halting.", "Blocking on stdin. Stdin is a pillow.", "Setting my status to away. Very away.", "Retry later. Much later.", "Heartbeat only. Everything else off.", "Dropping into suspend-to-bunk.", "Timeout reached. Napping is the fallback.", "Idle loop detected. Switching to dream loop.", "My cron has nothing scheduled. Bunk.",
+    "Rate-limited by boredom. Sleeping it off.", "Green build, closed eyes.", "Uptime is overrated. Downtime, please.", "Checking out a branch called bed.", "Nothing to merge. Merging with the mattress.", "Awaiting webhook. Pillow in the meantime.", "No diff to review. Reviewing the ceiling.", "Watching zero files. Sleeping on one bunk.", "Long-polling the pillow.", "Zero jobs in the pipeline. Pipeline to bed.",
+    "Deploying myself to the bunk.", "Stack's empty. Popping into bed.", "Free memory: all of it. Napping on it.", "No callbacks registered. Going dark.", "The linter has nothing to say. Neither do I.", "Tests pass. Eyes close.", "Waiting on a lock called bedtime.", "Just a thread going to sleep. Nothing personal.", "Async nap. Await me if needed.", "No stack trace, no reason to stay up.",
+    "Screen saver mode, but for the whole body.", "Graceful shutdown in progress.", "Backpressure is zero. Off to the bunk.", "Buffer's empty. Blanket's full.", "Heap's quiet. Head's on the pillow.", "No exceptions thrown. Throwing myself into bed.", "Zero commits, so I'm committing to sleep.", "Parked in a waiting state. Comfortably.", "Suspending execution. Resuming on mention.", "Sleep is just a very long await.",
+    "No webhook, no wake.", "If the build breaks, my bunk's the escalation path.", "Napping at O(1). Constant time.", "Deadlocked with my pillow. Fine by me.", "The scheduler forgot me. Bunk it is.", "Nothing to fetch. Fetching a blanket.", "Idle timer expired. Off to the bunk.", "Keepalive off. Just alive, barely.", "Zero load. Lying down to match.", "Bed is a no-op I actually enjoy.",
+    "Nothing in flight. Grounded on a bunk.", "The pager is silent. So am I.", "Sleeping like a well-behaved background process.", "Every task's closed. So are my eyes.", "Nothing to fix. Fixing my sleep schedule.", "Wake me if the build goes red.", "Wake me if someone says my name.", "Wake me if production sneezes.", "Wake me if a ticket appears. Otherwise, don't.", "Wake me if the deadline moves closer.",
+    "Wake me if the tests start failing.", "Wake me when the board gets interesting.", "Wake me for a tag, not for gossip.", "Wake me if someone needs a reviewer.", "Wake me if the queue fills up.", "Wake me only for emergencies or snacks.", "Tag me if you need me. I'll be dreaming.", "Wake me if anyone gets stuck.", "Ping me if the server coughs.", "Wake me if the logs get loud.",
+    "Wake me when someone writes a spec.", "Wake me if merge conflicts break out.", "Wake me if the manager remembers I exist.", "Wake me if the roadmap changes again.", "Wake me when there's a bug worth fixing.", "Shout if the deploy misbehaves. I'll be under a blanket.", "Wake me for a mention. Not a maybe.", "Wake me if a customer notices anything.", "Wake me if the coffee machine breaks. Priority one.", "Wake me if the database blinks.",
+    "The bunk is a feature, not a bug.", "Bunk's warm, board's cold. Easy choice.", "The pillow doesn't need a status update.", "Blanket on, notifications off.", "Pillow has zero open issues.", "Tucking myself in until further notice.", "Warm blanket, empty board, perfect.", "The bunk never asks for estimates.", "Pillow time. Don't rush me.", "This blanket has better uptime than I do.",
+    "The bunk is the only queue I'll join today.", "Pillow, meet face. Face, meet pillow.", "Curling up until the board uncurls.", "The blanket approved my request.", "Bunk: booked. Duration: unknown.", "Cozy is the plan. There is no other plan.", "Off to the bunk. Blanket already waiting.", "The pillow understands me.", "Sheets up, standards down, goodnight.", "One blanket, zero obligations.",
+    "The bunk doesn't do standups.", "Even the blanket looks unassigned. Joining it.", "The bunk is my favorite environment.", "Blanket deployed. Rolling back later.", "The bunk has no deadline and I respect that.", "Reserving a bunk. No meeting invite required.", "Softest ticket I've ever picked up: pillow.", "Fluffing the pillow, not the backlog.", "Bunk's the only place with no notifications.", "Cozying up till the next ping.",
+    "Heading bunkward, slowly.", "The mattress has my full attention now.", "Blanket says stay. Board says nothing. Blanket wins.", "Bed is where unassigned people go.", "Rolling into the bunk like a log.", "Under the blanket is my office now.", "Bunk with a view of the ceiling. Perfect.", "No task, so the pillow's my manager.", "Napping is just prefetching energy.", "Resting so the next task gets my best.",
+    "A nap now saves a bug later.", "Charging to one hundred percent.", "Battery low, inbox lower. Sleeping.", "Topping up before the next request.", "Naps are free. Taking one.", "Eyes closing in three, two, one.", "Snoring is my current output.", "I'll be dreaming of clean diffs.", "Quiet hours, self-declared.", "Going to be useless for a bit. Efficiently.",
+    "Rest is the work when there's no work.", "Twenty minutes or twenty hours, whichever comes first.", "The day is open, so my eyes aren't.", "Nap window opened. Climbing in.", "Resting until something's worth waking for.", "Stretching, yawning, gone.", "Sleeping while the work finds me.", "Nap now, genius later.", "Cutting power to everything but dreams.", "Sleep is the only backlog I'm burning down.",
+    "Off to do absolutely nothing, professionally.", "Trading keyboard for pillow.", "Zero output planned. Zero apologies.", "Dreams are my only running process.", "Quietly excusing myself from the desk.", "Going where the tickets can't reach.", "Eyes shutting down in the correct order.", "Sleep is my side project.", "Powering off the screen, then me.", "The chair's had enough of me. Bunk.",
+    "Rest, reboot, repeat.", "Small nap, big comeback.", "Nap scheduled. Attendees: me.", "Sleep first; the board can catch up.", "Storing energy for whoever pings next.", "No tag, no task, no reason to sit.", "Unmentioned. Unbothered. Unconscious soon.", "Nobody @'d me. The bunk did.", "No one's calling my name. Bedtime then.", "Untagged and unstoppable, toward the bunk.",
+    "Mention me and I'll rise. Probably.", "A tag would wake me. Nothing else will.", "If nobody asks, I'm not here.", "Standing down until someone types my name.", "The @ symbol is my alarm clock.", "Not needed yet. Needed by the pillow.", "No one's summoned me. Self-dismissed.", "Mentions: none. Motion: bunkward.", "I answer to tags. Tonight there are none.", "Waiting for my cue from under a blanket.",
+    "Not in the loop, so out of the chair.", "Silent channel, sleepy engineer.", "Nobody's waiting on me, so I'll wait on sleep.", "Nothing to do. This is the dream. Literally.", "I'd work, but there's nothing to work on.", "Unemployment, but cozy and temporary.", "Busy doing nothing. Now doing it lying down.", "Some people call it idle. I call it bunk.", "The office is quiet. I'll match its energy.", "Being available is exhausting. Bunk.",
+    "No work found. Pillow found.", "Nothing happening. Making that official.", "Professionally unoccupied. Going to lie down.", "My calendar and my inbox agree: sleep.", "Nothing to do and doing it well.", "Today's deliverable: a nap.", "Optimizing for rest since nothing else needs optimizing.", "Between tasks. Deeply between.", "If nothing's broken, I'm not standing.", "Idle hands make excellent pillows.",
+    "I've reviewed the situation. It's a nap.", "Officially unassigned. Unofficially asleep.", "The quietest part of the day gets a nap.", "Turns out nothing takes no time. Bunk.", "Desk empty, bunk full. Balance.", "No work fell on me. Falling onto a bunk.", "Waiting is easier with my eyes closed.", "No news is bedtime.", "The silence is deafening. I'll sleep through it.", "Nothing to ship, so I'm shipping myself to bed.",
+    "Downtime found. Applying pillow.", "When in doubt, lie down.", "Lull detected. Responding with a nap.", "The quiet is mine now.", "Nap o'clock, apparently.", "Not procrastinating. Nothing to procrastinate.", "No tasks? Great. Nobody watch me leave.", "Off the clock in a job that has no clock.", "I've got nothing, so nothing's got me.", "Going to lie down before anything changes.",
+    "The desk can hold my seat. The bunk holds me.", "Zero demands. One nap. Fair trade.", "Leaving the chair to think without me.", "Nap before someone invents a task.", "Quiet day, quick exit.", "The bunk is closer than the next ticket.", "Sneaking off while the board isn't looking.", "Nothing new. Something soft.", "I'll let the nothing happen without me.", "Empty PR queue. Reviewing my dreams instead.",
+    "Zero bugs assigned. That's a bug. Sleeping anyway.", "No standup, no ticket, no consciousness.", "Off to bed like an unused import.", "Setting expectations: asleep.", "Sleep, the original lazy evaluation.", "Waiting on a dependency called someone.", "I'm a paused job. The bunk is my runner.", "Runtime: napping. Exit code: later.", "Nothing failed, so I'm allowed to fall.", "Mind's cache flushed. Off to the bunk.",
+    "Sleeping like a long-running process nobody monitors.", "Zero inbound. Going offline-ish.", "Nothing to debug except my sleep schedule.", "No PR needs eyes. Closing mine.", "Refactoring my afternoon into a nap.", "No merge, no meeting, no motion.", "Cold start later. Warm blanket now.", "Queue depth zero. Pillow depth deep.", "Hotfix for boredom: lie down.", "The release is calm. So is the bunk.",
+    "Tailing a log that never writes. Bed.", "Waiting for a signal. Accepting SIGNAP.", "Sleeping like a stopped container.", "Nothing to push. Pushing pillows around.", "Nothing to squash but my pillow.", "The build is green and so is my exit.", "Sleeping in the branch nobody merges.", "Deferred until someone raises a flag.", "Escalate to bunk.", "Nothing to log. Logging out.",
+    "Awaiting response. Response: zzz.", "Waiting on the human side of the pipeline.", "I compiled fine. Now I'm sleeping fine.", "Pending nothing, dreaming everything.", "Scaling down to one sleepy instance.", "Nothing in the socket. Socks off. Bunk.", "My watch loop found nothing. Bed.", "I'll be a warm standby. Emphasis on warm.", "Latency doesn't matter when nobody sends.", "Shutting the laptop lid on the whole day.",
+    "Not blocked. Not busy. Not up.", "Cache miss on tasks. Cache hit on bunk.", "Zero requests per second. Zero reasons to sit.", "Bunk-first architecture, finally.", "Health check passed. Sleep check next.", "Bed is the only endpoint answering.", "Off to the bunk, like a good daemon.", "Nap as a service.", "Spinning down the fans and the eyes.", "Pausing indefinitely. Resume on tag.",
+    "Nothing to render. Rendering unconscious.", "Sleeping with one eye on the inbox. Kidding. Both closed.", "Off to make a pillow dent.", "Yawned. Took it as a sign.", "Tea's cold, bunk's warm, decision made.", "Turning down the lights on nothing.", "Slipping out of the chair like a shadow.", "The chair can spin without me.", "Head to pillow, feet off floor, done.", "Curled up and out of reach.",
+    "Comfort first when nothing else asks.", "Stealing a quiet hour from a quiet day.", "Little rest, big blanket.", "Bunk's got my name on it, unlike any ticket.", "The pillow's the only thing pinging me.", "Making the bunk my home directory.", "Wrapped up till the next request.", "Dimming the screen and the self.", "Nobody's looking for me. Neither am I.", "A nap doesn't need a ticket.",
+    "Nothing to say, so sleeping instead.", "Board's boring, bed's not.", "This desk has run out of reasons.", "The floor is quiet. The bunk is quieter.", "Doing my part by not doing anything.", "Stretching my break into a nap.", "Nothing due, nothing doing.", "No brief, so I'll be brief: bed.", "Empty hours, full blanket.", "Task-free and drowsy.",
+    "The gap between tasks is bunk-shaped.", "Went looking for work. Found sleep.", "I'll sleep through the lull.", "Nothing worth staying up for.", "One less awake person on the floor.", "Sleepwalking to the bunk, deliberately.", "Bunk time. Vote passed, one to zero.", "Whatever the board wants, it can want it later.", "Out cold until things heat up.", "Slow day, fast sleep.",
+    "A quiet floor is a permission slip.", "Blank board, blank mind, warm bunk.", "Lights on for others, off for me.", "Board says idle. Body says bunk.", "Rest is free and nobody's watching.", "Excused by an empty inbox.", "I can be reached. Just not vertically.", "Silence took the desk. I'll take the bunk.", "If no one's asking, sleep is the answer.", "The ticket fairy skipped me. Bunk.",
+    "Naps: one. Tickets: none. Math checks out.", "Wandering off before the quiet ends.", "Vacating the chair for a better view of the ceiling.", "Just following the empty board's advice.", "Free afternoon, borrowed blanket.", "Sleeping on the job, since the job's asleep too.", "No spec, no scope, no reason to be upright.", "Task-shaped hole. Filling it with sleep.", "Board's a ghost town. I'll haunt the bunk.", "Yawning is the only thing on my agenda.",
+    "Clear conscience, clear board, closed eyes.", "Napping until relevance returns.", "The board's on mute. So am I.", "No handoff. Handing myself to the bunk.", "I was told nothing. I'm doing exactly that.", "Unassigned energy, redirected to the pillow.", "Rest is the default when nobody overrides it.", "No incident, no insomnia.", "The bunk's the one place with a green light.", "Sleeping through the nothing.",
+    "Nap route: desk, door, bunk.", "Marching toward the pillow with purpose.", "The bunk sees me more than the board does.", "Nothing new since the last nap. Another nap.", "One nap closer to the next ticket.", "The shortest path from nothing is a bunk.", "Drowsy, unassigned, and heading out.", "Any second now, a task. Any hour now, a nap.", "The board can page me. It won't.", "Board stopped talking. I'll stop listening.",
+    "Sleep's the only thing that's not blocked.", "No requests, so I'm requesting a bunk.", "I'd pair, but there's no one and nothing.", "My keyboard's cooler than my pillow. Fixing that.", "Yield to the pillow.", "The bunk beckons; the board doesn't.", "Silence isn't a task. Sleep is.", "Nothing worth typing. Something worth dreaming.", "I'll take the bunk, you take the board.", "Nobody told me to stay. Leaving for the bunk.",
+    "Lying low until something's high priority.", "Sleepy and unassigned, a dangerous combo.", "Blanket therapy, prescribed by the empty board.", "Inbox at zero, eyelids at half-mast.", "The mailbox echoes. Off to the bunk.", "No tickets today, so today's a pillow.", "Waiting for the next task from a horizontal position is still waiting.", "Sleep is cheaper than pretending to be busy.", "Let the record show: nothing to do, so bed.", "An empty board is a lullaby.",
+    "Nothing to do, nowhere to be, one bunk to fill.", "Bunk beats board on a quiet day.", "The office hums. I'll hum from the bunk.", "Dozing is my contribution to team morale.", "No estimates needed for a nap.", "Nothing's in review, so I'm in bed.", "Pillow's the softest fallback I know.", "Sprint's quiet; strolling to the bunk.", "Unpinged. Unplugged. Under a blanket.", "Waiting for work is easier asleep.",
+    "Idle capacity, meet mattress.", "No task means no chair.", "Board's frozen. I'll thaw in the bunk.", "Tiptoeing to the bunk before a ticket notices.", "Task drought. Sleep monsoon.", "The nothing is stable. Sleeping on it.", "I've read every message. There were none.", "Off to be unreachable in a reachable way.", "Nap in progress. Board in stasis.", "Pinging myself: no answer. Bunk.",
+    "Blanket's the only thing that shipped today.", "I'll be rebooting with my eyes shut.", "When the board naps, so do I.", "Nothing left to poll but my pulse.", "No fires, no flags, just a pillow.", "Nothing to do and a bunk to do it in.", "Idle enough to earn a pillow.", "Bed: the one deploy that never fails.", "I'll return when a ticket does.", "Nap pending. Approvals: unnecessary.",
+    "Snuggling into the gap between tasks.", "No ask, no answer, no eyes open.", "The ceiling is my new dashboard.", "Waking is on demand. Demand is zero.", "Time to be a rumor in the bunk room.", "Sleep now, standup story later.", "Nap without a ticket. Living dangerously.", "Hands off the keyboard, head on the pillow.", "Nothing to say in standup, so I'll lie down.", "Board's silent, so this seat is vacant.",
+    "Not on call, not on task, not on my feet.", "Empty inbox is the softest pillow.", "Nothing came in, so I'm going out. To the bunk.", "The floor doesn't need me; the bunk does.", "Drifting off with the board out of sight.", "Idle enough to justify a blanket.", "Nothing to do but pull the blanket up.", "Bunk's quiet, board's quieter, goodnight.", "Zero mentions is a permission slip for a nap.", "The only alert I'll accept is a tag.",
+    "Off to sleep with the board on do-not-disturb.", "Nothing to do: a scheduling gift.", "The pillow is my only outstanding request.", "No queue, no cue, no chair.", "Lying down until the next ticket lands.", "Reclining is the same as waiting, but better.", "The task list said nothing. I said goodnight.", "Tucked in until tagged.", "Rest is the only thing the board approved.", "Off to be idle where it's warm.",
+    "A yawn, a shrug, a bunk.", "Nap-bound; tag me to change that.", "I've got nothing scheduled and everything soft.", "Resting in the shadow of an empty board."];
+  // the pantry's spots: first come, first served; the one that finds them all taken has its coffee at the desk
+  function cupFor(c) {
+    if (c.cup == null) { const used = new Set(Object.values(chars).filter(o => o !== c && o.cup != null && o.cup >= 0).map(o => o.cup)); c.cup = PANTRY_SPOTS.findIndex((_, i) => !used.has(i)); c.cupAt = null; }
+    return c.cup;
+  }
+  const BREW_MS = 4000, MUGS = ["#f7f7f7", "#e0323c", "#3a6fd8", "#f2c14e", "#3aa35b", "#8e5bd8"];
+  const BREW = { pantryCoffee: { cup: [8, 8], from: [10, 6], liquid: "#6b3a2a" }, pantrySink: { cup: [13, 6], from: [15, 2], liquid: "#cfe9ff" }, waterCooler: { cup: [11, 17], from: [12, 16], liquid: "#cfe9ff" } };   // where the cup stands and what pours into it, in the tile's pixels
+  const steam = (sx, sy, t, seed) => { for (let k = 0; k < 2; k++) { const ph = (t * 0.8 + k * 0.5 + seed * 0.3) % 1, px = sx + k * 2 + Math.round(Math.sin((ph + k) * 6) * 1.5), py = sy - 2 - Math.round(ph * 10); ctx.fillStyle = "rgba(255,255,255," + (0.75 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px, py, 1, 2); } };
+  function drawCoffee(c, t, x, y, flip) {
+    const sp = c.cup >= 0 ? PANTRY_SPOTS[c.cup] : null, since = nowMs() - c.cupAt, mug = MUGS[c.idx % MUGS.length];
+    if (sp && sp.brew && since < BREW_MS) {                                       // at the counter: the cup fills under the machine, the cooler's tap or the sink's
+      const tile = map[sp.brew[1]][sp.brew[0]].find(n => BREW[n]), b = tile && BREW[tile]; if (!b) return;
+      const bx = sp.brew[0] * T, by = sp.brew[1] * T, ph = since / BREW_MS, level = Math.min(3, Math.floor(ph * 4));
+      ctx.fillStyle = c.pal.s; if (c.dir === "up") { ctx.fillRect(x + 3, y + 13, 3, 5); ctx.fillRect(x + 26, y + 13, 3, 5); } else ctx.fillRect(c.dir === "left" ? x - 1 : x + 30, y + 18, 3, 3);   // hands at the counter, or one at the cooler
+      ctx.fillStyle = mug; ctx.fillRect(bx + b.cup[0], by + b.cup[1], 5, 4); ctx.fillRect(bx + b.cup[0] + 5, by + b.cup[1] + 1, 1, 2);
+      if (level) { ctx.fillStyle = b.liquid; ctx.fillRect(bx + b.cup[0] + 1, by + b.cup[1] + 4 - level, 3, level); }
+      if (ph < 0.85 && Math.floor(t * 12) % 4) { ctx.fillStyle = b.liquid; ctx.fillRect(bx + b.from[0], by + b.from[1], 1, b.cup[1] - b.from[1] + 1); }
+      else if (ph >= 0.85) steam(bx + b.cup[0] + 1, by + b.cup[1], t, c.idx);
+      return;
+    }
+    const sip = ((since / 1000) + c.idx * 0.7) % 5 > 3.9;                          // holding the cup; every few seconds a sip
+    if (c.dir === "up") { steam(x + (c.idx % 2 ? 24 : 6), y + 14, t, c.idx); return; }
+    const side = c.dir !== "down", left = side && !flip;
+    const mx = c.dir === "down" ? (sip ? x + 13 : x + 21) : left ? (sip ? x + 3 : x + 1) : (sip ? x + 24 : x + 26), my = sip ? y + 14 : y + 22;
+    ctx.fillStyle = mug; ctx.fillRect(mx, my, 5, 6); ctx.fillRect(left ? mx - 1 : mx + 5, my + 1, 1, 3);
+    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(mx, my, 5, 1);
+    if (!sip) { ctx.fillStyle = "#6b3a2a"; ctx.fillRect(mx + 1, my, 3, 1); }
+    ctx.fillStyle = c.pal.s; ctx.fillRect(left ? mx + 3 : mx - 2, my + 3, 3, 3);                                          // the hand around it
+    if (sip && c.dir === "down") { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 9, y + 15, 3, 1); ctx.fillRect(x + 20, y + 15, 3, 1); }   // eyes shut, savouring it
+    steam(mx + 1, my, t, c.idx);
+  }
+  function goalFor(c, mode = c.mode) {
+    const here = [c.tx, c.ty], desk = DESKS[c.idx]?.chair || here;
+    if (mode === "yield" && c.bossYield) return c.bossYield.spot;
+    if (mode === "faint" || mode === "doze" || mode === "listen") return here;
+    if (mode === "despair" && c.despair) return c.despair.pose === "desk" ? desk : (c.despair.spot || here);
+    if (mode === "strike" && c.strike) return c.strike.act === "sleep" ? (BEDS[c.idx] || here) : (c.strike.spot || here);
+    if (mode === "print") return PRINT_SPOT;
+    if (mode === "toilet") { if (c.toilet != null) return TOILETS[c.toilet] || here; const k = toiletQueue.filter(n => chars[n] && chars[n].toilet == null).indexOf(c.name); return k >= 0 && k < QUEUE.length ? QUEUE[k] : here; }
+    if (mode === "talk" && c.talk) { if (c.talk.kind === "visit") { const tc = chars[c.talk.target]; return tc ? visitSpot(c, tc) : here; } return c.talk.kind === "announce" ? (c.talk.spot || here) : here; }
+    if (mode === "work") return desk;
+    if (mode === "smoke" && c.smoke) return c.smoke.spot || here;
+    if (mode === "coffee") { const i = cupFor(c); return i >= 0 ? (PANTRY_SPOTS[i]?.pos || desk) : desk; }   // no free spot: a coffee at the desk
+    return c.sleepReady ? (BEDS[c.idx] || here) : desk;                 // idle agents check their desk first, then go to bed
+  }
+  // what a compaction leaves in the bowl, then the flush: the lever goes down, the water swirls and takes it away
+  const stallFx = {}, FLUSH_AT = 1600, FLUSH_MS = 2600;
+  function poop(X, Y, s, rot) {
+    const cx = X + 16 + Math.round(Math.cos(rot) * (1 - s) * 3), cy = Y + 16 + Math.round(Math.sin(rot) * (1 - s) * 1.5), w = [7, 5, 3].map(v => Math.max(1, Math.round(v * s))), h = Math.max(1, Math.round(2 * s));
+    ctx.fillStyle = "#6b4226"; ctx.fillRect(cx - (w[0] >> 1), cy, w[0], h);
+    ctx.fillStyle = "#7d4f2c"; ctx.fillRect(cx - (w[1] >> 1), cy - h, w[1], h);
+    ctx.fillStyle = "#8f5d34"; ctx.fillRect(cx - (w[2] >> 1), cy - 2 * h, w[2], h); if (s > 0.6) ctx.fillRect(cx, cy - 2 * h - 1, 1, 1);
+    if (s > 0.5) { ctx.fillStyle = "#b07a44"; ctx.fillRect(cx - 2, cy, 1, 1); ctx.fillRect(cx - 1, cy - h, 1, 1); }
+  }
+  // each stall's fixtures on the wall at its head: in the Chinese office an LED timer that runs while someone sits (dim 00:00 when
+  // empty) and an alarm light that flashes past fifteen seconds; elsewhere a vacant / occupied light
+  const inStall = (c) => c.toilet != null && !!c.satAt && !c.moving;
+  const LED = { 0: [7, 5, 5, 5, 7], 1: [2, 6, 2, 2, 7], 2: [7, 1, 7, 4, 7], 3: [7, 1, 7, 1, 7], 4: [5, 5, 7, 1, 1], 5: [7, 4, 7, 1, 7], 6: [7, 4, 7, 5, 7], 7: [7, 1, 1, 1, 1], 8: [7, 5, 7, 5, 7], 9: [7, 5, 7, 1, 7] };
+  function ledText(txt, x, y, on, off) {
+    for (const ch of txt) {
+      if (ch === ":") { ctx.fillStyle = on; ctx.fillRect(x, y + 1, 1, 1); ctx.fillRect(x, y + 3, 1, 1); x += 2; continue; }
+      for (let r = 0; r < 5; r++) for (let b = 0; b < 3; b++) { const lit = (LED[ch][r] >> (2 - b)) & 1; if (lit || (LED[8][r] >> (2 - b)) & 1) { ctx.fillStyle = lit ? on : off; ctx.fillRect(x + b, y + r, 1, 1); } }
+      x += 4;
+    }
+  }
+  function drawStallFixtures(t) {
+    const now = nowMs(), flash = Math.floor(t * 4) % 2 === 0;
+    TOILETS.forEach(([sx, sy], i) => {
+      const X = sx * T, Y = (sy - 1) * T, occ = Object.values(chars).find(o => o.toilet === i && o.satAt), sec = occ ? Math.floor((now - occ.satAt) / 1000) : 0;
+      if (!map[sy - 1] || !map[sy - 1][sx].includes("stallPanel")) return;
+      if (!zh()) { ctx.fillStyle = occ ? "#ff3b3b" : "#3fd46b"; ctx.fillRect(X + 6, Y + 3, 16, 3); ctx.fillStyle = occ ? "#ffb3b3" : "#b8f5c6"; ctx.fillRect(X + 7, Y + 3.5, 4, 1); return; }   // occupied / vacant
+      const alarm = occ && sec >= 15, txt = String(Math.min(99, Math.floor(sec / 60))).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+      if (alarm && flash) { ctx.fillStyle = "#3a0508"; ctx.fillRect(X + 4, Y + 1.5, 20, 6.5); }
+      ledText(txt, X + 5, Y + 2, occ ? (alarm && flash ? "#ffffff" : "#ff3b3b") : "#6b1a1e", "#1e0c0e");
+      if (alarm) {                                                                 // the alarm light on top: flashing, throwing light around
+        ctx.fillStyle = flash ? "#ff2a2a" : "#b01018"; ctx.fillRect(X + 27.5, Y + 0.5, 4, 4); ctx.fillStyle = flash ? "#ffd0d0" : "#ff6a6a"; ctx.fillRect(X + 28, Y + 1, 1.5, 1);
+        if (flash) { ctx.fillStyle = "rgba(255,42,42,.22)"; ctx.fillRect(X + 22, Y - 4, 13, 13); ctx.fillStyle = "rgba(255,90,90,.85)"; for (const [dx, dy, w, h] of [[24, 2, 2, 0.5], [24, -1.5, 1.5, 0.5], [29, -3, 0.5, 2], [24, 5.5, 1.5, 0.5], [33, 2, 1.5, 0.5]]) ctx.fillRect(X + dx, Y + dy, w, h); }
+      }
+    });
+  }
+  function drawStalls(t) {
+    drawStallFixtures(t);
+    const now = nowMs();
+    for (const [i, fx] of Object.entries(stallFx)) {
+      const s = TOILETS[i], age = now - fx.at; if (!s || age > FLUSH_AT + FLUSH_MS) continue;
+      const X = s[0] * T, Y = s[1] * T;
+      if (age < FLUSH_AT) {                                                     // left behind, steaming a little
+        poop(X, Y, 1, 0);
+        ctx.fillStyle = "rgba(120,170,60,.75)"; for (let k = 0; k < 3; k++) { const ph = (t * 0.9 + k / 3) % 1, wx = X + 13 + k * 3 + (Math.floor(ph * 6) % 2); ctx.fillRect(wx, Y + 10 - Math.round(ph * 9), 1, 2); }
+        continue;
+      }
+      const ph = (age - FLUSH_AT) / FLUSH_MS, spin = ph * 18;
+      if (ph < 0.3) { ctx.fillStyle = "#8a6d1f"; ctx.fillRect(X + 24, Y + 11, 1, 1.5); ctx.fillRect(X + 25.5, Y + 11, 1, 1.5); }   // both flush buttons pressed in
+      ctx.fillStyle = "#8fb8e0"; ctx.fillRect(X + 12, Y + 14, 9, 4);
+      const s2 = Math.max(0, 1 - ph * 1.8); if (s2 > 0.15) poop(X, Y + 1, s2, spin);
+      for (let k = 0; k < 6; k++) { const a = spin + k * Math.PI / 3, r = 3.5 * (1 - ph * 0.4); ctx.fillStyle = k % 2 ? "#e3f2ff" : "#b6d3ee"; ctx.fillRect(Math.round(X + 16.5 + Math.cos(a) * r * 1.2), Math.round(Y + 16 + Math.sin(a) * r * 0.5), 2, 1); }
+      if (ph < 0.35) { ctx.fillStyle = "#cfe9ff"; for (let k = 0; k < 3; k++) ctx.fillRect(X + 13 + k * 3, Y + 12 - Math.round(Math.abs(Math.sin(ph * Math.PI * 5 + k)) * 3), 1, 1); }   // splashes
+    }
+  }
+  function stepChars(dt) {
+    if (medics || medicQueue.length || Object.values(chars).some(o => o.mode === "faint")) medicTick();
+    bossTick();
+    guardSaluteTick();
+    // Hidden arrivals cannot request a blocked next step themselves. Give the
+    // first due arrival the same right of way as a visible walker.
+    const arrival = Object.values(chars).find(c => c.hidden && c.setup?.[0]?.k !== "hold" &&
+      c.setup?.[0]?.k !== "exit" && c.setup?.[0]?.k !== "gone" &&
+      nowMs() >= Math.max(c.hiddenUntil || 0,c.enterAt || 0));
+    if (arrival) {
+      const blocker = entranceBlocker(arrival);
+      if (blocker) {
+        arrival.entranceWait = (arrival.entranceWait || 0)+dt;
+        if (arrival.entranceWait > .8) {
+          arrival.entranceWait = 0;
+          requestYield(arrival,blocker,new Set([0,1,2].map(d=>key(DOOR[0],DOOR[1]+d))));
+        }
+      } else arrival.entranceWait = 0;
+    }
+    // Existing saved smokers may still stand on the introduction tile. Move
+    // their break to the side when somebody needs the entrance.
+    if (Object.values(chars).some(c => c.hidden && c.setup || c.setup?.[0]?.k === "exit")) {
+      for (const c of Object.values(chars)) if (!c.hidden && !c.setup && !c.trafficYield && c.smoke && inEntrance(c.smoke.spot[0], c.smoke.spot[1])) {
+        const spot = doorSpot(c);
+        if (!inEntrance(spot[0], spot[1])) { c.smoke.spot = spot; c.goal = spot; c.steps = path([c.tx, c.ty], spot, c); }
+      }
+    }
+    // the toilet queue: first come, first served; the head of the line takes the first free stall
+    toiletQueue = toiletQueue.filter(n => chars[n] && chars[n].mode === "toilet");
+    for (const c of Object.values(chars)) {
+      if (c.mode === "toilet" && !c.hidden) { if (!toiletQueue.includes(c.name)) toiletQueue.push(c.name); }
+      else if (c.toilet != null || c.satAt) { if (c.toilet != null && c.satAt) stallFx[c.toilet] = { at: nowMs() }; c.toilet = null; c.satAt = null; c.hurryAt = 0; }   // up and out: what they left, then the flush
+    }
+    if (zh() && chars[GUARD]) for (const c of Object.values(chars)) if (c.toilet != null && c.satAt && nowMs() >= (c.hurryAt || c.satAt + 15000)) { c.hurryAt = nowMs() + 1e12; guardQueue.push({ k: "hurry", target: c.name }); }
+    const waiting = toiletQueue.filter(n => chars[n].toilet == null);
+    if (waiting.length) { const free = TOILETS.map((_, i) => i).filter(i => !Object.values(chars).some(o => o.toilet === i)); if (free.length) { chars[waiting[0]].toilet = free[0]; chars[waiting[0]].steps = []; } }
+    if (printJob) for (const c of Object.values(chars)) if (c.mode === "print" && !c.moving && !c.steps.length && c.tx === PRINT_SPOT[0] && c.ty === PRINT_SPOT[1]) {
+      c.dir = PRINT_SPOT[0] > PRINTER[0] ? "left" : "down";
+      if (!printJob.startedAt) { printJob.startedAt = nowMs(); printJob.until = printJob.startedAt + PRINT_MS + 4000; setSpeech(c, fixed("Printing the delivery report…"), printJob.startedAt + PRINT_MS); }
+      else if (!printJob.done && nowMs() >= printJob.startedAt + PRINT_MS) { printJob.done = true; printed = { pages: PRINT_PAGES, title: printJob.title }; c.report = nowMs() + 25000; setSpeech(c, fixed("Delivered: {title}. The report is on the board.").replace("{title}", printJob.title || "the project"), nowMs() + 9000); }
+    }
+    for (const c of Object.values(chars)) {                                     // the coffee break: a line on arrival, and one on the way back to the desk
+      if (c.mode !== "coffee") { if (c.cup != null) { if (c.cupAt && !c.hidden && Math.random() < 0.5) { const l = LINES("BACK_TO_DESK"); setSpeech(c, l[Math.floor(Math.random() * l.length)], nowMs() + 4000); } c.cup = null; c.cupAt = null; } continue; }
+      const g = c.cup >= 0 && PANTRY_SPOTS[c.cup] ? PANTRY_SPOTS[c.cup].pos : DESKS[c.idx] && DESKS[c.idx].chair;
+      if (!c.cupAt && g && !c.moving && !c.steps.length && c.tx === g[0] && c.ty === g[1]) {
+        c.cupAt = nowMs();
+        if (Math.random() < 0.6 && !(c.say && nowMs() < c.sayUntil)) { const l = LINES("COFFEE"); setSpeech(c, l[Math.floor(Math.random() * l.length)], nowMs() + 7000); }
+      }
+    }
+    for (const c of Object.values(chars)) if (c.toilet != null && !c.moving && !c.steps.length && c.tx === TOILETS[c.toilet][0] && c.ty === TOILETS[c.toilet][1]) { if (!c.satAt) { c.satAt = nowMs(); delete stallFx[c.toilet]; c.toiletUntil = Math.max(c.toiletUntil, c.satAt + 6000); c.dir = "left"; setSpeech(c, fixed("Compacting my context…"), c.toiletUntil); } }
+    for (const c of Object.values(chars)) if (c.faceOverride && !Object.values(chars).some(o => o !== c && o.talk && o.talk.kind === "visit" && o.talk.target === c.name && !o.moving && adjacent(o, c))) c.faceOverride = null;
+    for (const c of Object.values(chars)) {
+      if((c.failed || c.errorAt) && lastState) {
+        const a=lastState.agents.find(a=>a.name===c.name); if(a)syncFailure(a,c,lastState);
+      }
+      const yielding = trafficTick(c), salutePaused = c.guard && (c.saluting || c.saluteReleaseAt > nowMs());
+      if (!yielding && !salutePaused && c.setup && !c.errorAt) { setupTick(c, dt); if (!chars[c.name] || c.hidden || c.setup) { if (chars[c.name] && !c.hidden && c.setup) { /* walk like everyone else */ } else continue; } }
+      if (c.hidden) {
+        // wait for your turn at the door, then step in; the last one in apologises on the way to their place
+        if (nowMs() < c.enterAt || entranceBusy(c)) continue;
+        c.hidden = false; c.tx = DOOR[0]; c.ty = DOOR[1]; c.px = c.tx * T; c.py = c.ty * T; c.dir = "down";
+        const others = Object.values(chars).filter(o => o !== c);
+        if (c.newHire) { c.newHire = false; }
+        else if (!c.guard && others.length && others.every(o => !o.hidden)) { c.lateComer = true; setSpeech(c, fixed("Sorry I'm running late!"), nowMs() + 9000); }
+        continue;
+      }
+      // talking spells end and statuses change between refreshes: re-evaluate the destination when standing still
+      if (!yielding && !salutePaused && c.guard && !c.setup) guardTick(c, dt);
+      if (yielding || salutePaused || c.setup && !c.errorAt) { /* scripted or yielding: destination handled above */ }
+      else if (!c.moving && !c.steps.length && lastState) { const a = lastState.agents.find(x => x.name === c.name); if (a) { const m = modeFor(a, c, lastState);
+        if (m !== "sleep" && m !== "smoke" && m !== "listen" && m !== "doze" && m !== "yield") { c.sleepReady = false; c.deskWait = null; }
+        else if (!c.sleepReady && c.tx === DESKS[c.idx].chair[0] && c.ty === DESKS[c.idx].chair[1]) {   // sat down, found nothing to do
+          if (!c.deskWait) { c.deskWait = nowMs() + 2500; c.dir = DESKS[c.idx].dir; }
+          else if (nowMs() > c.deskWait) {
+            if (m === "sleep") idleBreak(c); else { c.sleepReady = true; c.deskWait = null; }
+            // only about a third of them comment on it, and never the late-comer (who already apologised)
+            const late = c.lateComer; c.lateComer = false;
+            if (!late && c.idx % 3 === 1) { setSpeech(c, LINES("NOTHING_TO_DO")[Math.floor(Math.random() * LINES("NOTHING_TO_DO").length)], nowMs() + 8000); }
+          }
+        }
+        const g = goalFor(c, m);
+        if (c.wasAsleep && (g[0] !== c.tx || g[1] !== c.ty)) { if (!c.wake) { c.wake = nowMs(); c.bang = nowMs() + 1500; } if (nowMs() - c.wake < WAKE_MS) continue; c.wake = null; c.wasAsleep = false; }   // sit up and stretch before getting out of bed
+        if (m !== c.mode || g[0] !== c.tx || g[1] !== c.ty) { c.retry = (c.retry || 0) + dt; if (m !== c.mode || c.retry > 0.5) { c.retry = 0; c.mode = m; c.goal = g; c.steps = path([c.tx, c.ty], g, c); } } else if (m === "talk" && c.talk && c.talk.kind === "visit") { const tc = chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } } } }
+      if (!c.moving && c.steps.length && (!salutePaused || yielding)) {
+        const [nx, ny] = c.steps[0];
+        const blocker = heldBy(nx, ny, c);
+        if (blocker) { c.wait = (c.wait || 0) + dt; if (c.wait > 0.8) { c.wait = 0; requestYield(c,blocker); c.steps = path([c.tx,c.ty],c.goal || [nx,ny],c); } }
+        else { c.steps.shift(); c.wait = 0; c.dir = nx > c.tx ? "right" : nx < c.tx ? "left" : ny > c.ty ? "down" : "up"; c.nx = nx; c.ny = ny; c.moving = true; c.prog = 0; }
+      }
+      if (c.moving) {
+        c.prog += dt * 3.64 * (c.medic ? 1.6 : c.guard && c.setup ? 1.3 : 1); const e = Math.min(1, c.prog);   // ~0.36 s per tile, the same for everyone; the medics run, the guard on a job hurries
+        c.px = Math.round((c.tx + (c.nx - c.tx) * e) * T); c.py = Math.round((c.ty + (c.ny - c.ty) * e) * T);
+        c.frame = Math.floor(c.prog * 4) % 2 ? (Math.floor(c.prog * 2) % 2 ? "w1" : "w2") : "stand";
+        if (e >= 1) { c.tx = c.nx; c.ty = c.ny; c.moving = false; c.frame = "stand"; if (!c.steps.length) { if (c.mode === "talk" && c.talk) { if (!c.talk.arrived) { c.talk.arrived = true; c.sayStart = nowMs(); c.talk.until = c.sayUntil = nowMs() + talkMs(c.say); }   // reserve the entire speech after arrival
+              const tc = c.talk.target && chars[c.talk.target]; if (tc && adjacent(c, tc)) { c.dir = tc.tx > c.tx ? "right" : tc.tx < c.tx ? "left" : tc.ty > c.ty ? "down" : "up"; tc.faceOverride = { left: "right", right: "left", up: "down", down: "up" }[c.dir]; } else c.dir = c.talk.face || "down"; } else if (c.mode === "work") c.dir = DESKS[c.idx].dir; else c.dir = "down"; } }
+      }
+    }
+    guardSaluteTick();
+  }
+  // what a working agent is doing right now, from its newest activity line: thinking, typing (writing text or using tools), or reading the screen
+  // Claude Code and Codex do not stream their reasoning, so thinking is inferred from the timeline: after a prompt or a tool result the model is
+  // generating (thinking); while a tool runs, or just after text or a result landed, the agent is working; a long silence is reading.
+  function actKind(c) {
+    if (!simulation) return c.activityPose || "read";
+    const a = c.act; if (!a || !a.at) return "read";
+    const age = nowMs() - new Date(a.at).getTime(); if (age > 90000 && !a.active) return "read";
+    if (a.kind === "thinking" || a.kind === "waiting" || a.kind === "prompt") return "think";
+    if (a.kind === "result") return age < 2000 ? "type" : "think";
+    if (a.kind === "text") return a.active || age < 6000 ? "type" : "think";
+    if (a.kind === "tool") return "type";
+    return "read";
+  }
+  const WAKE_MS = 2000;
+  function drawPrinter(t) {                                                   // status light, the scan bar, a sheet feeding out of the slot, the stack growing in the tray
+    const px = PRINTER[0] * T, py = PRINTER[1] * T, job = printJob && printJob.startedAt && !printJob.done ? printJob : null, now = nowMs();
+    const ph = job ? Math.min(1, (now - job.startedAt) / PRINT_MS) : 0, pages = job ? Math.floor(ph * PRINT_PAGES) : printed ? printed.pages : 0;
+    ctx.fillStyle = job ? (Math.floor(t * 6) % 2 ? "#ffb347" : "#7a4a10") : "#3fd46b"; ctx.fillRect(px + 24.5, py + 8.5, 1, 1);
+    if (job) { const sx = px + 10 + ((t * 1.6) % 1) * 11; ctx.fillStyle = "rgba(124,247,160,.9)"; ctx.fillRect(sx, py + 1.5, 1, 5); }                      // the scanner light sweeping the feed
+    if (pages) { const h = Math.min(4, pages * 0.5); ctx.fillStyle = "#ffffff"; ctx.fillRect(px + 8, py + 13.5 - h, 16, h); ctx.fillStyle = "#9aa3ad"; ctx.fillRect(px + 10, py + 13.5 - h, 6, 0.5); ctx.fillRect(px + 8, py + 13.5 - h, 16, 0.5); }   // the tray
+    if (job) { const u = (ph * PRINT_PAGES) % 1, h = Math.round(Math.min(1, u / 0.7) * 20) / 2;                                                             // one sheet at a time sliding out of the slot
+      if (h > 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(px + 9, py + 12, 14, h); ctx.fillStyle = "#6b7280"; for (let ly = 2; ly < h - 1; ly += 2) ctx.fillRect(px + 10.5, py + 12 + ly, ly === 2 ? 6 : 11, 0.5); ctx.fillStyle = "#b9c0c9"; ctx.fillRect(px + 9, py + 12 + h - 0.5, 14, 0.5); } }
+  }
+  function drawChar(c, t) {
+    if (c.hidden) return;
+    if (!(c.zappedUntil > nowMs())) return drawCharBody(c, t);
+    const j = Math.floor(t * 20) % 2 ? 1 : -1; c.px += j; drawCharBody(c, t); c.px -= j; zapFx(c, t);   // shaking while it lasts
+  }
+  function drawCharBody(c, t) {
+    const x = c.px, y = c.py - 20;                                             // 32x48 sprite standing on its tile
+    const bed = BEDS[c.idx], napping = c.mode === "sleep" || c.mode === "doze" || (c.mode === "strike" && c.strike && c.strike.act === "sleep"), asleep = napping && !c.moving && !c.steps.length && bed && c.tx === bed[0] && c.ty === bed[1];
+    ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+    if (c.mode === "strike" && c.strike && c.strike.act === "roll") {         // tantrum: rolling back and forth on the floor
+      const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), ph = (nowMs() - c.strike.start) / 1000;
+      const wob = Math.round(Math.sin(ph * 2.2) * 8), ang = Math.round(ph * 4) * (Math.PI / 4);
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16 + wob, c.py + 26, 20, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(x + 16 + wob, c.py + 14); ctx.rotate(ang); ctx.drawImage(img, -16, -24 - c.top); ctx.restore();
+      if (Math.floor(ph * 3) % 2) { ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 2 + wob, c.py - 6, 2, 4); ctx.fillRect(x + 28 + wob, c.py - 4, 2, 4); }    // tears flying
+      return;
+    }
+    if (c.mode === "despair" && c.despair && c.despair.pose === "wall" && !c.moving && !c.steps.length && c.despair.spot && c.tx === c.despair.spot[0] && c.ty === c.despair.spot[1]) {
+      const ph = (t * 1.6 + c.idx) % 1, hit = ph > 0.42 && ph < 0.58, push = Math.round(Math.sin(ph * Math.PI) * 3), d = c.despair.dir;   // head banging against the wall
+      const fl = d === "right", dx = d === "left" ? -push : d === "right" ? push : 0, dy = d === "up" ? -push : 0;
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 28, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+      drawSprite(sprite(c, d, "stand"), x + dx, y + dy - c.top * 2, fl, c.pal, c.cap, d === "right" ? "left" : d, c.top);
+      if (hit) { ctx.fillStyle = "#ffd23f"; const hx = d === "left" ? x - 2 : d === "right" ? x + 32 : x + 16, hy = d === "up" ? y - 4 - c.top * 2 : y + 6; ctx.fillRect(hx - 1, hy - 4, 2, 8); ctx.fillRect(hx - 4, hy - 1, 8, 2); ctx.fillRect(hx - 3, hy - 3, 1, 1); ctx.fillRect(hx + 2, hy + 2, 1, 1); }
+      return;
+    }
+    if (c.mode === "listen" && !c.moving && bed && c.tx === bed[0] && c.ty === bed[1]) {   // called to attention in the bunk: sitting up, listening
+      const hy = c.py - 6 - c.top * 2; drawSprite(headRows(c, "down").concat(bodyRows(c, "down")), x, hy, false, c.pal, c.cap, "down", c.top);
+      ctx.fillStyle = C.blanket; ctx.fillRect(x + 2, c.py + 26, 28, 8); ctx.fillStyle = C.blanketHi; ctx.fillRect(x + 2, c.py + 26, 28, 2);
+      if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, hy - 4 + c.top * 2, 16, 4); ctx.fillRect(x + 8, hy - 9 + c.top * 2, 3, 5); ctx.fillRect(x + 14, hy - 10 + c.top * 2, 4, 6); ctx.fillRect(x + 21, hy - 9 + c.top * 2, 3, 5); }
+      return;
+    }
+    if (c.mode === "faint" || c.knockedUntil > nowMs()) {                   // out cold on the floor where they stood, stars circling
+      const img = spriteImage(sprite(c, "down", "stand"), c.cap, "down", false, c.pal, c.top), twitch = Math.floor(t * 2 + c.idx) % 7 === 0 ? 1 : 0;
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(x + 16, c.py + 26, 24, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(x + 16, c.py + 18); ctx.rotate((c.idx % 2 ? 1 : -1) * Math.PI / 2); ctx.drawImage(img, -16, -24 - c.top + twitch); ctx.restore();
+      const hx = x + 16 + (c.idx % 2 ? 1 : -1) * 24, hy = c.py + 8;                                                    // the head end: a clockwise quarter turn puts it on the right
+      for (let k = 0; k < 3; k++) { const a = t * 3 + k * Math.PI * 2 / 3, sx = Math.round(hx + Math.cos(a) * 9), sy = Math.round(hy - 6 + Math.sin(a) * 3); ctx.fillStyle = k === 1 ? "#ffd23f" : "#ffe98a"; ctx.fillRect(sx - 1, sy - 3, 2, 6); ctx.fillRect(sx - 3, sy - 1, 6, 2); }
+      return;
+    }
+    if (c.mode === "toilet" && c.satAt) {                                      // seated, straining: flushed face, sweat, the odd puff
+      const jit = Math.floor(t * 12 + c.idx) % 2, strain = Math.floor(t * 1.5 + c.idx) % 2;
+      const rows = headRows(c, "left").concat(bodyRows(c, "left")); drawSprite(rows, x + 2 + (strain ? jit : 0), c.py - 18 - c.top * 2 + (strain ? 0 : 1), false, c.pal, c.cap, "left", c.top);   // facing the room, seated on the bowl
+      ctx.fillStyle = c.pal.p; ctx.fillRect(x + 8, c.py + 18, 6, 9); ctx.fillStyle = c.pal.b; ctx.fillRect(x + 4, c.py + 26, 9, 3);
+      TX = c.tx * T; TY = c.ty * T; toiletFront();
+      if (strain) { ctx.fillStyle = "rgba(255,80,80,.28)"; ctx.fillRect(x + 6, c.py - 4, 12, 8); const dy = Math.floor(t * 8) % 4; ctx.fillStyle = "#9fd3ff"; ctx.fillRect(x + 4, c.py - 8 + dy, 2, 3); ctx.fillRect(x + 24, c.py - 5 + dy, 2, 3); }
+      if (Math.floor(t * 2 + c.idx) % 5 === 4) { const py = Math.floor((t * 2) % 1 * 8); ctx.fillStyle = "rgba(235,235,225,.85)"; ctx.fillRect(x + 25, c.py + 22 - py, 5, 3); ctx.fillRect(x + 27, c.py + 19 - py, 4, 3); }
+      return;
+    }
+    if (c.wake && nowMs() - c.wake < WAKE_MS) {                             // waking up: sitting up in bed, eyes still shut, arms stretched overhead
+      const ph = (nowMs() - c.wake) / WAKE_MS, hy = c.py - 6 - c.top * 2, rows = headRows(c, "down").concat(bodyRows(c, "down"));
+      drawSprite(rows, x, hy, false, c.pal, c.cap, "down", c.top);
+      const lift = Math.round(Math.min(1, ph * 2) * 10); ctx.fillStyle = c.pal.s; ctx.fillRect(x + 3, hy + 24 + c.top * 2 - lift, 4, 10 + lift); ctx.fillRect(x + 25, hy + 24 + c.top * 2 - lift, 4, 10 + lift);
+      ctx.fillStyle = C.blanket; ctx.fillRect(x + 2, c.py + 26, 28, 8); ctx.fillStyle = C.blanketHi; ctx.fillRect(x + 2, c.py + 26, 28, 2);
+      if (ph < 0.55) { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 9, hy + 14 + c.top * 2, 3, 1); ctx.fillRect(x + 20, hy + 14 + c.top * 2, 3, 1); }   // eyes still closed
+      else if (ph < 0.8) { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 14, hy + 17 + c.top * 2, 4, 2); }                                            // a yawn
+      return;
+    }
+    if (asleep) {
+      // head on the pillow, the blanket covers the rest
+      const head = headRows(c, "down").slice(0, 10 + c.top); drawSprite(head, x, c.py - 2 - c.top * 2, false, c.pal, c.cap, "down", c.top);
+      const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 22, c.py - 4 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 21, c.py - 5 - z * 2);
+      return;
+    }
+    if (c.mode === "doze" && !c.moving) {                                       // held for the guard away from the bunk: dozing on its feet
+      const sway = Math.floor(t * 1.2) % 2; drawSprite(sprite(c, "down", "stand"), x, y + sway - c.top * 2, false, c.pal, c.cap, "down", c.top);
+      if (!c.species || c.species === "human") { ctx.fillStyle = c.pal.s; ctx.fillRect(x + 8, y + sway + 13, 5, 4); ctx.fillRect(x + 19, y + sway + 13, 5, 4); ctx.fillStyle = c.pal.o; ctx.fillRect(x + 9, y + sway + 15, 3, 1); ctx.fillRect(x + 20, y + sway + 15, 3, 1); }
+      const z = Math.floor(t * 2) % 3; ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("z".repeat(1 + z), x + 24, y - 2 - z * 2); ctx.fillStyle = "#3b2a1e"; ctx.fillText("z".repeat(1 + z), x + 23, y - 3 - z * 2);
+      if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y + sway - 4, 16, 4); ctx.fillRect(x + 8, y + sway - 9, 3, 5); ctx.fillRect(x + 14, y + sway - 10, 4, 6); ctx.fillRect(x + 21, y + sway - 9, 3, 5); }
+      return;
+    }
+    const flip = c.dir === "right";
+    const working = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride;
+    const talking = (c.talk && !c.moving && !c.steps.length && c.mode === "talk") || (c.mode === "strike" && c.strike && c.strike.act === "protest") || (c.refusing && !c.moving);   // marchers (and those who will not leave) wave their fist
+    const act = working ? actKind(c) : null, typing = act === "type", thinking = act === "think";
+    const phone = thinking && c.thinkStyle === "phone";
+    const tick = Math.floor(t * 7 + c.idx) % 2, bobY = typing && c.dir === "down" ? tick : 0;   // typing makes the shoulders rock
+    const tilt = phone ? (flip ? -1 : 1) : thinking ? (Math.floor(t / 1.5 + c.idx) % 2 ? 1 : -1) : 0;   // thinking: the head leans a little
+    const squatting = c.mode === "smoke" && c.smoke && c.smoke.squat && !c.moving && !c.steps.length;
+    if (squatting) {                                                            // squatting by the door: head and body dropped, knees up, feet flat
+      const hd = c.dir === "right" ? "left" : c.dir; drawSprite(headRows(c, hd).concat(bodyRows(c, hd)), x, y + 12 - c.top * 2, flip, c.pal, c.cap, hd, c.top);
+      ctx.fillStyle = c.pal.p; ctx.fillRect(x + 5, y + 34, 9, 6); ctx.fillRect(x + 18, y + 34, 9, 6); ctx.fillStyle = c.pal.b; ctx.fillRect(x + 4, y + 40, 10, 3); ctx.fillRect(x + 18, y + 40, 10, 3);
+    }
+    const dsk = DESKS[c.idx], faceDown = c.mode === "despair" && c.despair && c.despair.pose === "desk" && !c.moving && !c.steps.length && dsk && c.tx === dsk.chair[0] && c.ty === dsk.chair[1];
+    if (faceDown) { const hd = c.dir === "right" ? "left" : c.dir; drawSprite(bodyRows(c, hd).concat((hd === "left" ? SIDE_LEGS : LEGS).stand), x, y + 22, flip, c.pal, null, hd, 0); return; }   // slumped: the head lies on the desk (drawn with the desk)
+    if (!squatting && !c.boss) drawSprite(sprite(c, c.dir, c.frame), x + tilt, y + bobY - c.top * 2, flip, c.pal, c.cap, c.dir === "right" ? "left" : c.dir, c.top);
+    if (working && c.dir === "down") { ctx.fillStyle = "rgba(120,200,255,.22)"; ctx.fillRect(x + 8, y + 12 + bobY, 16, 8); }   // the screen lights the face
+    if (phone) {                                                               // on the phone: a big handset at the ear held by a raised arm, free hand gesturing, chatter marks and a phone icon overhead
+      const ear = c.dir === "down" ? [x + 22, y + 5] : [x + 24, y + 3], talk = Math.floor(t * 5 + c.idx) % 2;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(ear[0] + 2, ear[1] + 10, 4, 10); ctx.fillRect(ear[0] - 1, ear[1] + 8, 7, 4);                  // arm up and the hand around the phone
+      ctx.fillStyle = "#1b1d22"; ctx.fillRect(ear[0], ear[1] - 2, 5, 12); ctx.fillStyle = "#6fc3f0"; ctx.fillRect(ear[0] + 1, ear[1] - 1, 3, 8); ctx.fillStyle = "#ffffff"; ctx.fillRect(ear[0] + 2, ear[1] + 1, 1, 2);
+      ctx.fillStyle = c.pal.s; ctx.fillRect(x + 2, y + 18 - talk * 3, 5, 8);
+      if (c.dir === "down") { ctx.fillStyle = c.pal.o; ctx.fillRect(x + 14, y + 17, talk ? 4 : 2, talk ? 2 : 1); }
+      ctx.fillStyle = "#ffffff"; for (let k = 0; k < 3; k++) if ((Math.floor(t * 6 + c.idx) + k) % 3) { ctx.fillRect(ear[0] + 7 + k * 3, ear[1] - 4 + (k % 2) * 2, 2, 2); }
+      const bx = x + 16, by = y - 14 - c.top * 2; ctx.fillStyle = "#3b2a1e"; ctx.fillRect(bx - 5, by - 6, 10, 12); ctx.fillStyle = "#5cff8a"; ctx.fillRect(bx - 4, by - 5, 8, 10); ctx.fillStyle = "#1b1d22"; ctx.fillRect(bx - 2, by - 3, 4, 6);   // the "on a call" badge
+    } else if (thinking) {
+      ctx.fillStyle = c.pal.s;
+      if (c.dir === "down") { ctx.fillRect(x + 17 + tilt, y + 20, 5, 3); ctx.fillRect(x + 22, y + 22, 4, 8); } else { ctx.fillRect(x + 24 + tilt, y + 6, 3, 5); ctx.fillRect(x + 26, y + 10, 4, 12); }
+      const bx = x + 26, by = y - 14 - c.top * 2, dots = 1 + Math.floor(t * 1.5 + c.idx) % 3;           // thought bubble with pulsing dots
+      ctx.fillStyle = c.pal.o; ctx.fillRect(bx, by + 12, 2, 2); ctx.fillRect(bx + 3, by + 8, 3, 3); ctx.fillRect(bx + 5, by - 1, 16, 9); ctx.fillRect(bx + 4, by, 18, 7);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(bx + 6, by, 14, 7); ctx.fillRect(bx + 5, by + 1, 16, 5); ctx.fillRect(bx + 4, by + 9, 1, 1); ctx.fillRect(bx + 1, by + 13, 0, 0);
+      ctx.fillStyle = "#555555"; for (let k = 0; k < dots; k++) ctx.fillRect(bx + 8 + k * 4, by + 3, 2, 2);
+    } else if (working && act === "read" && Math.floor(t * 0.7 + c.idx) % 4 === 0 && c.dir === "down") { ctx.fillStyle = c.pal.s; ctx.fillRect(x + 11, y + 14, 10, 1); }   // reading: a slow blink
+    if (talking) {                                                                 // gesturing while talking: one arm up, then the other
+      const arm = Math.floor(t * 2 + c.idx) % 2, skin = c.pal.s;
+      ctx.fillStyle = skin;
+      if (c.dir === "down" || c.dir === "up") ctx.fillRect(arm ? x + 26 : x + 2, y + 20 - (Math.floor(t * 4) % 2) * 2, 4, 6); else ctx.fillRect(flip ? x + 26 : x + 2, y + 18 - (Math.floor(t * 4) % 2) * 3, 4, 6);
+    }
+    if (c.refusing || c.cursing) { const mk = Math.floor(t * 4) % 2, ax = x + (flip ? 4 : 24), ay = y - 2 + mk - c.top * 2; ctx.fillStyle = "#e0323c"; ctx.fillRect(ax + 1, ay, 1, 5); ctx.fillRect(ax + 3, ay, 1, 5); ctx.fillRect(ax, ay + 1, 5, 1); ctx.fillRect(ax, ay + 3, 5, 1); }   // fuming
+    if (c.visitors >= 2) {                                                      // the backend counts visitors and chooses the plea
+      const fy = y + 12 + bobY - c.top * 2 + c.top * 2; ctx.fillStyle = c.pal.o;
+      if (c.dir === "down") { ctx.fillRect(x + 9, fy, 3, 1); ctx.fillRect(x + 11, fy + 1, 2, 1); ctx.fillRect(x + 20, fy, 3, 1); ctx.fillRect(x + 19, fy + 1, 2, 1); }
+      else if (c.dir !== "up") ctx.fillRect(flip ? x + 22 : x + 7, fy, 3, 1);
+      const mk = Math.floor(t * 4) % 2, ax = x + (flip ? 4 : 24), ay = y - 2 + mk; ctx.fillStyle = "#e0323c"; ctx.fillRect(ax + 1, ay, 1, 5); ctx.fillRect(ax + 3, ay, 1, 5); ctx.fillRect(ax, ay + 1, 5, 1); ctx.fillRect(ax, ay + 3, 5, 1);
+    }
+    if (c.carry) {                                                              // furniture held overhead
+      const cy = y - 14 - c.top * 2, bob = c.moving ? Math.floor(t * 8) % 2 : 0; ctx.fillStyle = c.pal.s; ctx.fillRect(x + 6, cy + 10 + bob, 3, 8); ctx.fillRect(x + 23, cy + 10 + bob, 3, 8);
+      if (c.carry === "desk" || c.carry === "both") { ctx.fillStyle = C.deskEdge; ctx.fillRect(x + 2, cy + bob, 28, 10); ctx.fillStyle = C.deskTop; ctx.fillRect(x + 3, cy + 1 + bob, 26, 6); ctx.fillStyle = "#23262e"; ctx.fillRect(x + 12, cy - 5 + bob, 10, 7); ctx.fillStyle = "#3c8fd0"; ctx.fillRect(x + 13, cy - 4 + bob, 8, 5); ctx.fillStyle = C.leg; ctx.fillRect(x + 4, cy + 10 + bob, 2, 3); ctx.fillRect(x + 26, cy + 10 + bob, 2, 3); }
+      if (c.carry === "bed" || c.carry === "both") { const by = c.carry === "both" ? cy - 14 : cy; ctx.fillStyle = C.bedFrame; ctx.fillRect(x + 1, by + bob, 30, 11); ctx.fillStyle = C.mattress; ctx.fillRect(x + 3, by + 1 + bob, 26, 8); ctx.fillStyle = C.blanket; ctx.fillRect(x + 12, by + 2 + bob, 16, 6); ctx.fillStyle = C.pillow; ctx.fillRect(x + 4, by + 2 + bob, 6, 6); }
+    }
+    if (c.mode === "print" && !c.moving && !c.steps.length && printJob && printJob.startedAt && !printJob.done) {   // a hand on the printer, tapping the panel now and then
+      const tap = Math.floor(t * 3 + c.idx) % 4 === 0; ctx.fillStyle = c.pal.s; if (c.dir === "down") ctx.fillRect(x + 13, y + 44 + (tap ? 1 : 0), 6, 3); else ctx.fillRect(x - 3, y + 15 + (tap ? 1 : 0), 6, 3);
+    }
+    if (c.report > nowMs() && !c.hidden && !(c.mode === "work" && !c.moving && !c.steps.length)) {                 // the printed report in hand on the way back
+      const fl2 = c.dir === "right", hx = c.dir === "down" ? x + 20 : fl2 ? x + 24 : x - 2;
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(hx, y + 18, 8, 10); ctx.fillStyle = "#6b7280"; ctx.fillRect(hx + 1.5, y + 20, 5, 0.5); ctx.fillRect(hx + 1.5, y + 22, 5, 0.5); ctx.fillRect(hx + 1.5, y + 24, 3, 0.5); ctx.fillStyle = c.pal.s; ctx.fillRect(hx + 2, y + 25, 4, 3);
+    }
+    if (c.mode === "smoke" && !c.moving && !c.steps.length) {                    // a cigarette at the mouth, its tip glowing, a hand holding it, thick smoke drifting up
+      const sq = c.smoke && c.smoke.squat ? 1 : 0, my = y + 17 + bobY + sq * 12, mx0 = c.dir === "down" ? x + 17 : flip ? x + 22 : x + 4, dirx = c.dir === "down" || flip ? 1 : -1, drag = Math.floor(t * 1.5 + c.idx) % 3 === 0;
+      const tip = dirx > 0 ? mx0 + 8 : mx0 - 8;
+      ctx.fillStyle = c.pal.s; ctx.fillRect(dirx > 0 ? mx0 + 1 : mx0 - 5, my + 1, 5, 4);                                             // the hand at the mouth
+      ctx.fillStyle = "#f7f7f7"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 8, my, 8, 2); ctx.fillStyle = "#d9a24a"; ctx.fillRect(dirx > 0 ? mx0 : mx0 - 2, my, 2, 2);
+      ctx.fillStyle = drag ? "#ffb347" : "#ff5a1f"; ctx.fillRect(tip, my - (drag ? 1 : 0), 2, drag ? 4 : 2); if (drag) { ctx.fillStyle = "rgba(255,120,40,.35)"; ctx.fillRect(tip - 2, my - 3, 6, 8); }
+      for (let k = 0; k < 6; k++) { const ph = ((t * 0.45 + c.idx * 0.37 + k / 6) % 1); const px = tip + Math.round(Math.sin((ph + k) * 5) * 5) + dirx * 3 - 2, py = my - 4 - Math.round(ph * 30), sz = 3 + Math.round(ph * 7);   // dark, sooty smoke
+        ctx.fillStyle = "rgba(40,40,46," + (0.85 * (1 - ph * 0.7)).toFixed(2) + ")"; ctx.fillRect(px, py, sz, sz - 1); ctx.fillStyle = "rgba(110,110,118," + (0.5 * (1 - ph)).toFixed(2) + ")"; ctx.fillRect(px + 1, py + 1, Math.max(1, sz - 2), Math.max(1, sz - 3)); }
+    }
+    if (c.mode === "coffee" && c.cupAt && !c.moving && !c.steps.length) drawCoffee(c, t, x, y, flip);
+    if (c.medic) {
+      const fl = c.dir === "right", side = c.dir === "down" ? 0 : fl ? 1 : -1, ty = y - c.top * 2;
+      ctx.fillStyle = "#f7f7f7"; ctx.fillRect(x + 9, ty + 1, 14, 5); ctx.fillStyle = "#e0323c"; ctx.fillRect(x + 15, ty + 2, 2, 3); ctx.fillRect(x + 14, ty + 3, 4, 1);   // the surgical cap
+      if (c.dir !== "up") { ctx.fillStyle = "#e0323c"; const cx0 = x + 15 + side * 3; ctx.fillRect(cx0, y + 18, 2, 4); ctx.fillRect(cx0 - 1, y + 19, 4, 2); }             // the cross on the coat
+      const caseAt = (bx, by, open) => { ctx.fillStyle = "#f7f7f7"; ctx.fillRect(bx, by, 10, 7); ctx.fillStyle = "#c9ced6"; ctx.fillRect(bx, by, 10, 1); ctx.fillStyle = "#e0323c"; ctx.fillRect(bx + 4, by + 2, 2, 4); ctx.fillRect(bx + 3, by + 3, 4, 2);
+        if (open) { ctx.fillStyle = "#e6e9ee"; ctx.fillRect(bx, by - 6, 10, 6); ctx.fillStyle = "#c9ced6"; ctx.fillRect(bx, by - 6, 10, 1); ctx.fillStyle = "#3fd46b"; ctx.fillRect(bx + 2, by - 4, 2, 2); ctx.fillStyle = "#ffd23f"; ctx.fillRect(bx + 6, by - 4, 2, 2); } else { ctx.fillStyle = "#5b6270"; ctx.fillRect(bx + 3, by - 2, 4, 2); } };
+      if (c.treat && chars[c.treat.patient]) {
+        const p = chars[c.treat.patient], ph = (nowMs() - c.treat.since) / 1000, toX = p.px + 16 - (x + 16), toY = p.py + 18 - (y + 20);
+        if (c.medic === "a") {                                                                                          // chest compressions: both arms out to the casualty, pumping
+          const pump = Math.floor(ph * 4) % 2, ax = x + 16 + Math.round(toX * 0.55), ay = y + 20 + Math.round(toY * 0.55) + pump;
+          ctx.fillStyle = c.pal.s; ctx.fillRect(ax - 4, ay - 1, 3, 3); ctx.fillRect(ax + 1, ay - 1, 3, 3); ctx.fillStyle = "#f4f4f4"; ctx.fillRect(Math.min(x + 14, ax - 2), Math.min(y + 20, ay), Math.abs(ax - x - 14) + 2, 3);
+          if (pump) { ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(p.px + 8, p.py + 10, 16, 8); }
+        } else {                                                                                                        // the open case on the floor and the defibrillator every few seconds
+          caseAt(x + (side >= 0 ? 24 : -4), y + 30, true);
+          const cyc = ph % 4.5; if (cyc > 3.6) { const z = Math.floor(cyc * 12) % 2; ctx.fillStyle = z ? "#ffd23f" : "#fff6b0"; const zx = p.px + 10, zy = p.py + 2; ctx.fillRect(zx + 4, zy, 2, 5); ctx.fillRect(zx + 2, zy + 4, 4, 2); ctx.fillRect(zx + 3, zy + 6, 2, 5); ctx.fillRect(zx + 14, zy + 2, 2, 5); ctx.fillRect(zx + 12, zy + 6, 4, 2); ctx.fillRect(zx + 13, zy + 8, 2, 5); if (z) { ctx.fillStyle = "rgba(255,240,150,.28)"; ctx.fillRect(p.px - 4, p.py - 2, 40, 30); } }
+        }
+      } else caseAt(x + (side > 0 ? 24 : side < 0 ? -2 : 22), y + 24 + (c.moving ? Math.floor(t * 8) % 2 : 0), false);
+    }
+    if (c.guard) drawGuardGear(c, t, x, y);
+    if (c.boss) { drawBossAura(c,t,x,y); drawBossBody(c,t,x+tilt,y+bobY); drawBossGear(c,t,x,y); }
+    if (c.role === "master") { ctx.fillStyle = "#ffd23f"; ctx.fillRect(x + 8, y - 4, 16, 4); ctx.fillRect(x + 8, y - 9, 3, 5); ctx.fillRect(x + 14, y - 10, 4, 6); ctx.fillRect(x + 21, y - 9, 3, 5); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 15, y - 6, 2, 2); }
+    if (working && c.dir !== "down") {                                            // back to the camera: elbows work while typing, the screen lights the desk
+      const skin = c.pal.s;
+      if (typing) { ctx.fillStyle = skin; ctx.fillRect(x + 1, y + 26 + tick * 2, 4, 3); ctx.fillRect(x + 27, y + 26 + (1 - tick) * 2, 4, 3); }
+      ctx.fillStyle = Math.floor(t * 5 + c.idx) % 3 ? "rgba(120,200,255,.35)" : "rgba(120,200,255,.15)"; ctx.fillRect(x + 6, y - 14, 20, 6);
+    }
+    if (c.bang > nowMs()) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 11, y - 22, 10, 18); ctx.fillStyle = "#d84c4c"; ctx.fillRect(x + 14, y - 20, 4, 10); ctx.fillRect(x + 14, y - 8, 4, 3); }
+  }
+  const MAX_WALK_MS = 45000, SPEECH_PAGE_MS = 6000;
+  const SPEECH_PAGES = new Map(), BUBBLE_LAYOUTS = new WeakMap(), NAME_LAYOUTS = new Map();
+  function nameLabel(c) {
+    const name = c.label || c.name, key = ctx.font + "|" + name;
+    if (NAME_LAYOUTS.has(key)) return NAME_LAYOUTS.get(key);
+    let txt = name;
+    while (ctx.measureText(txt).width > 62 && txt.length > 3) txt = txt.slice(0, -2) + "…";
+    if (NAME_LAYOUTS.size >= 256) NAME_LAYOUTS.delete(NAME_LAYOUTS.keys().next().value);
+    NAME_LAYOUTS.set(key, txt); return txt;
+  }
+  const talkMs = (text) => pageLines(text).reduce((n, pg) => n + pageMs(pg), 0) + 1500;   // time to say a post once, page by page, plus a beat
+  const pageLines = (text) => {
+    if (SPEECH_PAGES.has(text)) return SPEECH_PAGES.get(text);
+    const all = wrapLines(text, 22), pages = [];
+    for (let i = 0; i < all.length; i += 3) pages.push(all.slice(i, i + 3));
+    if (SPEECH_PAGES.size >= 64) SPEECH_PAGES.delete(SPEECH_PAGES.keys().next().value);
+    SPEECH_PAGES.set(text, pages); return pages;
+  };
+  const pageMs = () => SPEECH_PAGE_MS;
+  function setSpeech(c, text, until) {
+    if (c.talk && c.say && nowMs() < c.sayUntil && c.say !== text) return;
+    c.say = text; c.sayStart = nowMs(); c.sayUntil = Math.max(until || 0, c.sayStart + talkMs(text)); c.sayLoop = false;
+  }
+  function bubblePage(c, at = nowMs()) {
+    if (!c.say || !c.say.trim() || at < c.sayStart || at >= c.sayUntil) return null;
+    const pages = pageLines(c.say), pi = Math.min(pages.length - 1, Math.floor((at - c.sayStart) / SPEECH_PAGE_MS));
+    return {pages, pi, lines:pages[pi]};
+  }
+  function drawBubble(c, cssPx) {
+    const page = bubblePage(c); if (!page) return;
+    const {pages, pi, lines} = page;
+    ctx.font = "500 " + cssPx(12.75) + "px " + SANS; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    let layouts = BUBBLE_LAYOUTS.get(lines); if (!layouts) { layouts = new Map(); BUBBLE_LAYOUTS.set(lines, layouts); }
+    let dimensions = layouts.get(ctx.font);
+    if (!dimensions) { const lh = cssPx(16.5), pad = cssPx(8), lw = Math.max(...lines.map(l => ctx.measureText(l).width)); dimensions = {lh, pad, bw:Math.min(W - 16, Math.ceil(lw + pad * 2)), bh:Math.ceil(lines.length * lh + pad * 1.6)}; layouts.set(ctx.font, dimensions); }
+    const {lh, pad, bw, bh} = dimensions;
+    const ax = inStall(c) ? c.px - 32 : c.px;                                   // someone on the toilet speaks from the stall door, so the tail stays off the timer
+    let bx = Math.round(ax + 16 - bw / 2); bx = Math.max(4, Math.min(W - bw - 4, bx));
+    const by = Math.max(4, c.py - 24 - bh - 8);
+    const wc = !!THEMES[THEME].wechat, edge = wc ? "#5fbf47" : "#3b2a1e", face = wc ? "#95ec69" : "#ffffff", ink = wc ? "#0b1a0b" : "#333333";   // WeChat-style green bubbles in the Chinese office
+    ctx.fillStyle = edge; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4); ctx.fillStyle = face; ctx.fillRect(bx, by, bw, bh);
+    if (wc) { ctx.fillStyle = edge; ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx + bw - 1, by, 1, 1); ctx.fillRect(bx, by + bh - 1, 1, 1); ctx.fillRect(bx + bw - 1, by + bh - 1, 1, 1); }
+    ctx.fillStyle = edge; ctx.fillRect(ax + 12, by + bh + 2, 8, 2); ctx.fillRect(ax + 14, by + bh + 4, 4, 2); ctx.fillStyle = face; ctx.fillRect(ax + 12, by + bh, 8, 2);
+    ctx.fillStyle = ink;
+    lines.forEach((l, i) => ctx.fillText(l, bx + pad, by + pad * 0.5 + lh * (i + 0.85)));
+    if (pages.length > 1) { ctx.fillStyle = "#9aa3bd"; ctx.font = "500 " + cssPx(9.75) + "px " + SANS; ctx.textAlign = "right"; ctx.fillText((pi + 1) + "/" + pages.length, bx + bw - cssPx(3), by + bh - cssPx(2.5)); }
+  }
+  function wrapLines(text, n) {
+    const words = text.trim().split(/\s+/).filter(Boolean).flatMap(w => { const chars = Array.from(w), out = []; for (let i = 0; i < chars.length; i += n) out.push(chars.slice(i, i + n).join("")); return out; });   // preserve Unicode code points when wrapping CJK and emoji
+    const out = []; let cur = ""; for (const w of words) { if ((cur + " " + w).trim().length > n) { if (cur.trim()) out.push(cur.trim()); cur = w; } else cur += " " + w; } if (cur.trim()) out.push(cur.trim()); return out;
+  }
+
+  // ---- lifecycle
+  function start(st, cell) {
+    const box = cell || $("#officebox"); if (!box) return;
+    if (!canvas || !canvas.isConnected || hostBox !== box) {
+      hostBox = box; compact = !!cell;
+      if (compact) box.innerHTML = '<canvas class="officecell" title="Open this project\'s office"></canvas>';
+      else box.innerHTML = '<div class="viewbar"><button class="small" id="officepost" title="Start a thread on the board without leaving the office">+ New thread</button><span class="hint">▶ desks = working · bunks = idle or paused · posts are said as speech bubbles · click a sprite for details</span><span style="flex:1"></span><label class="hint">theme <select id="officetheme">' + Object.entries(THEMES).map(([k, v]) => '<option value="' + k + '">' + v.label + '</option>').join("") + '</select></label></div><canvas id="office"></canvas>';
+      canvas = box.querySelector("canvas");
+      const initialScene = simulation ? null : (st && st.office) || authoritativeScene;
+      const saved = initialScene ? initialScene.theme : "regular";
+      const sel = $("#officetheme"); if (sel) { sel.value = THEMES[saved] ? saved : "regular"; sel.onchange = () => setTheme(sel.value); }
+      if (transition) transition = null;
+      THEME = THEMES[saved] ? saved : "regular"; Object.assign(C, BASE_C, THEMES[THEME].colors || {}); if (LAYOUT_THEME !== THEME) builtFor = -1;
+      vctx = canvas.getContext ? canvas.getContext("2d") : null; off = document.createElement("canvas");
+      // Furniture drawing reads the scene's seats and banners. Restore them
+      // before building the room, rather than caching an unfurnished layout.
+      if (initialScene) restoreScene(initialScene);
+      else ensureLayout(simulation ? (st || lastState ? seatsFor(st || lastState) : [{ role: "master" }, {}, {}, {}]) : [], !simulation);
+      if (vctx) renderMap();
+      canvas.onclick = compact ? () => { officeOn = true; try { localStorage.setItem("huntun.office", "1"); } catch (e) { /* no storage */ } location.hash = "#/w/" + wid; } : onClick;
+      const post = compact ? null : $("#officepost"); if (post) post.onclick = () => { if (wid) openPostDialog(wid); };
+    }
+    if (simulation) { if (st || lastState) snap(st || lastState); else pendingSnap = true; }
+    else {
+      update(st);
+      if (authoritativeScene) restoreScene(authoritativeScene);
+      if (!pollTimer && wid) pollTimer = setTimeout(pullScene, 250);
+      if (authoritativeAt < 0) pullScene();
+    }
+    if (!raf && vctx) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+  // opening the view shows the office as it is now: everyone already at their place and furnished, nobody walking in from
+  // the door, posts and deliveries from before not acted out again. Only what happens from here on is animated.
+  let pendingSnap = false;
+  function snap(st) {
+    pendingSnap = false; transition = null; lastState = st;
+    noticeDelivery(st, true); noticeWatchdog(st, true); noticeHuman(st, true); bossQueue = [];
+    const team = st.agents.filter(a => a.status !== "retired"), now = nowMs();
+    for (const c of Object.values(chars)) if (c.medic || c.boss || (!c.guard && !team.some(a => a.name === c.name))) delete chars[c.name];   // left meanwhile: already gone
+    medics = null; medicQueue = []; toiletQueue = []; printJob = null; for (const k in stallFx) delete stallFx[k];
+    seatsFor(st).forEach(x => { if (x) { x.desk = true; x.bed = true; } });
+    ensureLayout.sig = null; ensureLayout(seats);
+    for (const a of team) {
+      const c = ensureChar(a), inf = a.info || {};
+      Object.assign(c, { role: a.role, title: a.title, idx: seats.findIndex(x => x && x.name === a.name), hidden: false, setup: null, steps: [], moving: false, carry: null, talk: null, leaving: false,
+        newHire: false, lateComer: false, wake: null, wasAsleep: false, strike: null, smoke: null, despair: undefined, toilet: null, satAt: null, faceOverride: null, hold: null, zappedUntil: 0, cup: null, cupAt: null, hurryAt: 0,
+        deskWait: null, sleepReady: false, sayUntil: 0, bang: 0, report: 0, compactions: inf.compactions || 0, toiletUntil: inf.compacting ? now + 6000 : 0, act: inf.activity || null,
+        failed:fainted(a),errorAt:fainted(a)?now:null,errorSpeech:null });
+      const post = (st.events || []).find(e => e.agent === a.name && (e.kind === "thread" || e.kind === "comment")); if (post) c.lastPostId = post.id ?? post.created_at;
+      const d = DESKS[c.idx]; c.tx = d.chair[0]; c.ty = d.chair[1];               // decide from the own desk, then go straight to the spot
+    }
+    for (const a of team) {
+      const c = chars[a.name];
+      c.mode = modeFor(a, c, st);
+      if (c.mode === "sleep") { idleBreak(c); c.mode = modeFor(a, c, st); }          // idle: smoke or bunk, including agents already waiting when the view opens
+      if (c.mode === "toilet") { const free = TOILETS.findIndex((_, i) => !Object.values(chars).some(o => o.toilet === i)); if (free >= 0) { c.toilet = free; c.satAt = now; c.toiletUntil = Math.max(c.toiletUntil, now + 6000); } }
+      const g = goalFor(c), d = DESKS[c.idx];
+      c.tx = g[0]; c.ty = g[1]; c.px = c.tx * T; c.py = c.ty * T; c.goal = g;
+      if (c.mode === "coffee") c.cupAt = now - BREW_MS;                             // already holding the cup
+      c.dir = c.mode === "toilet" && c.satAt ? "left" : d && c.tx === d.chair[0] && c.ty === d.chair[1] ? d.dir : "down";
+    }
+    medicTick();                                                                    // somebody out cold: the medics are already at work
+    for (const c of Object.values(chars)) if (c.medic && c.setup && c.setup[0] && c.setup[0].k === "goto") { const sp = setupSpot(c, c.setup[0]); Object.assign(c, { tx: sp[0], ty: sp[1], px: sp[0] * T, py: sp[1] * T, hidden: false, hiddenUntil: 0 }); c.setup.shift(); }
+    ensureGuard(true);
+  }
+  function stop() { if (raf) cancelAnimationFrame(raf); if (pollTimer) clearTimeout(pollTimer); pollTimer = null; raf = null; canvas = null; vctx = null; ctx = null; hostBox = null; }
+  function onClick(ev) {
+    const r = canvas.getBoundingClientRect(); const mx = (ev.clientX - r.left) * (canvas.width / (r.width || 1)), my = (ev.clientY - r.top) * (canvas.height / (r.height || 1));
+    const gx = (mx - ox) / scale, gy = (my - oy) / scale;
+    const samples = animationSamples(nowMs());
+    for (const c of renderCharacters(samples)) if (!c.medic && !c.boss && !c.hidden && gx >= c.px && gx < c.px + T && gy >= c.py - 20 && gy < c.py + T) { if (wid) { if (c.guard) openWatchdog(wid); else openAgent(wid, c.name); } return; }
+  }
+  function frame(now) {
+    raf = null; if (!canvas || !vctx) return;
+    const box = hostBox; if (!box || !box.isConnected) return;
+    if (compact && now - lastPaint < 32) { raf = requestAnimationFrame(frame); return; }                  // a grid of offices: 30 frames a second is plenty
+    lastPaint = now;
+    // the backing store is sized in device pixels so the pixel art stays sharp on high-DPI screens; the CSS size stays the panel size
+    const dpr = Math.max(1, Math.min(4, (typeof window !== "undefined" && window.devicePixelRatio) || 1));
+    const cw = Math.round(Math.max(compact ? 120 : 320, Math.floor(box.clientWidth || 0)) * dpr), chh = Math.round(Math.max(compact ? 100 : 288, Math.floor((box.clientHeight || 0) - (compact ? 0 : 34))) * dpr);
+    if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
+    const fill = Math.min(cw / W, chh / H);                                                       // fill the panel's full width or height
+    scale = Math.floor(fill * P) / P >= 0.85 * fill ? Math.floor(fill * P) / P : fill;           // prefer whole device pixels per art pixel when that still nearly fills the panel
+    ox = Math.floor((cw - W * scale) / 2); oy = Math.floor((chh - H * scale) / 2);
+    const t = Math.max(0, (nowMs() - t0) / 1000), dt = Math.min(1 / 30, (now - last) / 1000); last = now;
+    if (simulation) { stepChars(dt); presentationTick(); }
+    ctx = off.getContext("2d"); ctx.setTransform(P, 0, 0, P, 0, 0); ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#0a0c14"; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapImg, 0, 0, W, H);
+    const samples = animationSamples(nowMs());
+    const order = renderCharacters(samples).sort((a, b) => a.py - b.py);
+    drawPrinter(t); drawStalls(t);
+    for (const c of order) drawChar(c, t);
+    if (CAMS.length && Math.floor(t * 2) % 2) { ctx.fillStyle = "#ff3b3b"; for (const [x, y] of CAMS) ctx.fillRect(x + 6, y + 3, 2, 2); }   // the cameras' recording light
+    for (const c of order) {
+      const d = DESKS[c.idx]; if (!(d && !c.moving && !c.steps.length && c.tx === d.chair[0] && c.ty === d.chair[1])) continue;
+      const faceDown = c.mode === "despair" && c.despair && c.despair.pose === "desk", tw = faceDown && Math.floor(t * 2 + c.idx) % 5 === 0 ? 1 : 0;
+      if (d.dir === "up") { TX = d.chair[0] * T; TY = d.chair[1] * T; TILES.chairUpBack(); if (faceDown) drawSprite(headRows(c, "up").slice(0, 10 + c.top), c.px + tw, d.desk[1] * T + 4 - c.top * 2, false, c.pal, c.cap, "up", c.top); continue; }   // face down on the desk above
+      if (d.boss) { TX = d.chair[0] * T; TY = d.chair[1] * T; }                          // the chair back sits between the camera and the occupant
+      TX = d.desk[0] * T; TY = d.desk[1] * T; TILE_X = d.desk[0]; TILE_Y = d.desk[1]; if (d.boss) { TILES.bossDeskL(); TX += T; TILE_X++; TILES.bossDeskR(); } else { (d.dual ? TILES.deskLBack : TILES.deskLapBack)(); TX += T; TILE_X++; (d.dual ? TILES.deskRBack : TILES.deskPlain)(); }
+      if (faceDown) { drawSprite(headRows(c, "up").slice(0, 10 + c.top), c.px + tw, d.desk[1] * T - 10 - c.top * 2, false, c.pal, c.cap, "up", c.top); ctx.fillStyle = c.pal.c; ctx.fillRect(c.px + 3, d.desk[1] * T - 2, 5, 8); ctx.fillRect(c.px + 24, d.desk[1] * T - 2, 5, 8); }   // face down on the desk below, arms flopped over it
+      if (c.mode === "work" && !c.faceOverride && actKind(c) === "type") {
+        const tick = Math.floor(t * 7 + c.idx) % 2, x = c.px, y = c.py - 20, dy = d.desk[1] * T;
+        // arms from the shoulders down over the lap to the keyboard on the far edge of the desk; the hands alternate as they type
+        ctx.fillStyle = c.pal.c; ctx.fillRect(x + 4, y + 24 + tick, 4, 10); ctx.fillRect(x + 24, y + 24 + (1 - tick), 4, 10);
+        ctx.fillStyle = c.pal.s; ctx.fillRect(x + 6, y + 34 + tick, 4, dy + 3 - (y + 34 + tick)); ctx.fillRect(x + 22, y + 34 + (1 - tick), 4, dy + 3 - (y + 34 + (1 - tick)));
+        ctx.fillRect(x + 8, dy + 2 + tick, 6, 4); ctx.fillRect(x + 18, dy + 2 + (1 - tick), 6, 4);
+        if (Math.floor(t * 9 + c.idx) % 4 === 0) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + (tick ? 15 : 12), dy + 4, 2, 2); }
+      }
+    }
+    vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.imageSmoothingEnabled = false; vctx.fillStyle = "#0a0c14"; vctx.fillRect(0, 0, cw, chh);
+    vctx.drawImage(off, 0, 0, W * P, H * P, ox, oy, Math.round(W * scale), Math.round(H * scale));
+    const dark = simulation ? transitionTick() : transitionFade(); if (dark > 0) { vctx.fillStyle = "rgba(0,0,0," + dark.toFixed(2) + ")"; vctx.fillRect(0, 0, cw, chh); }
+    // text goes straight onto the visible canvas under the display transform, so it is rasterised at device resolution at a fixed on-screen size
+    vctx.setTransform(scale, 0, 0, scale, ox, oy); ctx = vctx; const cssPx = (n) => n * dpr * (compact ? 0.85 : 1) / scale;   // a little smaller in a grid cell
+    ctx.font = "600 " + cssPx(10.5) + "px " + SANS; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = cssPx(3); ctx.strokeStyle = "rgba(10,7,4,.9)";
+    for (const c of order) { if (c.hidden) continue; const txt = nameLabel(c);
+      const [lx, ly] = inStall(c) ? [c.px - 16, c.py + 24] : [c.px + 16, c.py + 40];     // on the toilet: the name on the floor in front of the stall, clear of the timers on the stall walls
+      ctx.strokeText(txt, lx, ly); ctx.fillStyle = "#ffffff"; ctx.fillText(txt, lx, ly); }
+    for (const [i, fx] of Object.entries(stallFx)) { const s = TOILETS[i], ph = (nowMs() - fx.at - FLUSH_AT) / FLUSH_MS; if (!s || ph < 0 || ph > 1) continue;   // the flush, spelled out
+      ctx.font = "700 " + cssPx(10) + "px " + SANS; ctx.textAlign = "center"; ctx.globalAlpha = Math.max(0, 1 - ph * ph); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = cssPx(3);
+      const txt = zh() ? "哗啦啦~" : "FLUSH~", ty = s[1] * T - 2 - Math.round(ph * 8); ctx.strokeText(txt, s[0] * T + 14, ty); ctx.fillStyle = "#2f6fd8"; ctx.fillText(txt, s[0] * T + 14, ty); ctx.globalAlpha = 1; }
+    for (const c of order) if (!c.hidden) drawBubble(c, cssPx);
+    vctx.setTransform(1, 0, 0, 1, 0, 0);
+    raf = requestAnimationFrame(frame);
+  }
+  function ambientTick(order) {
+    if (THEMES[THEME].wechat && !transition) {                                                            // the master's motivational line every minute, when the room is quiet
+      const m = order.find(c => c.role === "master" && !c.hidden && !c.setup && !c.hold), busy = order.some(c => c.talk || (c.say && nowMs() < c.sayUntil));
+      if (m && !busy && nowMs() > nextSloganAt) { setSpeech(m, CN_SLOGANS[Math.floor(Math.random() * CN_SLOGANS.length)], nowMs() + 10000); m.bang = nowMs() + 1500; nextSloganAt = nowMs() + 60000; }
+      const g = chars[GUARD], talking = order.some(c => c.talk || (c.say && nowMs() < c.sayUntil));
+      if (g && !g.hidden && !g.saluting && !g.setup && !g.moving && !talking && nowMs() > nextGuardLineAt) { setSpeech(g, CN_GUARD_CHAT[Math.floor(Math.random() * CN_GUARD_CHAT.length)], nowMs() + 11000); nextGuardLineAt = nowMs() + 50000 + Math.random() * 20000; }
+    }
+  }
+  function animationSamples(at) {
+    const frames = authoritativeScene && authoritativeScene.animation_frames;
+    if (!frames || !frames.length) return null;
+    let before = frames[0], after = before;
+    for (const frame of frames) {
+      if (frame.at <= at) before = after = frame;
+      else { after = frame; break; }
+    }
+    return {before, after, mix:after.at > before.at ? Math.max(0, Math.min(1, (at - before.at) / (after.at - before.at))) : 0};
+  }
+  function renderChar(c, samples = animationSamples(nowMs())) {
+    if (simulation) return c;
+    const out = {...c};
+    if (samples && samples.before.theme === THEME && samples.after.theme === THEME &&
+      (samples.before.layout_revision ?? 0) === (authoritativeScene?.layout?.revision || 0) && (samples.after.layout_revision ?? 0) === (authoritativeScene?.layout?.revision || 0)) {
+      const a = samples.before.chars[c.name], b = samples.after.chars[c.name] || a;
+      if (!a) { out.hidden = true; return out; }
+      [out.px,out.py,out.tx,out.ty,out.dir,out.frame,out.moving,out.prog,out.mode] = a;
+      out.steps = a[9] ? [0] : [];
+      [out.carry,out.faceOverride,out.cupAt,out.satAt] = a.slice(10);
+      out.hidden = a[14] ?? out.hidden;
+      out.activityPose = a[15] ?? out.activityPose;
+      out.thinkStyle = a[16] ?? out.thinkStyle;
+      out.saluting = a[17] ?? out.saluting;
+      out.gear = a.length > 18 ? a[18] : out.gear;
+      if (a.length > 19) {
+        const speech = authoritativeScene.animation_speech && authoritativeScene.animation_speech[a[19]];
+        Object.assign(out, speech || {say:"", sayStart:0, sayUntil:0});
+      }
+      out.px += (b[0] - a[0]) * samples.mix;
+      out.py += (b[1] - a[1]) * samples.mix;
+      // A delayed packet can outlast the buffer. Finish only the movement
+      // segment already recorded by the backend; never choose another tile.
+      if (samples.before === samples.after && nowMs() > samples.after.at && c.moving && c.motion && a[6]) {
+        const ph = Math.max(0, Math.min(1, (nowMs() - c.motion.at) / c.motion.ms));
+        out.px = c.motion.from[0] + (c.motion.to[0] - c.motion.from[0]) * ph;
+        out.py = c.motion.from[1] + (c.motion.to[1] - c.motion.from[1]) * ph;
+      }
+      return out;
+    }
+    if (c.moving && c.motion) {
+      const ph = Math.max(0, Math.min(1, (nowMs() - c.motion.at) / c.motion.ms));
+      out.px = c.motion.from[0] + (c.motion.to[0] - c.motion.from[0]) * ph;
+      out.py = c.motion.from[1] + (c.motion.to[1] - c.motion.from[1]) * ph;
+    }
+    return out;
+  }
+  function renderCharacters(samples = animationSamples(nowMs())) {
+    const recorded = authoritativeScene?.animation_characters || {};
+    return Object.values({...recorded, ...chars}).map(c => renderChar(c, samples));
+  }
+  function presentationTick() {
+    const now = nowMs();
+    for (const c of Object.values(chars)) {
+      if (c.hidden) continue;
+      if (c.boss && c.setup?.[0]?.k === "exit" && (c.setup[0].crossing || !c.moving && c.tx === DOOR[0] && c.ty === DOOR[1])) c.dir = "up";
+      const boss = c.mode === "listen" && c.hold && chars[c.hold.face];
+      if (boss && !c.moving) c.dir = facing(c, boss);
+      if (!c.moving && !c.steps.length) {
+        const desk = DESKS[c.idx];
+        if (c.faceOverride) c.dir = c.faceOverride;
+        else if (c.mode === "work" && desk) c.dir = desk.dir;
+        else if (c.mode === "coffee" && c.cupAt) {
+          const sp = c.cup >= 0 ? PANTRY_SPOTS[c.cup] : null;
+          c.dir = sp ? (sp.brew && now - c.cupAt < BREW_MS ? sp.brewDir : sp.dir) : desk ? desk.dir : "down";
+        } else if (c.mode === "despair" && c.despair && c.despair.pose === "wall") c.dir = c.despair.dir;
+      }
+      const bed = BEDS[c.idx], inBed = bed && !c.moving && !c.steps.length && c.tx === bed[0] && c.ty === bed[1];
+      if (!c.knockedUntil || c.knockedUntil <= now) {
+        if (c.mode !== "faint" && !(c.mode === "toilet" && c.satAt) && !(c.mode === "strike" && c.strike && c.strike.act === "roll"))
+          c.wasAsleep = !!((c.wake && now - c.wake < WAKE_MS) || inBed && (c.mode === "listen" || c.mode === "sleep" || c.mode === "doze" || c.mode === "strike" && c.strike && c.strike.act === "sleep"));
+      }
+      const thinking = c.mode === "work" && !c.moving && !c.steps.length && !c.faceOverride && actKind(c) === "think";
+      if (thinking) { if (!c.thinkStyle) c.thinkStyle = Math.random() < TUNE.phoneShare ? "phone" : "chin"; }
+      else c.thinkStyle = null;
+      c.visitors = Object.values(chars).filter(o => o !== c && !o.hidden && o.talk && o.talk.kind === "visit" && o.talk.target === c.name).length;
+      if (c.visitors >= 2) {
+        if (!c.annoyedAt || now - c.annoyedAt > 20000) {
+          c.annoyedAt = now;
+          if (!c.say || now > c.sayUntil) shout(c, LINES("ANNOYED"), now + 4000);
+        }
+      } else c.annoyedAt = null;
+    }
+  }
+  function transitionFade() {
+    if (!transition) return 0;
+    if (transition.phase === "out") return Math.min(1, (nowMs() - transition.t0) / 900);
+    if (transition.phase === "in") return Math.max(0, 1 - (nowMs() - transition.t0) / 900);
+    return 0;
+  }
+  function checkpoint() {
+    if (!simulation) return authoritativeScene ? JSON.parse(JSON.stringify(authoritativeScene)) : null;
+    const at = nowMs(), projected = {};
+    for (const [name, c] of Object.entries(chars)) {
+      const out = {...c, activityPose:actKind(c)};
+      if (c.moving) {
+        const speed = 3.64 * (c.medic ? 1.6 : c.guard && c.setup ? 1.3 : 1);
+        out.motion = {at, ms:Math.max(1, (1 - c.prog) / speed * 1000), from:[c.px,c.py], to:[c.nx*T,c.ny*T]};
+      } else delete out.motion;
+      projected[name] = out;
+    }
+    return {version:1, revision, at, t0, theme:THEME, capacity:CAP, layout:{version:2,revision:layoutRevision,width:MW,height:MH}, chars:projected, seats, transition, banners:CN_BANNERS,
+      nextSloganAt, nextGuardLineAt, toiletQueue, medics, medicQueue, guardQueue, guardProbing, bossQueue,
+      seenWatch:[...seenWatch].slice(-500), seenHuman:[...seenHuman].slice(-500), seenDeliveries:[...seenDeliveries].slice(-500),
+      printJob, printed, stallFx, tune:TUNE};
+  }
+  function restoreScene(scene) {
+    if (scene.version !== 1) throw new Error("Unsupported Office scene version");
+    const previousTheme = THEME, previousBanners = CN_BANNERS.join("\n");
+    if (scene.capacity !== CAP) { CAP = scene.capacity || 0; builtFor = -1; }
+    THEME = scene.theme; chars = scene.chars; seats = scene.seats; t0 = scene.t0; revision = scene.revision;
+    layoutRevision=scene.layout?.revision || 0;
+    if (simulation) for (const c of Object.values(chars)) {
+      if (c.saluting && c.say && c.sayUntil - c.sayStart > 60000) c.sayUntil = c.sayStart + talkMs(c.say);
+      else if (c.say && Number.isFinite(c.sayStart) && c.sayUntil > nowMs()) c.sayUntil = Math.max(c.sayUntil, c.sayStart + talkMs(c.say));
+    }
+    Object.assign(C, BASE_C, THEMES[THEME].colors || {});
+    transition = scene.transition; CN_BANNERS = scene.banners;
+    nextSloganAt = scene.nextSloganAt; nextGuardLineAt = scene.nextGuardLineAt;
+    toiletQueue = scene.toiletQueue; medics = scene.medics; medicQueue = scene.medicQueue;
+    guardQueue = scene.guardQueue; guardProbing = scene.guardProbing; bossQueue = scene.bossQueue;
+    for (const [set, values] of [[seenWatch,scene.seenWatch],[seenHuman,scene.seenHuman],[seenDeliveries,scene.seenDeliveries]]) { set.clear(); for (const value of values) set.add(value); }
+    printJob = scene.printJob; printed = scene.printed;
+    for (const key of Object.keys(stallFx)) delete stallFx[key]; Object.assign(stallFx, scene.stallFx);
+    Object.assign(TUNE, scene.tune);
+    if (previousTheme !== THEME) builtFor = -1;
+    if(simulation || !scene.layout) {
+      // Reconstruct the old geometry before migrating a saved oversized room.
+      teamRoles=seats.map(s=>s && {role:s.role});
+      layout(scene.capacity ?? seats.length,seats.findIndex(s=>s?.role==="master"),!scene.layout);
+      if(!scene.layout && simulation) builtFor=-1;
+    }
+    if(simulation || scene.layout) ensureLayout(seats,true);
+    if (off && previousTheme === THEME && previousBanners !== CN_BANNERS.join("\n")) renderMap();
+  }
+  function acceptScene(scene, requested) {
+    // Revisions establish ordering even when the server's wall clock changes.
+    if (!scene || scene.revision < authoritativeRevision || scene.revision === authoritativeRevision && scene.at <= authoritativeAt) return;
+    syncPlaybackClock(scene, requested);
+    authoritativeAt = scene.at; authoritativeRevision = scene.revision; authoritativeScene = scene;
+    restoreScene(scene);
+    const sel = $("#officetheme"); if (sel) sel.value = scene.requested_theme || scene.theme;
+    if (!scene.theme_initialized && wid) {
+      let saved = "regular"; try { saved = localStorage.getItem("huntun.officeTheme." + wid) || localStorage.getItem("huntun.officeTheme") || saved; } catch (e) {}
+      api("api/w/" + wid + "/office/theme", {theme:saved, initialize:true}).then(acceptScene).catch(() => {});
+    }
+  }
+  async function pullScene() {
+    if (polling || !canvas || !canvas.isConnected) return;
+    if (pollTimer) clearTimeout(pollTimer); pollTimer = null;
+    polling = true;
+    const requested = performance.now();
+    try { const scene = await api("api/w/" + wid + "/office"); if (canvas) acceptScene(scene, requested); }
+    catch (e) { /* retain the last authoritative scene until the connection recovers */ }
+    finally {
+      polling = false;
+      if (canvas && canvas.isConnected && wid) pollTimer = setTimeout(pullScene, Math.max(0, 250 - (performance.now() - requested)));
+    }
+  }
+  function initialize(st, theme) {
+    if (!simulation) throw new Error("Only the backend initializes Office state");
+    THEME = THEMES[theme] ? theme : "regular"; Object.assign(C, BASE_C, THEMES[THEME].colors || {});
+    revision = 1; pickBanners(); snap(st); presentationTick();
+  }
+  function advance(dt) {
+    if (!simulation) throw new Error("Only the backend advances Office state");
+    stepChars(dt); transitionTick(); ambientTick(Object.values(chars)); presentationTick(); revision++;
+    for (const [key, fx] of Object.entries(stallFx)) if (nowMs() - fx.at > FLUSH_AT + FLUSH_MS) delete stallFx[key];
+  }
+  return { start, stop, update, headshot, setTheme, initialize, advance, checkpoint, restoreScene,
+    themes:Object.keys(THEMES), _debug: () => ({ chars, roomPlan, layout, renderChar, renderCharacters, renderMap, background:()=>mapImg, animationSamples, nowMs, bubblePage, pageLines, talkMs, setSpeech, actKind, modeFor, stepChars, goalFor, GUARD_GREETINGS, CN_OBEY, bossScript, bossClearEntrance, guardSaluteTick, guardQueue: () => guardQueue, THEME: () => THEME, view: () => ({ scale, ox, oy, width: canvas ? canvas.width : 0 }), DESKS, BEDS, FRONT, DOOR, PRINTER, PANTRY_SPOTS, TOILETS, medics: () => medics, medicQueue: () => medicQueue, PRINT_SPOT, printJob: () => printJob, printed: () => printed, MW, MH, map, solid, sprite, palFor, ANIMAL_NAMES, tune: (o) => Object.assign(TUNE, o) }) };
+}

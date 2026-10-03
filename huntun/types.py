@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 Effort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
-BackendName = Literal["api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"]
+BackendName = Literal["api", "claude-code", "codex", "kimi", "pi-clm", "deepseek", "ollama", "vllm", "llamacpp"]
 
 ROLE_KEYS: tuple[str, ...] = (
     "master",
@@ -102,11 +102,14 @@ class AgentState:
     waiting: bool = False
     # Claude Code backend: session to resume after a pause / restart.
     session_id: str | None = None
+    session_backend: str = ""  # prevents resuming a native session with a different harness
     resume_pending: bool = False
     # Cycles run on the current session (Claude Code / Codex keep one conversation across cycles).
     session_cycles: int = 0
-    # Cumulative usage across cycles: input/output/cache_read tokens (api) or cost_usd/turns (claude-code).
+    # Disjoint uncached input/output/cache_read/cache_write plus usage cost/turns.
     usage_totals: dict[str, float] = field(default_factory=dict)
+    usage_cost_counts: dict[str, int] = field(default_factory=dict)
+    usage_accounting_version: int = 0
     # Context window occupancy of the current / last model call.
     context_tokens: int = 0
     context_limit: int = 0
@@ -150,3 +153,4 @@ class CycleResult:
     usage: dict[str, float] = field(default_factory=dict)
     # For outcome "limit": when the provider says the window resets (unix seconds), if known.
     resets_at: float | None = None
+    cost_status: str = ""

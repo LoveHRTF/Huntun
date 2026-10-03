@@ -136,6 +136,22 @@ class LostSessionTests(unittest.TestCase):
         self.assertEqual(res.outcome, "error")
         self.assertEqual(FakeClient.opened, [None])
 
+    def test_cache_creation_and_native_cost_are_preserved_on_resume(self) -> None:
+        async def response(_client):
+            message = _result('fresh-session')
+            message.usage = {'input_tokens':10, 'output_tokens':20,
+                             'cache_read_input_tokens':1000, 'cache_creation_input_tokens':200}
+            message.total_cost_usd = .123
+            yield message
+        with mock.patch.object(FakeClient, 'receive_response', response):
+            for session in (None, 'fresh-session'):
+                result = self.run_cycle(self.ctx(session))
+                self.assertEqual(result.usage['input'],10)
+                self.assertEqual(result.usage['cache_read'],1000)
+                self.assertEqual(result.usage['cache_write'],200)
+                self.assertEqual(result.usage['cost_usd'],.123)
+                self.assertEqual(result.cost_status,'reported')
+
 
 if __name__ == "__main__":
     unittest.main()

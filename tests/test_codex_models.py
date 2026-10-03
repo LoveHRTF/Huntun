@@ -72,7 +72,8 @@ class CodexModelTests(unittest.TestCase):
         self.assertEqual(args[:4], ["fake-codex", "exec", "resume", "session"])
         self.assertNotIn("-C", args)
         self.assertNotIn("-s", args)
-        self.assertIn('sandbox_mode="workspace-write"', args)
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", args)
+        self.assertIn("--ignore-rules", args)
         self.assertIn("codex-new", args)
 
     def test_models_with_no_reasoning_and_malformed_metadata(self) -> None:

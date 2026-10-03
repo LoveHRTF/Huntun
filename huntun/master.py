@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .backends import Backend
+from .communication import HUMAN_REQUEST_RULE
 from .config import now_iso, slugify
 from .models import (
     EFFORTS,
@@ -152,6 +153,7 @@ GOAL_SCHEMA: dict[str, Any] = {
 
 def goal_prompt(goal: str, context: str, existing: str, conversation: str = "") -> str:
     return f"""You are the Master Agent of Huntun, an autonomous software team. Before staffing anyone, confirm the goal with the human owner.
+{HUMAN_REQUEST_RULE}
 
 # Goal as the human wrote it
 {goal}
@@ -227,6 +229,7 @@ def plan_prompt(config: HuntunConfig, extra_context: str = "") -> str:
     catalog = "\n".join(f"- {r}: {ROLE_CATALOG[r].title} — {ROLE_CATALOG[r].summary}" for r in WORKER_ROLES)
     extra = f"\n# Additional context\n{extra_context}\n" if extra_context else ""
     return f"""You are the Master Agent of Huntun, an autonomous software team. Staff the team for this project.
+{HUMAN_REQUEST_RULE}
 
 # Goal (confirmed with the human)
 {config.goal}

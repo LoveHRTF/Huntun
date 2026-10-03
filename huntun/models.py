@@ -16,11 +16,14 @@ class ModelInfo:
     use_for: str
     vendor: str = "anthropic"
     reasoning_levels: tuple[str, ...] = ()
+    cache_read_per_m: float | None = None
+    cache_write_per_m: float | None = None
+    cache_write_1h_per_m: float | None = None
 
 
 MODEL_CATALOG: list[ModelInfo] = [
     ModelInfo("claude-opus-5-5", "Claude Opus 5.5", "frontier", 4.0, 20.0, 1_000_000,
-              "the default frontier pick: architecture, hard debugging, long agentic coding runs, leadership reviews; cheaper and faster than Opus 5"),
+              "the default frontier pick: architecture, hard debugging, long agentic coding runs, leadership reviews; cheaper and faster than Opus 5", cache_read_per_m=0.20),
     ModelInfo("claude-opus-5", "Claude Opus 5", "frontier", 5.0, 25.0, 1_000_000,
               "previous-generation frontier model (legacy); prefer Opus 5.5 unless a project needs it specifically"),
     ModelInfo("claude-sonnet-5", "Claude Sonnet 5", "strong", 2.0, 10.0, 1_000_000,
@@ -155,9 +158,9 @@ def _kimi_catalog() -> list[ModelInfo]:
 KIMI_CATALOG: list[ModelInfo] = _kimi_catalog()
 DEEPSEEK_CATALOG: list[ModelInfo] = [
     ModelInfo("deepseek-v4-pro", "DeepSeek V4 Pro", "strong", 1.32, 3.96, 1_000_000,
-              "DeepSeek's flagship: strong at coding and reasoning at a fraction of frontier prices (peak-hour list price; off-peak is half)", "deepseek"),
+              "DeepSeek's flagship: strong at coding and reasoning at a fraction of frontier prices (peak-hour list price; off-peak is half)", "deepseek", cache_read_per_m=0.044, cache_write_per_m=1.32),
     ModelInfo("deepseek-flash", "DeepSeek V4.1 Flash", "fast", 0.30, 1.20, 1_000_000,
-              "very cheap and fast: routine implementation, tests, docs, scrum bookkeeping (peak-hour list price; off-peak is half)", "deepseek"),
+              "very cheap and fast: routine implementation, tests, docs, scrum bookkeeping (peak-hour list price; off-peak is half)", "deepseek", cache_read_per_m=0.006, cache_write_per_m=0.30),
 ]
 OLLAMA_CATALOG: list[ModelInfo] = []                                             # the Ollama servers' models, filled by refresh_local()
 VLLM_CATALOG: list[ModelInfo] = []                                               # the vLLM / OpenAI-compatible servers' models
@@ -654,11 +657,13 @@ def note_shared_pool(url: str) -> bool:
 def model_ids() -> list[str]:
     """Every model id an agent can be put on: the fixed catalogs plus what the local servers serve now."""
     refresh_codex()
-    local = [m.id for cat in refresh_local().values() for m in cat]
+    local = [m.id for cat in refresh_local().values() for m in cat] + [m.id for m in pi_catalog()]
     return MODEL_IDS + [i for i in dict.fromkeys(local) if i not in MODEL_IDS]
 
 
 def catalog_for(backend: str) -> list[ModelInfo]:
+    if backend == "pi-clm":
+        return pi_catalog()
     if backend == "codex":
         return refresh_codex()
     if backend == "kimi":
@@ -690,6 +695,9 @@ def available_backends() -> dict[str, str]:
     kimi = os.environ.get("HUNTUN_KIMI_BIN") or shutil.which("kimi")
     if kimi and _codex_works(kimi) and KIMI_CATALOG:
         out["kimi"] = "Kimi Code login"
+    from . import pi
+    if pi.binary() and pi.clm_extension() and _codex_works(pi.binary()):
+        out["pi-clm"] = "Pi + CLM (Pi provider credentials; use /login inside Pi)"
     if os.environ.get("DEEPSEEK_API_KEY"):
         out["deepseek"] = "DeepSeek API key"
     if refresh_ollama():
@@ -721,6 +729,8 @@ def _codex_works(path: str) -> bool:
 def backend_for_model(model_id: str | None, available: dict[str, str] | None = None, default: str = "") -> str:
     """Which backend runs a model: Codex models on codex; Anthropic models on Claude Code when logged in, else the API."""
     avail = available if available is not None else available_backends()
+    if model_id and model_id.startswith("pi-clm:"):
+        return "pi-clm"
     m = model_info(model_id)
     if m is None:
         return default
@@ -753,6 +763,12 @@ def catalog_available(available: dict[str, str] | None = None) -> list[tuple[Mod
         out += [(m, "codex") for m in refresh_codex()]
     if "kimi" in avail:
         out += [(m, "kimi") for m in KIMI_CATALOG]
+    if "pi-clm" in avail:
+        catalog = pi_catalog()
+        # Installation alone is not a provider login. Do not suggest an
+        # unauthenticated default to the team's autonomous staffing model.
+        if len(catalog) > 1:
+            out += [(m, "pi-clm") for m in catalog]
     if "deepseek" in avail:
         out += [(m, "deepseek") for m in DEEPSEEK_CATALOG]
     if "ollama" in avail:
@@ -769,6 +785,8 @@ DEFAULT_API_MODEL = "claude-opus-5-5"
 def model_info(model_id: str | None) -> ModelInfo | None:
     if not model_id:
         return None
+    if model_id.startswith("pi-clm:"):
+        return next((m for m in pi_catalog() if m.id == model_id), None)
     refresh_codex()
     if model_id in MODEL_BY_ID:
         return MODEL_BY_ID[model_id]
@@ -787,10 +805,25 @@ def context_limit(model_id: str | None) -> int:
     return m.context if m else 200_000
 
 
-def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, cache_read: float = 0.0, cache_write: float = 0.0) -> float:
-    """List-price cost of one call on the API backend (cache reads at 10%, cache writes at 125%)."""
-    m = model_info(model_id) or MODEL_BY_ID[DEFAULT_API_MODEL]
-    return round((input_tokens * m.input_per_m + cache_read * m.input_per_m * 0.1 + cache_write * m.input_per_m * 1.25 + output_tokens * m.output_per_m) / 1e6, 6)
+def cost_usd(model_id: str | None, input_tokens: float, output_tokens: float, cache_read: float = 0.0,
+             cache_write: float = 0.0, *, cache_write_1h: float = 0.0) -> float | None:
+    """Token list-price estimate using disjoint usage categories; None means unpriced.
+
+    DeepSeek uses its catalog's peak-hour rates (an estimate, not an invoice).
+    Native CLI/Pi amounts are collected separately and never repriced here.
+    """
+    m = model_info(model_id or DEFAULT_API_MODEL)
+    if not m or m.tier in ("codex", "kimi", "pi-clm"):
+        return None
+    if m.tier in ("ollama", "vllm", "llamacpp"):
+        return 0.0
+    read = m.cache_read_per_m if m.cache_read_per_m is not None else m.input_per_m * 0.1
+    write = m.cache_write_per_m if m.cache_write_per_m is not None else m.input_per_m * 1.25
+    hour = m.cache_write_1h_per_m if m.cache_write_1h_per_m is not None else m.input_per_m * 2
+    long_write = min(max(0, cache_write_1h), max(0, cache_write))
+    return round((max(0, input_tokens) * m.input_per_m + max(0, cache_read) * read
+                  + (max(0, cache_write) - long_write) * write + long_write * hour
+                  + max(0, output_tokens) * m.output_per_m) / 1e6, 6)
 
 
 def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
@@ -799,11 +832,28 @@ def estimate_cost_usd(model_id: str | None, tokens: float) -> float:
     if not m or m.tier in ("codex", "kimi", "ollama", "vllm", "llamacpp"):
         return 0.0
     inp, out = tokens * 0.85, tokens * 0.15
-    return round((inp * 0.5 * m.input_per_m + inp * 0.5 * m.input_per_m * 0.1 + out * m.output_per_m) / 1e6, 2)
+    return round(cost_usd(model_id, inp * 0.5, out, inp * 0.5) or 0.0, 2)
 
 
 BACKEND_LABEL = {"api": "Anthropic API", "claude-code": "Claude Code", "codex": "OpenAI Codex", "kimi": "Kimi Code", "deepseek": "DeepSeek", "ollama": "Ollama (local)",
-                 "vllm": "vLLM (local)", "llamacpp": "llama.cpp server (local)"}
+                 "vllm": "vLLM (local)", "llamacpp": "llama.cpp server (local)", "pi-clm": "Pi + CLM"}
+
+
+def pi_catalog() -> list[ModelInfo]:
+    from .pi import model_rows
+    result = [ModelInfo("pi-clm:default", "Pi configured default", "pi-clm", 0, 0, 200_000,
+                        "Pi's configured model; sign in using /login inside Pi. Context is updated from the running model.", "pi")]
+    for row in model_rows():
+        cost = row.get("cost") or {}
+        mapping = row.get("thinkingLevelMap") or {}
+        levels = tuple(level for level in ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+                       if (level == "none" or row.get("reasoning")) and mapping.get("off" if level == "none" else level, True) is not None)
+        result.append(ModelInfo(f"pi-clm:{row['provider']}/{row['id']}",
+                                f"{row.get('name') or row['id']} · {row['provider']}", "pi-clm",
+                                float(cost.get("input") or 0), float(cost.get("output") or 0),
+                                int(row.get("contextWindow") or 200_000),
+                                "Pi native agent harness with CLM editable live context", str(row["provider"]), levels))
+    return result
 
 
 def catalog_text(backend: str = "api", available: dict[str, str] | None = None) -> str:
@@ -814,6 +864,7 @@ def catalog_text(backend: str = "api", available: dict[str, str] | None = None) 
     for m, b in pairs:
         price = (f"${m.input_per_m:g}/M input, ${m.output_per_m:g}/M output" if m.input_per_m
                  else "runs locally, no per-token price" if m.vendor in ("ollama", "vllm", "llamacpp")
+                 else "provider-managed billing; no Huntun price estimate" if b == "pi-clm"
                  else "billed through the ChatGPT plan, no per-token price")
         levels = f"; reasoning levels {', '.join(m.reasoning_levels)}" if m.reasoning_levels else ""
         lines.append(f"- {m.id} ({m.label}; vendor {m.vendor}; runs via {BACKEND_LABEL.get(b, b)}; {price}; {m.context // 1000}k context{levels}): {m.use_for}")

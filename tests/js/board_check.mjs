@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.HUNTUN_PLAYWRIGHT || "playwright");
 const html = readFileSync(new URL("../../huntun/app.html", import.meta.url), "utf8");
+const officeSource = readFileSync(new URL("../../huntun/office.js", import.meta.url), "utf8");
 const functions = html.slice(html.indexOf("async function drawThreads(force)"), html.indexOf("// ---------------------------------------------------------------- a new thread"));
 const browser = await chromium.launch({ headless: true, ...(process.env.HUNTUN_CHROMIUM ? { executablePath: process.env.HUNTUN_CHROMIUM } : {}) });
 try {
@@ -129,16 +130,16 @@ try {
   await page.locator('#wdclose').click();
 
   // The actual Office state machine must make the same choices for every backend/model.
-  const officeSource = html.slice(html.indexOf("function makeOffice(wid)"), html.indexOf("const offices = {}"));
   await page.setContent('<div id="officebox" style="width:900px;height:750px"></div>');
   await page.addScriptTag({content: `
     const LANG = "en", tr = x => x;
+    Object.defineProperty(window, "__officeClock", {get:() => Date.now()});
     const hash = text => [...text].reduce((v, c) => ((v * 31) + c.charCodeAt(0)) >>> 0, 0);
     ${officeSource}
-    window.testOffice = makeOffice("fixture");
+    window.testOffice = makeOffice("fixture", true);
   `});
   const coverage = await page.evaluate(() => {
-    const backends = ["claude-code", "codex", "kimi", "api", "deepseek", "ollama", "llamacpp", "vllm"];
+    const backends = ["claude-code", "codex", "kimi", "pi-clm", "api", "deepseek", "ollama", "llamacpp", "vllm"];
     const agents = backends.map((backend, i) => ({name: "dev-" + i, role: "backend", title: backend,
       model: backend === "codex" ? "gpt-6.1-sol" : "any-model", backend, status: "active", live: {status:"working"},
       info: {compactions: 12, compacting:false, activity:{kind:"tool", at:new Date(Date.now()-120000).toISOString(), active:true}}}));
@@ -200,9 +201,75 @@ try {
     testOffice.stop();
     return results;
   });
-  assert.equal(coverage.length, 8);
+  assert.equal(coverage.length, 9);
+  // Opening an already-idle team must use the same smoke-break policy as a live
+  // work-to-idle transition, including GPT/Codex and every other backend.
+  const idleCoverage = await page.evaluate(() => {
+    const originalRandom = Math.random;
+    const backends = ["claude-code", "codex", "kimi", "pi-clm", "api", "deepseek", "ollama", "llamacpp", "vllm"];
+    const agents = backends.map((backend, i) => ({name:"idle-"+i, role:"backend", title:backend,
+      backend, model:backend === "codex" ? "gpt-6.1-sol" : "any-model", status:"active",
+      live:{status:i % 2 ? "waiting for mention" : "idle"}, info:{compactions:0}}));
+    const st = {agents, running:true, events:[], limits:{backends:{}}};
+    const office = makeOffice("idle-fixture", true);
+    const check = (condition, message) => { if (!condition) throw new Error(message); };
+    try {
+      office.start({...st, agents:[]});
+      for (const c of Object.values(office._debug().chars)) c.hidden=true;
+      office.setTheme("chinese_tech");
+      Math.random = () => 0.1; // exercise the smoking half of the idle choice
+      office.start(st);
+      let d = office._debug();
+      check(d.THEME() === "chinese_tech", "Chinese smoke fixture theme");
+      for (const a of agents) {
+        const c = d.chars[a.name];
+        check(c.mode === "smoke" && c.smoke, a.backend+": initial idle smoke");
+        check(c.goal[0] === c.smoke.spot[0] && c.goal[1] === c.smoke.spot[1], a.backend+": smoke destination");
+      }
+      // Actual animation ticks must retain the bed destination throughout a break.
+      d.stepChars(0);
+      for (const a of agents) {
+        const c = d.chars[a.name];
+        check(c.sleepReady, a.backend+": smoke retains completed idle decision");
+        c.steps=[]; c.moving=false; c.smoke.until=Date.now()-1;
+      }
+      office.update(st);
+      for (const a of agents) {
+        const c = d.chars[a.name], bed = d.BEDS[c.idx];
+        check(c.mode === "sleep" && !c.smoke, a.backend+": break ends in sleep");
+        check(c.goal[0] === bed[0] && c.goal[1] === bed[1], a.backend+": bed after break");
+      }
+      // The other half go straight to bed. Reopening must not force everybody to smoke.
+      Math.random = () => 0.9;
+      office.start(st); d=office._debug();
+      for (const a of agents) check(d.chars[a.name].mode === "sleep" && !d.chars[a.name].smoke, a.backend+": initial nap");
+      Math.random = () => 0.1;
+      office.start(st); d=office._debug();
+      for (const a of agents) a.live.status="working";
+      office.update(st);
+      for (const a of agents) check(d.chars[a.name].mode === "work" && !d.chars[a.name].smoke, a.backend+": work interrupts smoke");
+      for (const a of agents) {
+        const c=d.chars[a.name], chair=d.DESKS[c.idx].chair;
+        c.tx=chair[0]; c.ty=chair[1]; c.moving=false; c.steps=[];
+      }
+      d.stepChars(0);
+      for (const a of agents) {
+        check(!d.chars[a.name].sleepReady, a.backend+": new work resets idle decision");
+        a.live.status="waiting for mention";
+      }
+      office.update(st); d.stepChars(0);
+      for (const a of agents) {
+        check(d.chars[a.name].deskWait, a.backend+": idle first checks desk");
+        d.chars[a.name].deskWait=performance.now()-1;
+      }
+      d.stepChars(0); office.update(st);
+      for (const a of agents) check(d.chars[a.name].mode === "smoke", a.backend+": live work-to-idle smoke");
+      return backends;
+    } finally { Math.random=originalRandom; office.stop(); }
+  });
+  assert.equal(idleCoverage.length, 9);
   assert.deepEqual(errors, []);
-  console.log("Board browser checks passed: paging, incremental rendering, drafts, navigation races, cursor retention, bounded live tail, persistent watchdog dialog, and Office animation mappings for all eight backends.");
+  console.log("Board browser checks passed: paging, incremental rendering, drafts, navigation races, cursor retention, bounded live tail, persistent watchdog dialog, Office animation mappings, and idle smoke/nap behavior for all nine backends.");
 } finally {
   await browser.close();
 }

@@ -12,6 +12,7 @@ license = "MIT"
 dependencies = [
   "anthropic>=1.6",
   "claude-agent-sdk>=0.2.159",
+  "mini-racer>=0.14,<0.15",
 ]
 
 [project.scripts]
@@ -21,4 +22,4 @@ huntun = "huntun.cli:main"
 packages = ["huntun", "huntun.backends"]
 
 [tool.setuptools.package-data]
-huntun = ["*.html"]
+huntun = ["*.html", "*.js", "*.css"]

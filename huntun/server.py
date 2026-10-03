@@ -32,26 +32,37 @@ from .models import (
     server_label,
     servers,
 )
+from .office import SOURCE as OFFICE_SOURCE
+from .office import OfficeService
+from .performance import review as performance_review
+from .usage import cost_summary, summarize_costs, token_total
 from .personalities import PERSONALITIES
 
 PAGE = (Path(__file__).parent / "app.html").read_text()
 LOGIN_PAGE = (Path(__file__).parent / "login.html").read_text()
+ASSETS = {"/office.js": (OFFICE_SOURCE, "text/javascript"),
+          "/performance.js": ((Path(__file__).parent / "performance.js").read_text(), "text/javascript"),
+          "/performance.css": ((Path(__file__).parent / "performance.css").read_text(), "text/css")}
 WS_ROUTE = re.compile(r"^/api/w/([0-9a-f]{10})(/.*)?$")
 WORKSPACE_ROUTE = re.compile(r"^/api/workspaces/([0-9a-f]{10})(/.*)?$")
 
 
-def _totals(orch: Any, path: Path) -> dict[str, float]:
+def _totals(orch: Any, path: Path) -> dict[str, Any]:
     """Tokens and dollars across every agent, from the live runtimes or the state files on disk."""
     from .config import agents_dir
     from .memory import AgentMemory
 
     tokens = cost = 0.0
+    counts: dict[str, int] = {}
     for a in orch.team:
         st = orch.runtimes[a.name].memory.state if a.name in orch.runtimes else AgentMemory(agents_dir(path), a.name).state
         u = st.usage_totals
-        tokens += float(u.get("input", 0)) + float(u.get("output", 0)) + float(u.get("cache_read", 0))
+        tokens += token_total(u)
         cost += float(u.get("cost_usd", 0))
-    return {"tokens": round(tokens), "cost_usd": round(cost, 4)}
+        backend = a.backend or orch.backend_name
+        for kind, count in cost_summary(st, backend)["counts"].items():
+            counts[kind] = counts.get(kind, 0) + count
+    return {"tokens": round(tokens), "cost_usd": round(cost, 4), "usage_cost": summarize_costs(counts)}
 
 
 def _limits_from(store: Any) -> dict[str, Any]:
@@ -110,6 +121,13 @@ def _error_body(e: HttpError) -> dict[str, Any]:
 
 
 def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
+    office = OfficeService(hub)
+
+    class HuntunServer(ThreadingHTTPServer):
+        def shutdown(self) -> None:
+            super().shutdown()
+            office.close()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args: Any) -> None:  # keep the console for agent logs
             pass
@@ -233,6 +251,16 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     self._guard(write=False)                                      # some reads load a project's agents
                 if path == "/":
                     return self._page(PAGE if self._signed_in() else LOGIN_PAGE)
+                if path in ASSETS:
+                    source, mime = ASSETS[path]
+                    data = source.encode()
+                    self.send_response(200)
+                    self.send_header("content-type", mime + "; charset=utf-8")
+                    self.send_header("cache-control", "no-store")
+                    self.send_header("content-length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
                 if path == "/api/auth":
                     return self._json(200, self._auth_view())
                 if path.startswith("/api/") and not self._signed_in():
@@ -260,6 +288,8 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
         def _board_get(self, wid: str, sub: str) -> None:
+            if sub == "/office":
+                return self._json(200, office.snapshot(self._entry(wid)))
             if sub == "/watchdog":
                 self._entry(wid)
                 q = parse_qs(urlparse(self.path).query)
@@ -272,6 +302,15 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     raise HttpError(400, str(ex)) from None
             orch = self._board(wid)
             store = orch.store
+            if sub == "/performance":
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    return self._json(200, performance_review(store, self._entry(wid).path, orch.team, (q.get("range") or ["7d"])[0],
+                                                             bin_size=(q.get("bin") or ["auto"])[0]))
+                except ValueError as ex:
+                    raise HttpError(400, str(ex)) from None
+            if sub == "/tasks":
+                return self._json(200, {"tasks": store.list_tasks()})
             if sub == "/state":
                 statuses = store.agent_statuses()
                 entry = self._entry(wid)
@@ -284,6 +323,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     "workspace": entry.summary(),
                     "goal": orch.config.goal,
                     "backend": orch.backend_name,
+                    "default_model": orch.config.model,
                     "running": store.is_running(),
                     "approved": entry.approved(),
                     "goal_confirmed": orch.config.goal_confirmed,
@@ -293,7 +333,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     "totals": _totals(orch, entry.path),
                     "estimate": orch.config.estimate or None,
                     "max_agents": orch.config.max_agents,
-                    "attention": store.open_attention(20),
+                    "attention": store.open_attention(20, full_text=False),
                     "attention_count": store.attention_count(),
                     "models": [{"id": m.id, "backend": b, "vendor": m.vendor, "label": m.label, "context": m.context, "efforts": list(m.reasoning_levels)} for m, b in (catalog_available() or [(m, orch.backend_name) for m in catalog_for(orch.backend_name)])],
                     "backends": {b: BACKEND_LABEL.get(b, b) for b in available_backends()},
@@ -301,10 +341,21 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     "limits": entry.orchestrator.limits() if entry.orchestrator is not None else _limits_from(store),
                     "agents": [{**a.to_dict(), "live": statuses.get(a.name), "info": (orch.runtimes[a.name].info() if a.name in orch.runtimes else None)} for a in orch.team],
                     "threads": threads,
+                    "tasks": store.list_tasks(),
                     "events": store.list_events(0, 40),
+                    "office": office.snapshot(entry),
                 })
             if sub == "/attention":
-                return self._json(200, {"items": store.open_attention(100), "count": store.attention_count()})
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    before, limit = (int((q.get(k) or [str(d)])[0]) for k, d in (("before", 0), ("limit", 30)))
+                    if before < 0 or limit < 1:
+                        raise ValueError()
+                except ValueError:
+                    raise HttpError(400, "Use a non-negative before cursor and a positive limit") from None
+                pending = store.pending_attention_ids()
+                return self._json(200, {"items": store.open_attention(limit, before=before),
+                                        "pending_ids": pending, "count": len(pending)})
             am = re.match(r"^/agents/([a-z0-9-]+)/activity$", sub)
             if am:
                 rt = orch.runtimes.get(am.group(1))
@@ -420,7 +471,7 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                     raise HttpError(409, str(ex)) from None
                 return self._json(202, self._entry(wid).summary())
             if sub == "/init":
-                backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp") else None
+                backend = body.get("backend") if body.get("backend") in ("api", "claude-code", "codex", "kimi", "pi-clm", "deepseek", "ollama", "vllm", "llamacpp") else None
                 try:
                     e = hub.begin_init(wid, str(body.get("goal") or ""), backend, str(body.get("context") or ""), int(body.get("max_agents") or 0),
                                        team_lead=body.get("team_lead") is not False, master_model=str(body.get("master_model") or ""))
@@ -471,7 +522,35 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
             raise HttpError(404, "not found")
 
         def _board_post(self, wid: str, sub: str, body: dict[str, Any]) -> None:
-            store = self._board(wid).store
+            if sub == "/office/theme":
+                try:
+                    return self._json(200, office.theme(self._entry(wid), str(body.get("theme", "")), body.get("initialize") is True))
+                except ValueError as ex:
+                    raise HttpError(400, str(ex)) from None
+            board = self._board(wid)
+            store = board.store
+            tm = re.fullmatch(r"/tasks/(\d+)", sub)
+            if sub == "/tasks" or tm:
+                try:
+                    owner = body.get("owner", "")
+                    if owner and owner not in {a.name for a in board.team if a.status != "retired"}:
+                        raise ValueError("Assign the task to an active teammate")
+                    if tm:
+                        previous_owner = (store.get_task(int(tm.group(1))) or {}).get("owner", "")
+                        task = store.update_task(int(tm.group(1)), "human", body)
+                    else:
+                        fields = {k: body[k] for k in ("description", "acceptance", "owner", "parent_id", "thread_id") if k in body}
+                        task = store.create_task("human", str(body.get("title") or ""), **fields)
+                    if owner and (not tm or owner != previous_owner):
+                        notice = f"@{owner} Task #{task['id']}: {task['title']}. Acceptance: {task['acceptance']}"
+                        if task["thread_id"]:
+                            store.add_comment(task["thread_id"], "human", notice)
+                        else:
+                            t = store.create_thread("human", task["title"], notice)
+                            task = store.update_task(task["id"], "human", {"thread_id": t["id"]})
+                    return self._json(200 if tm else 201, task)
+                except (ValueError, TypeError) as ex:
+                    raise HttpError(400, str(ex)) from None
             if sub == "/threads":
                 title, text = str(body.get("title") or "").strip(), str(body.get("body") or "").strip()
                 if not title or not text:
@@ -484,9 +563,44 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 except ValueError as ex:
                     raise HttpError(409, str(ex)) from None
                 return self._json(200, {"ok": True, "message": msg})
+            if sub == "/harness":
+                try:
+                    msg = hub.call(hub.set_harness(wid, str(body.get("backend") or ""), str(body.get("model") or ""),
+                                                   body.get("all_agents") is True), timeout=30)
+                except (ValueError, RuntimeError) as ex:
+                    raise HttpError(409, str(ex)) from None
+                return self._json(200, {"ok": True, "message": msg})
             rm = re.match(r"^/attention/(\d+)/resolve$", sub)
             if rm:
                 return self._json(200, {"ok": store.resolve_attention(int(rm.group(1)))})
+            rm = re.fullmatch(r"/attention/(\d+)/reply", sub)
+            if rm:
+                text = str(body.get("body") or "").strip()
+                if not text:
+                    raise HttpError(400, "Enter a reply before sending.")
+                item_id = int(rm.group(1))
+                e = self._entry(wid)
+                try:
+                    # Setup requests still revise the goal/plan just as Discussion replies do.
+                    if not e.approved() and e.state not in ("planning", "clarifying"):
+                        item = store.get_attention(item_id)
+                        tid = item["thread_id"] if item else 0
+                        goal_tid = int(store.get_control("goal_thread_id", "0") or 0)
+                        plan_tid = int(store.get_control("plan_thread_id", "0") or 0)
+                        operation = None
+                        if tid and tid == goal_tid and not e.summary().get("goal_confirmed"):
+                            operation = hub.goal_reply(wid, text, attention_id=item_id)
+                        elif tid and tid == plan_tid and e.summary().get("goal_confirmed"):
+                            operation = hub.replan(wid, text, attention_id=item_id)
+                        if operation is not None:
+                            try:
+                                hub.call(operation, timeout=0.5)
+                            except TimeoutError:
+                                pass
+                            return self._json(202, {"revising": "goal" if tid == goal_tid else "plan", "thread_id": tid})
+                    return self._json(201, store.reply_attention(item_id, text))
+                except ValueError as ex:
+                    raise HttpError(409, str(ex)) from None
             if sub == "/comments":
                 text = str(body.get("body") or "").strip()
                 tid = int(body.get("thread_id") or 0)
@@ -511,7 +625,11 @@ def start_server(hub: Hub, port: int) -> ThreadingHTTPServer:
                 return self._json(201, store.add_comment(tid, "human", text))
             raise HttpError(404, "not found")
 
-    server = ThreadingHTTPServer((bind_address(), port), Handler)
+    try:
+        server = HuntunServer((bind_address(), port), Handler)
+    except Exception:
+        office.close()
+        raise
     Handler.cookie_name = f"huntun_session_{server.server_port}"
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, name="huntun-web", daemon=True).start()

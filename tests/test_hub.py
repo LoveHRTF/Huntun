@@ -138,6 +138,34 @@ class HubTests(unittest.TestCase):
             time.sleep(0.2)
         self.fail(f"workspace never reached {states}: {w}")
 
+    def test_pi_harness_new_and_existing_projects(self) -> None:
+        from huntun.config import load_config, load_team
+
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add CLI", "backend": "pi-clm"})
+        proposed = self.wait_state(wid, ("goal_proposed", "error"))
+        self.assertEqual(proposed["state"], "goal_proposed", proposed.get("error"))
+        self.assertEqual(load_config(self.project).backend, "pi-clm")
+        self.assertEqual(FakeBackend.made[-1], "pi-clm")
+        self.srv.call(f"/api/workspaces/{wid}/confirm-goal", {"goal": "Add CLI", "definition_of_done": "CLI runs\ntests pass"})
+        self.wait_state(wid, ("proposed", "error"))
+        self.srv.call(f"/api/workspaces/{wid}/approve", {})
+        self.srv.call(f"/api/w/{wid}/harness", {"backend": "api", "model": "", "all_agents": False})
+        overrides = [(a.model, a.backend) for a in load_team(self.project)]
+        self.srv.call(f"/api/w/{wid}/harness", {"backend": "pi-clm", "model": "pi-clm:default", "all_agents": False})
+        self.assertEqual([(a.model, a.backend) for a in load_team(self.project)], overrides)
+        response = self.srv.call(f"/api/w/{wid}/harness", {"backend": "pi-clm", "model": "pi-clm:default", "all_agents": True})
+        self.assertIn("next cycle", response["message"])
+        self.assertTrue(all(not a.model and not a.backend for a in load_team(self.project)))
+        state = self.srv.call(f"/api/w/{wid}/state")
+        self.assertEqual((state["backend"], state["default_model"]), ("pi-clm", "pi-clm:default"))
+        self.srv.call(f"/api/w/{wid}/agents/dev-1/model", {"model": "pi-clm:default", "effort": "high"})
+        self.assertEqual(next(a.backend for a in load_team(self.project) if a.name == "dev-1"), "pi-clm")
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.srv.call(f"/api/w/{wid}/harness", {"backend": "pi-clm", "model": "claude-sonnet-5"})
+        self.assertEqual(error.exception.code, 409)
+        self.assertEqual(load_config(self.project).model, "pi-clm:default")
+
     def test_watchdog_http_history_and_model_selection(self) -> None:
         from unittest.mock import patch
 
@@ -161,6 +189,40 @@ class HubTests(unittest.TestCase):
             self.assertEqual(result["selection"]["model"], "claude-sonnet-5")
             self.assertEqual(len(self.srv.call(f"/api/w/{wid}/watchdog?before=2")["messages"]), 1)
             self.assertFalse(self.store_of(wid).is_running())
+
+    def test_office_advances_without_viewers_and_restores_on_server_restart(self) -> None:
+        from huntun.config import HuntunConfig, save_config, save_team
+        from huntun.types import AgentSpec
+
+        save_config(self.project, HuntunConfig("Office", backend="codex"))
+        save_team(self.project, [AgentSpec("dev", "backend", "Dev", "Build", backend="codex")])
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        path = f"/api/w/{wid}/office"
+        first = self.srv.call(path)
+        # Only inspect persisted checkpoints while no browser is polling.
+        deadline = time.monotonic() + 5
+        saved = first
+        while time.monotonic() < deadline:
+            saved = json.loads(self.store_of(wid).get_control("office_scene", "{}"))
+            if saved.get("revision", 0) > first["revision"]:
+                break
+            time.sleep(.05)
+        self.assertGreater(saved["revision"], first["revision"])
+        scene = self.srv.call(path + "/theme", {"theme": "chinese_tech", "initialize": True})
+        self.assertEqual(scene["requested_theme"], "chinese_tech")
+        self.assertEqual(self.srv.call(path + "/theme", {"theme": "regular", "initialize": True})["requested_theme"], "chinese_tech")
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(path + "/theme", {"theme": "invalid"})
+        self.assertEqual(cm.exception.code, 400)
+        self.srv.close()
+        self.srv = HubServer(self.home)
+        restored = self.srv.call(path)
+        self.assertEqual(restored["t0"], scene["t0"])
+        self.assertGreaterEqual(restored["revision"], scene["revision"])
+        self.assertEqual(restored["requested_theme"], "chinese_tech")
+        with urllib.request.urlopen(self.srv.base + "/office.js") as response:
+            self.assertIn("text/javascript", response.headers["content-type"])
+            self.assertIn(b"function makeOffice", response.read())
 
     def test_describe_workspace_sees_existing_files(self) -> None:
         desc = describe_workspace(self.project)
@@ -194,6 +256,66 @@ class HubTests(unittest.TestCase):
         info = browse(str(Path(self.tmp.name)))
         self.assertIn("myapp", info["dirs"])
         self.assertFalse(browse(str(self.project / "nope"))["exists"])
+
+    def test_attention_http_full_requests_scoped_replies_and_pagination(self) -> None:
+        from huntun.config import default_config, save_config
+        save_config(self.project, default_config("attention check"))
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        store = self.store_of(wid)
+        tid = store.create_thread("human", "Need decisions", "opening")["id"]
+        body = "@human " + "The full scope of the requested decision. " * 100 + "Should we hire one QA?"
+        ask = store.add_comment(tid, "qa-1", body, requires_confirmation=True)
+        store.add_comment(tid, "dev-1", "@human Which hostname should we use?")
+        path = f"/api/w/{wid}/attention"
+        data = self.srv.call(path + "?limit=1")
+        self.assertEqual((data["count"], len(data["pending_ids"]), len(data["items"])), (2, 2, 1))
+        older = self.srv.call(path + f"?before={data['items'][0]['id']}&limit=1")
+        item = older["items"][0]
+        self.assertEqual(item["comment_id"], ask["id"])
+        self.assertEqual(item["text"], body)
+        for query in ("?before=-1", "?limit=0", "?limit=x"):
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.srv.call(path + query)
+            self.assertEqual(cm.exception.code, 400)
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(path + f"/{item['id']}/reply", {"body": " "})
+        self.assertEqual(cm.exception.code, 400)
+        reply = self.srv.call(path + f"/{item['id']}/reply", {"body": "Approved, hire one QA.", "thread_id": 9999})
+        self.assertEqual((reply["author"], reply["thread_id"], reply["body"]),
+                         ("human", tid, "@qa-1 Approved, hire one QA."))
+        self.assertGreater(store.peek_inbox_count("qa-1"), 0)
+        self.assertEqual(self.srv.call(path)["count"], 1)
+        self.assertEqual(store.confirmation_status(tid, "qa-1"), (True, True))
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(path + f"/{item['id']}/reply", {"body": "Again"})
+        self.assertEqual(cm.exception.code, 409)
+        remaining = self.srv.call(path)["items"][0]
+        self.srv.call(path + f"/{remaining['id']}/resolve", {})
+        self.assertEqual(self.srv.call(path)["count"], 0)
+
+    def test_attention_inline_setup_reply_revises_goal_and_plan(self) -> None:
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        self.srv.call(f"/api/workspaces/{wid}/init", {"goal": "Add a CLI", "max_agents": 2})
+        self.wait_state(wid, ("goal_proposed",))
+        path = f"/api/w/{wid}/attention"
+        item = self.srv.call(path)["items"][0]
+        self.srv.call(path + f"/{item['id']}/reply", {"body": "Yes, add a JSON flag."})
+        self.wait_state(wid, ("goal_proposed",))
+        self.assertIn("Yes, add a JSON flag.", FakeBackend.goal_prompts[-1])
+        replies = self.store_of(wid).get_comments(item["thread_id"])
+        self.assertEqual(sum(c["author"] == "human" for c in replies), 1)
+        self.assertEqual(replies[0]["body"], "@master Yes, add a JSON flag.")
+        self.srv.call(f"/api/workspaces/{wid}/confirm-goal",
+                      {"goal": "Add a CLI", "definition_of_done": "CLI with a JSON flag"})
+        self.wait_state(wid, ("proposed",))
+        item = self.srv.call(path)["items"][0]
+        self.srv.call(path + f"/{item['id']}/reply", {"body": "Drop the writer."})
+        self.wait_state(wid, ("proposed",))
+        self.assertIn("Drop the writer.", FakeBackend.last_prompt)
+        replies = self.store_of(wid).get_comments(item["thread_id"])
+        self.assertEqual(sum(c["author"] == "human" for c in replies), 1)
+        self.assertFalse(self.srv.call(f"/api/workspaces/{wid}")["approved"],
+                         "replying or resolving is not automatic kickoff approval")
 
     def test_web_flow_open_plan_run_pause(self) -> None:
         # Home page and empty registry
@@ -257,7 +379,8 @@ class HubTests(unittest.TestCase):
         st = self.srv.call(f"/api/w/{wid}/state")
         self.assertFalse(st["approved"])
         self.assertEqual((st["limits"]["paused"], st["limits"]["pause_count"]), (False, 0))
-        self.assertEqual(st["totals"], {"tokens": 0, "cost_usd": 0})
+        self.assertEqual({k:st["totals"][k] for k in ("tokens", "cost_usd")}, {"tokens": 0, "cost_usd": 0})
+        self.assertFalse(st["totals"]["usage_cost"]["complete"])
         self.assertEqual(st["threads"][0]["title"], "Proposed plan: please review")
         self.assertEqual(st["plan_thread_id"], st["threads"][0]["id"])
         self.assertIn("@human", st["threads"][0]["snippet"])
@@ -427,6 +550,66 @@ class HubTests(unittest.TestCase):
         self.assertIn("capped the team at 1 agents", refused)
         self.srv.call(f"/api/workspaces/{wid}/max-agents", {"max_agents": 0})
         self.assertIn("no limit (was 1)", self.srv.call(f"/api/w/{wid}/threads/{st['plan_thread_id']}")["comments"][-1]["body"])
+
+    def test_existing_project_task_api_migrates_dod_and_persists_progress(self) -> None:
+        from huntun.config import HuntunConfig, save_config, save_team
+        from huntun.types import AgentSpec
+        save_config(self.project, HuntunConfig("Build", backend="api", definition_of_done="- API runs\n- Tests pass"))
+        save_team(self.project, [AgentSpec("master", "master", "Master", "Lead"), AgentSpec("dev", "backend", "Dev", "Build")])
+        wid = self.srv.call("/api/workspaces", {"path": str(self.project)})["id"]
+        base = f"/api/w/{wid}/tasks"
+        self.assertEqual(len(self.store_of(wid).list_tasks()), 2, "opening an existing project migrates DoD before visiting its task page")
+        parents = self.srv.call(base)["tasks"]
+        self.assertEqual(len(parents), 2)
+        card = self.srv.call(base, {"title":"API handler", "acceptance":"GET returns 200", "owner":"dev", "parent_id":parents[0]["id"]})
+        self.assertEqual(card["status"], "backlog")
+        self.assertTrue(card["thread_id"])
+        self.srv.call(base + f"/{card['id']}", {"status":"in_process"})
+        for body in ({"status":"done"}, {"owner":"missing"}, {"status":"fake"}):
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.srv.call(base + f"/{card['id']}", body)
+            self.assertEqual(cm.exception.code, 400)
+        self.srv.call(base + f"/{card['id']}", {"status":"done", "evidence":"abc123; 4 tests passed"})
+        self.assertEqual(len(self.srv.call(base)["tasks"]), 3)
+        self.assertEqual(self.srv.call(base)["tasks"][-1]["status"], "done")
+
+    def test_performance_http_imports_existing_project_and_rejects_bad_ranges(self) -> None:
+        from datetime import datetime
+
+        from huntun.config import (
+            HuntunConfig,
+            agents_dir,
+            now_iso,
+            save_config,
+            save_team,
+        )
+        from huntun.types import AgentSpec
+        save_config(self.project,HuntunConfig("Build",backend="api"))
+        save_team(self.project,[AgentSpec("dev","backend","Developer","Build")])
+        folder=agents_dir(self.project)/"dev"
+        folder.mkdir(parents=True,exist_ok=True)
+        (folder/"journal.jsonl").write_text(json.dumps({"at":now_iso(),"usage":{"input":100,"output":25},"commits":[]})+"\n")
+        wid=self.srv.call("/api/workspaces",{"path":str(self.project)})["id"]
+        self.store_of(wid).create_thread("dev","Progress","Actual update")
+        result=self.srv.call(f"/api/w/{wid}/performance?range=24h")
+        agent=next(a for a in result["agents"] if a["name"]=="dev")
+        self.assertEqual(agent["totals"]["tokens"],125)
+        self.assertEqual(agent["totals"]["messages"],1)
+        self.assertIn(len(result["buckets"]),(24,25))
+        rebinned=self.srv.call(f"/api/w/{wid}/performance?range=24h&bin=15m")
+        self.assertEqual(rebinned["bucket_seconds"],900)
+        self.assertLessEqual(abs(datetime.fromisoformat(rebinned["window_start"]).timestamp()-datetime.fromisoformat(result["window_start"]).timestamp()),1)
+        self.assertEqual(rebinned["agents"][0]["totals"],result["agents"][0]["totals"])
+        for asset, mime in (("performance.js","text/javascript"),("performance.css","text/css")):
+            with urllib.request.urlopen(self.srv.base+"/"+asset) as response:
+                self.assertIn(mime,response.headers["content-type"])
+                self.assertGreater(len(response.read()),100)
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(f"/api/w/{wid}/performance?range=30d&bin=1m")
+        self.assertEqual(cm.exception.code,400)
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.srv.call(f"/api/w/{wid}/performance?range=bad")
+        self.assertEqual(cm.exception.code,400)
 
     def test_init_requires_goal_and_reports_errors(self) -> None:
         w = self.srv.call("/api/workspaces", {"path": str(self.project)})

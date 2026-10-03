@@ -112,6 +112,35 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(self.store.attention_count(), 0)
         self.assertIsNotNone(t2)
 
+    def test_human_reference_only_posts_fail_and_can_be_rewritten(self) -> None:
+        ctx = self.ctx(self.team[0])
+        tid = self.store.create_thread("human", "Staffing", "Hire a QA")["id"]
+        for tool, args in (
+            ("post_thread", {"title": "Need approval", "body": "@human 请看原605确认。"}),
+            ("post_comment", {"thread_id": tid, "body": "@human Please read comment #6974 and approve."}),
+        ):
+            out, err = self.run_tool(ctx, tool, **args)
+            self.assertTrue(err)
+            self.assertIn("self-contained", out)
+        self.assertEqual(self.store.attention_count(), 0)
+        out, err = self.run_tool(ctx, "post_comment", thread_id=tid,
+                                 body="@human May I hire one QA using gpt-6.1-sol medium to verify Safari before release?")
+        self.assertFalse(err, out)
+        self.assertEqual(self.store.attention_count(), 1)
+
+    def test_rejected_human_commit_request_has_no_git_side_effects(self) -> None:
+        ctx = self.ctx(self.team[2])
+        self.run_tool(ctx, "write_file", path="new_feature.py", content="value = 1\n")
+        before = asyncio.run(recent_log(self.ws, 1))
+        out, err = self.run_tool(ctx, "git_commit", message="feat: new feature",
+                                 summary_title="Feature", summary_body="@human Please approve thread #605.")
+        self.assertTrue(err, out)
+        self.assertIn("self-contained", out)
+        self.assertEqual(asyncio.run(recent_log(self.ws, 1)), before)
+        self.assertEqual(ctx.cycle.commits, [])
+        self.assertIn("new_feature.py", ctx.memory.state.touched_files)
+        self.assertEqual(self.store.attention_count(), 0)
+
     def test_broadcast_does_not_wake_author(self) -> None:
         self.store.create_thread("master", "Kickoff", "@all read this")
         self.assertEqual(self.store.peek_inbox_count("master"), 0)
@@ -211,6 +240,56 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(self.store.get_control("delivered_at", ""))
         self.assertTrue(self.run_tool(master, "deliver_project", title="x", report="  ")[1], "an empty report is refused")
 
+    def test_direct_human_hiring_instruction_survives_master_acknowledgements(self) -> None:
+        from huntun.tools import ToolHooks
+        applied = []
+        async def hire(spec):
+            applied.append(spec['name'])
+            return 'hired'
+        ctx=self.ctx(self.team[0])
+        ctx.hooks=ToolHooks(hire_agent=hire)
+        tid=self.store.create_thread('master','Staffing discussion','Existing team')['id']
+        instruction=self.store.add_comment(tid,'human','@master Hire two QA agents; choose effort yourself.')['id']
+        self.store.add_comment(tid,'master','Received; I will recruit them.')
+        args=dict(role='qa',title='QA',brief='Test',confirmation_thread_id=tid,authorization_comment_id=instruction)
+        for name in ('qa-2','qa-3'):
+            out,err=self.run_tool(ctx,'hire_agent',name=name,**args)
+            self.assertFalse(err,out)
+            self.store.add_comment(tid,'master','Progress: one authorized hire completed')
+        self.assertEqual(applied,['qa-2','qa-3'])
+        own=self.store.add_comment(tid,'master','I authorize myself')['id']
+        for source in (own,999999,-1,'invalid'):
+            out,err=self.run_tool(ctx,'hire_agent',name='qa-4',**{**args,'authorization_comment_id':source})
+            self.assertTrue(err,out)
+        other=self.store.create_thread('human','Other','Other topic')['id']
+        out,err=self.run_tool(ctx,'hire_agent',name='qa-4',**{**args,'confirmation_thread_id':other})
+        self.assertTrue(err,out)
+        self.store.add_comment(tid,'master','New scope: hire a third QA?',requires_confirmation=True)
+        out,err=self.run_tool(ctx,'hire_agent',name='qa-4',**args)
+        self.assertTrue(err,out)
+        self.assertIn('newer changed-scope',out)
+        approved=self.store.add_comment(tid,'human','Approve that third QA')['id']
+        out,err=self.run_tool(ctx,'hire_agent',name='qa-4',**{**args,'authorization_comment_id':approved})
+        self.assertFalse(err,out)
+
+    def test_direct_hiring_from_a_human_opening_post(self) -> None:
+        from huntun.tools import ToolHooks
+        async def hire(spec):
+            return 'hired'
+        ctx=self.ctx(self.team[0])
+        ctx.hooks=ToolHooks(hire_agent=hire)
+        tid=self.store.create_thread('human','Recruit','@master Recruit one QA, choose its name and effort.')['id']
+        self.store.add_comment(tid,'master','Received, executing your instruction.')
+        args=dict(name='qa-2',role='qa',title='QA',brief='Test',confirmation_thread_id=tid,authorization_comment_id=0)
+        out,err=self.run_tool(ctx,'hire_agent',**args)
+        self.assertFalse(err,out)
+        self.store.add_comment(tid,'master','Changed scope: two QA instead?',requires_confirmation=True)
+        out,err=self.run_tool(ctx,'hire_agent',**args)
+        self.assertTrue(err,out)
+        own=self.store.create_thread('master','Recruit','I decided to recruit')['id']
+        out,err=self.run_tool(ctx,'hire_agent',**{**args,'confirmation_thread_id':own})
+        self.assertTrue(err,out)
+
     def test_master_changes_need_human_confirmation(self) -> None:
         from huntun.tools import ToolHooks
 
@@ -242,11 +321,23 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(applied, [])
         # human confirms in that thread
         self.store.add_comment(tid, "human", "@master yes, go ahead")
+        self.run_tool(ctx, 'post_comment', thread_id=tid, body='Received; hiring now.')
+        self.run_tool(ctx, 'post_comment', thread_id=tid, body='Previously got "@human has not replied since your proposal"; retrying unchanged approved scope.')
         out, err = self.run_tool(ctx, "hire_agent", confirmation_thread_id=tid, **hire_args)
         self.assertFalse(err, out)
         out, err = self.run_tool(ctx, "set_goal", goal="New goal", definition_of_done="a\nb", confirmation_thread_id=tid)
         self.assertFalse(err, out)
         self.assertEqual(applied, ["hire:qa-2", "goal:New goal"])
+        out, err = self.run_tool(ctx, 'post_comment', thread_id=tid, body='@human Changed staffing scope: add another QA?', requires_confirmation=True)
+        self.assertFalse(err,out)
+        out, err = self.run_tool(ctx, 'hire_agent', confirmation_thread_id=tid, **{**hire_args,'name':'qa-3'})
+        self.assertTrue(err)
+        self.assertEqual(applied, ["hire:qa-2", "goal:New goal"])
+        self.store.add_comment(tid, 'human', 'Confirmed the changed scope')
+        self.run_tool(ctx, 'post_comment', thread_id=tid, body='Received again')
+        out, err = self.run_tool(ctx, 'hire_agent', confirmation_thread_id=tid, **{**hire_args,'name':'qa-3'})
+        self.assertFalse(err,out)
+        self.assertEqual(applied[-1], 'hire:qa-3')
 
     def test_backend_for_model(self) -> None:
         from huntun.models import backend_for_model, catalog_available

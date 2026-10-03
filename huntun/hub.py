@@ -65,6 +65,7 @@ class WorkspaceEntry:
     orchestrator: Any = None
     last_used: str = ""
     store: Store | None = None
+    lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     log: list[dict[str, Any]] = field(default_factory=list)   # what the master is doing during a goal check or a planning run
 
     def note(self, text: str) -> None:
@@ -76,6 +77,8 @@ class WorkspaceEntry:
             return self.orchestrator.store
         if self.store is None:
             self.store = Store(db_path(self.path))
+            if config_exists(self.path):
+                self.store.seed_tasks(load_config(self.path).definition_of_done)
         return self.store
 
     def approved(self) -> bool:
@@ -239,6 +242,10 @@ class Hub:
         try:
             if config_exists(e.path):
                 config = load_config(e.path)
+                if backend in ("api", "claude-code", "codex", "kimi", "pi-clm", "deepseek", "ollama", "vllm", "llamacpp") and not conversation:
+                    config.backend = backend
+                    config.model = ""
+                    config.master_model = master_model if model_info(master_model) else ""
                 config.backend = resolve_backend(config)
             else:
                 config = default_config(goal)
@@ -246,7 +253,7 @@ class Hub:
                 config.max_agents = max(0, int(max_agents or 0))
                 config.team_lead = bool(team_lead)
                 config.master_model = master_model if model_info(master_model) else ""
-                if backend in ("api", "claude-code", "codex", "kimi", "deepseek", "ollama", "vllm", "llamacpp"):
+                if backend in ("api", "claude-code", "codex", "kimi", "pi-clm", "deepseek", "ollama", "vllm", "llamacpp"):
                     config.backend = backend
                 config.backend = resolve_backend(config)
             existing = await asyncio.to_thread(describe_workspace, e.path)
@@ -276,7 +283,7 @@ class Hub:
             e.note(f"Error: {type(ex).__name__}: {ex}")
         return e
 
-    async def goal_reply(self, wid: str, message: str) -> WorkspaceEntry:
+    async def goal_reply(self, wid: str, message: str, *, attention_id: int | None = None) -> WorkspaceEntry:
         """Human answered the master's questions or asked for changes: revise the goal proposal."""
         e = self.workspaces[wid]
         if not config_exists(e.path) or is_initialized(e.path):
@@ -289,7 +296,10 @@ class Hub:
         store = e.open_store()
         tid = int(store.get_control("goal_thread_id", "0") or 0)
         if tid:
-            store.add_comment(tid, "human", f"@master {message}")
+            if attention_id is not None:
+                store.reply_attention(attention_id, message)
+            else:
+                store.add_comment(tid, "human", f"@master {message}")
         draft = e.goal_draft()
         previous = json.dumps(draft, indent=1) if draft else "(none)"
         e.state, e.progress, e.started_at = "clarifying", "Master agent is revising the goal", time.time()
@@ -313,6 +323,7 @@ class Hub:
         tid = int(store.get_control("goal_thread_id", "0") or 0)
         if tid:
             store.add_comment(tid, "human", f"@master Confirmed. Goal: {goal}\n\nDefinition of done:\n{definition_of_done.strip() or '(as proposed)'}")
+        store.seed_tasks(config.definition_of_done)
         store.log_event("human", "goal", "Goal and definition of done confirmed")
         e.state, e.error, e.progress, e.started_at = "planning", None, "Master agent is planning the team", time.time()
         self.submit(self.init(wid))
@@ -361,7 +372,7 @@ class Hub:
         store.log_event("master", "plan", "Waiting for @human to approve the team, roles, and models")
         return int(t["id"])
 
-    async def replan(self, wid: str, feedback: str) -> WorkspaceEntry:
+    async def replan(self, wid: str, feedback: str, *, attention_id: int | None = None) -> WorkspaceEntry:
         """Human asked for changes before approving: the master plans again with the feedback and the previous proposal."""
         e = self.workspaces[wid]
         if not is_initialized(e.path) or e.approved():
@@ -376,7 +387,10 @@ class Hub:
         store = e.open_store()
         plan_thread = int(store.get_control("plan_thread_id", "0") or 0)
         if plan_thread:
-            store.add_comment(plan_thread, "human", f"@master please revise: {feedback}")
+            if attention_id is not None:
+                store.reply_attention(attention_id, feedback)
+            else:
+                store.add_comment(plan_thread, "human", f"@master please revise: {feedback}")
         e.state, e.error, e.progress, e.started_at = "planning", None, "Master agent is revising the plan", time.time()
         try:
             existing = await asyncio.to_thread(describe_workspace, e.path)
@@ -469,6 +483,12 @@ class Hub:
             raise ValueError(out.removeprefix("ERROR: "))
         return out
 
+    async def set_harness(self, wid: str, backend: str, model: str, all_agents: bool = False) -> str:
+        entry = self.workspaces[wid]
+        if entry.orchestrator is None:
+            raise ValueError("approve the team before changing its project harness")
+        return await entry.orchestrator.set_harness(backend, model, all_agents)
+
     async def set_max_agents(self, wid: str, max_agents: int) -> int:
         """The human changes the team size limit (agents besides the master; 0 = none) at any time after setup.
 
@@ -505,10 +525,18 @@ class Hub:
         if not config_exists(e.path):
             raise ValueError("project is not set up")
         config = load_config(e.path)
+        from .usage import migrate_legacy_usage
+        migrate_legacy_usage(e.path, e.open_store())
+        e.open_store().seed_tasks(config.definition_of_done)
         return BoardView(e.open_store(), config, load_team(e.path) or [master_spec(config)], config.backend, {})
 
     async def load(self, wid: str, running: bool | None = False) -> WorkspaceEntry:
         """Loads an initialized workspace: opens its board and spawns its agents (paused unless running=True)."""
+        e = self.workspaces[wid]
+        async with e.lifecycle_lock:
+            return await self._load(wid, running)
+
+    async def _load(self, wid: str, running: bool | None) -> WorkspaceEntry:
         from .orchestrator import Orchestrator
 
         e = self.workspaces[wid]
@@ -521,6 +549,7 @@ class Hub:
             e.state = "proposed"
             return e
         e.state, e.error, e.started_at, e.progress = "loading", None, time.time(), "Loading agents"
+        orch = None
         try:
             if e.store is not None:
                 e.store.close()
@@ -534,7 +563,18 @@ class Hub:
             e.last_used = now_iso()
             self._save_registry()
         except Exception as ex:
+            if orch is not None:
+                await orch.stop()
+                if e.orchestrator is orch:
+                    e.orchestrator = None
             e.state, e.error, e.progress = "error", f"{type(ex).__name__}: {ex}", ""
+        except asyncio.CancelledError:
+            if orch is not None:
+                await orch.stop()
+                if e.orchestrator is orch:
+                    e.orchestrator = None
+            e.state, e.progress = "ready", ""
+            raise
         return e
 
     async def probe_limit(self, wid: str, backend: str | None = None) -> dict[str, Any]:
@@ -564,6 +604,12 @@ class Hub:
         return self.recovery_agents[wid]
 
     async def close(self, wid: str) -> None:
+        e = self.workspaces.get(wid)
+        if e is not None:
+            async with e.lifecycle_lock:
+                await self._close(wid)
+
+    async def _close(self, wid: str) -> None:
         recovery = self.recovery_agents.pop(wid, None)
         if recovery:
             await recovery.close()

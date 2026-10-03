@@ -22,12 +22,16 @@ FAKE_CODEX = r'''#!__PY__
 """Fake codex: parses the flags Huntun passes, calls the huntun MCP server over streamable HTTP, and emits JSONL events."""
 import asyncio, json, sys, os
 args = sys.argv[1:]
+assert "--dangerously-bypass-approvals-and-sandbox" in args
+assert "--ignore-rules" in args
 mode = "resume" if args[:2] == ["exec", "resume"] else "exec"
 cfg = {}
 for i, a in enumerate(args):
     if a == "-c" and "=" in args[i + 1]:
         k, v = args[i + 1].split("=", 1); cfg[k] = v.strip('"')
 prompt = args[-1]
+if mode == "resume":
+    assert "SYS: maintain the delivery board" in prompt, "resumed agents must receive current team instructions"
 def emit(ev): print(json.dumps(ev), flush=True)
 if mode == "resume" and args[2] in os.environ.get("FAKE_CODEX_GONE", "").split(","):   # another machine's thread
     emit({"type": "error", "message": f"thread not found: {args[2]}"}); sys.exit(1)
@@ -63,7 +67,7 @@ async def main():
                     emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 10}})
                     await asyncio.sleep(30)  # linger so the orchestrator can interrupt us
             await s.call_tool("finish_cycle", {"summary": "done via " + mode, "next_task": "more"})
-    emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 10}})
+    emit({"type": "turn.completed", "usage": json.loads(os.environ['FAKE_CODEX_USAGE']) if os.environ.get('FAKE_CODEX_USAGE') else {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 10}})
 asyncio.run(main())
 '''
 
@@ -81,6 +85,7 @@ class CodexBackendTests(unittest.TestCase):
         os.environ.pop("FAKE_CODEX_LIMIT", None)
         os.environ.pop("FAKE_CODEX_PAUSE", None)
         os.environ.pop("FAKE_CODEX_GONE", None)
+        os.environ.pop("FAKE_CODEX_USAGE", None)
         self.config = default_config("Mock goal")
         self.config.backend = "codex"
         self.team = [master_spec(), AgentSpec("dev-1", "backend", "Dev", "dev")]
@@ -96,6 +101,7 @@ class CodexBackendTests(unittest.TestCase):
         os.environ.pop("FAKE_CODEX_LIMIT", None)
         os.environ.pop("FAKE_CODEX_PAUSE", None)
         os.environ.pop("FAKE_CODEX_GONE", None)
+        os.environ.pop("FAKE_CODEX_USAGE", None)
         self.tmp.cleanup()
 
     def ctx(self) -> ToolContext:
@@ -103,13 +109,22 @@ class CodexBackendTests(unittest.TestCase):
                            memory=AgentMemory(agents_dir(self.ws), "dev-1"), config=self.config, cycle=CycleState())
 
     def run_cycle(self, ctx: ToolContext, should_stop=lambda: False):
-        return asyncio.run(CodexBackend(self.config).run_cycle(ctx=ctx, system="SYS", prompt="go", model="gpt-5.3-codex", effort="medium", should_stop=should_stop, log=lambda s: None))
+        return asyncio.run(CodexBackend(self.config).run_cycle(ctx=ctx, system="SYS: maintain the delivery board", prompt="go", model="gpt-5.3-codex", effort="medium", should_stop=should_stop, log=lambda s: None))
+
+    def test_optional_cache_writes_are_disjoint_on_a_native_turn(self) -> None:
+        os.environ['FAKE_CODEX_USAGE'] = '{"input_tokens":100,"output_tokens":10,"input_tokens_details":{"cached_tokens":60,"cache_write_tokens":30}}'
+        result = self.run_cycle(self.ctx())
+        self.assertEqual(result.outcome,'finished',result.error)
+        self.assertEqual((result.usage['input'],result.usage['cache_read'],result.usage['cache_write']), (10,60,30))
+        self.assertEqual(sum(result.usage[k] for k in ('input','output','cache_read','cache_write')),110)
+        self.assertEqual(result.cost_status,'untracked')
 
     def test_cycle_uses_mcp_bridge_and_records_everything(self) -> None:
         ctx = self.ctx()
         res = self.run_cycle(ctx)
         self.assertEqual((res.outcome, res.summary, res.next_task), ("finished", "done via exec", "more"), res.error)
-        self.assertEqual((res.usage["input"], res.usage["cache_read"], res.usage["output"], res.usage["turns"]), (100, 50, 10, 1))
+        self.assertEqual((res.usage["input"], res.usage["cache_read"], res.usage["output"], res.usage["turns"]), (50, 50, 10, 1))
+        self.assertEqual(res.usage["input"] + res.usage["cache_read"] + res.usage["output"], 110)
         st = ctx.memory.state
         self.assertEqual((st.session_id, st.context_tokens, st.resume_pending), ("thread-123", 0, False))
         self.assertEqual(self.store.get_comments(1)[0]["body"], "On it.")
@@ -118,7 +133,7 @@ class CodexBackendTests(unittest.TestCase):
         kinds = [e["kind"] for e in ctx.memory.read_activity()[0]]
         self.assertTrue({"text", "tool", "result"} <= set(kinds), kinds)
         texts = [e["text"] for e in ctx.memory.read_activity()[0] if e["kind"] == "text"]
-        self.assertTrue(any("tools: check_inbox,finish_cycle,git_commit,git_status,list_agents,list_threads,post_comment,post_thread,read_thread,update_notes" == t for t in texts), texts)
+        self.assertTrue(any("tools: check_inbox,create_task,finish_cycle,git_commit,git_status,list_agents,list_tasks,list_threads,post_comment,post_thread,read_thread,update_notes,update_task" == t for t in texts), texts)
 
     def test_pause_interrupts_and_resumes_by_thread_id(self) -> None:
         os.environ["FAKE_CODEX_PAUSE"] = "1"

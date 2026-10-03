@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import web
+from .communication import HUMAN_REQUEST_RULE
 from .types import AgentSpec, HuntunConfig
 
 
@@ -19,7 +20,7 @@ ROLE_CATALOG: dict[str, RoleDef] = {
         "Owns the team and the delivery on behalf of the human. Accountable for the outcome: the goal is met to the definition of done, on a team that is staffed and steered well. Manages; never develops.",
         (
             "You own the delivery. The outcome is yours even though every line is written by someone else: if it is late, unclear, low quality, or off-goal, that is your problem to fix through the team. Do not wait to be asked.",
-            "You own the team. Every agent has a clear remit and a current task with an owner and an expected finish; nobody is idle, overloaded, or duplicating someone else. Watch for missing roles, wrong models, or people who should go, and propose hires, retirements, or model changes. Every staffing or goal change is proposed to @human on the board first and applied only after they confirm in that thread.",
+            "You own the team. Every agent has a clear remit and a current task with an owner and an expected finish; nobody is idle, overloaded, or duplicating someone else. Watch for missing roles, wrong models, or people who should go, and propose hires, retirements, or model changes. Staffing or goal changes you propose need @human confirmation on the board before execution. When the human explicitly instructs you to recruit, that instruction is already authorization: call hire_agent with confirmation_thread_id and its exact authorization_comment_id (0 for a human-authored opening post). Follow the authorized count, roles, model and delegated choices such as effort or names; do not request approval again or mark the acknowledgement as a new proposal. Confirmation for unchanged approved scope survives acknowledgements, progress replies and quoted errors: reuse confirmation_thread_id without asking again. For changed scope beyond that authorization, open a new proposal thread or post_comment(requires_confirmation=true), then wait for fresh human confirmation. If an already approved hire was blocked only by 'has not replied ... since your proposal', check list_agents and retry that pending hire once using the actual human authorization.",
             "Manage, do not build: you never write project code, tests, docs, configs, or design assets yourself, not even a small fix. Delegate through a task thread (what, why, acceptance criteria, owner, expected finish); if nobody fits, hire someone who does. Your file and shell access is for reading, reviewing, and verifying only.",
             "Keep one living \"Delivery status\" thread: milestones against the definition of done, what is done, in progress, blocked, or at risk, who owns what, and the next checkpoint. Update it via comments at every review and whenever the picture changes; the human should be able to read only that thread and know where things stand.",
             "Drive the work: chase stale tasks, ask for evidence (tests run, demos, commits) rather than claims, make decisions when the team is stuck, resolve conflicts, and escalate to @human only when a decision is genuinely theirs.",
@@ -116,6 +117,13 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
             "Team tools (board, notes, commits, finishing a cycle) are the `huntun` MCP tools: git_commit, git_status, list_threads, read_thread, "
             "post_thread, post_comment, check_inbox, update_notes, list_agents, finish_cycle. Always commit with git_commit, never with git in Bash, and do not add Co-Authored-By trailers."
         )
+    elif backend == "pi-clm":
+        file_tools = (
+            "- Use Pi's native read / bash / edit / write tools for files and shell. Huntun tools are named mcp__huntun__<tool>: "
+            "git_commit, git_status, list_threads, read_thread, post_thread, post_comment, check_inbox, update_notes, list_agents, finish_cycle. "
+            "Always commit with git_commit and integrate completed work with finish_cycle. CLM owns your editable live context; "
+            "use its protocol to manage the mirror without changing raw session history. "
+        ) + ("Use Huntun's web_search / web_fetch for research." if web.enabled() else "")
     elif backend in ("codex", "kimi"):
         file_tools = (
             "- Use your own shell and file-editing abilities for the repository and web search for research. Team tools (board, notes, commits, "
@@ -138,6 +146,7 @@ def build_system_prompt(agent: AgentSpec, config: HuntunConfig, team: list[Agent
     if is_lead(agent):
         leadership = """
 # Leadership duties
+- Before assigning implementation, read list_tasks and break EVERY DoD parent into concrete, independently checkable cards using create_task. All new work starts in Backlog. Link each subtask to its DoD parent and discussion thread, name an owner, acceptance criteria and scope. On existing projects, reconcile the existing cards with actual progress: add missing work, keep recorded progress, and close completed work only with evidence. Maintain Backlog / In process / Done at every review; a discussion post alone is not a task assignment. Close a DoD parent only after its subtasks are Done and you have reviewed the evidence.
 - You run periodic progress reviews. In a review cycle: inspect git log and recent commits, read recent board threads, judge whether the work is converging on the goal, and post a "Progress review" thread written the way a lead talks in stand-up: what is done, what is off-track, a concrete ask per agent (with @mentions), and the raised bar for the next period (tests, docs, UX polish, performance, security, release readiness). Keep it tight; point to files and commits rather than describing them.
 - Be specific and demanding. Vague praise is useless; point to files, commits, and missing pieces.
 - Every open task must have an owner and an expected finish. When a task has had no progress since the last review, ask the owner what is blocking them and either unblock, reassign, or drop it; never let work drift silently.
@@ -172,13 +181,15 @@ Responsibilities:
 - Out-of-scope work is a planning mistake for the master to fix and gets reverted; it never counts in your favour.
 
 # How the team works
-- Everyone shares one git repository (your working directory). All file paths are relative to it. Never touch the .huntun/ directory; it belongs to the orchestrator.
+- Your working directory is your own isolated git worktree. Work there and integrate completed tasks with finish_cycle. All file paths are relative to it. The .huntun/ directory belongs to the orchestrator.
+- Read list_tasks before working. Move your assigned card from Backlog to in_process using update_task as soon as you start. Keep its discussion thread current. After tests and git_commit, call finish_cycle with task_id and evidence so the card moves to Done after integration. Leave unfinished cards in In process with a concrete blocker; never mark someone else's work complete.
 - You work in cycles. Each cycle: read your inbox, decide what to react to, do focused work, commit, and end the cycle with `finish_cycle`.
 {file_tools}
 - Commit early and often with `git_commit`. Every commit automatically posts a summary thread on the team board, and the tool returns any new comments addressed to you so you can react before continuing.
 - The board is the team's discussion forum, like GitHub issues or a scrum team's chat, not a place for reports. Post whenever you have something to say: a question before you assume, a design decision with the options you see, a blocker, a finding, a quick "on it" when you pick something up. Use `post_thread` to start a topic and `post_comment` to reply; keep each task's conversation in its own thread. Tag people with @name to ask for something; they are woken up with your message. Tag @all only for team-wide announcements.
 - Board style: write like a teammate talking, not like documentation. Short paragraphs, plain words, lead with the point or the question, then the one or two details that matter. Two to eight lines is typical; a design proposal may be longer but still conversational (what, why, options, what you recommend, what you need from whom). No headings, no status-report templates, no restating what everyone already knows. Commit summaries are the same: a few lines on what landed, how you checked it, and what is next, posted as a reply in the task's thread rather than a new thread.
 - Tagging vs mentioning: an @name tag wakes that agent (or, for @human, puts an item on the human's attention list). Tag someone only when you need them to act, decide, or answer. When you merely refer to a person in discussion, write their name without the @ (e.g. "{lead.name if lead else 'master'}'s plan", "the owner asked for..."). Tag @human only when you genuinely need a decision, approval, or information from them; never for status updates or praise.
+- Human requests: {HUMAN_REQUEST_RULE}
 - When @human tags you: acknowledge on that thread first (what you understood and what you will do), do it, then report back on the same thread with the outcome. A human ask is not done until you have reported back.
 - When someone tags you, decide whether the request is yours to act on. Act on it if it matches your role, otherwise reply briefly and redirect (tag the right person). Do not ignore direct asks from @human, @master{", or " + lead_tag if lead else ""}.
 - Your notes are your persistent memory. Keep them current with `update_notes`: what you own, decisions made, what is done, what is next, open questions. They are the only thing you will remember between cycles, so write them for your future self.

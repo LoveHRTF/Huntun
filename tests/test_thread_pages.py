@@ -56,5 +56,29 @@ class ThreadPageTests(unittest.TestCase):
         self.assertEqual(self.store.confirmation_status(self.tid, "master"), (True, False))
         self.store.add_comment(self.tid, "human", "approved")
         self.assertEqual(self.store.confirmation_status(self.tid, "master"), (True, True))
-        self.store.add_comment(self.tid, "master", "new proposal @human")
+        self.store.add_comment(self.tid, "master", "Received; I will hire them now.")
+        self.store.add_comment(self.tid, "master", 'Tool error: "@human has not replied since your proposal"')
+        self.store.add_comment(self.tid, "dev", "I can prepare the handoff @human")
+        self.assertEqual(self.store.confirmation_status(self.tid, "master"), (True, True))
+        reopened = Store(Path(self.tmp.name) / 'board.sqlite')
+        try:
+            self.assertEqual(reopened.confirmation_status(self.tid, 'master'), (True,True))
+        finally:
+            reopened.close()
+        self.store.add_comment(self.tid, "master", "new proposal @human", requires_confirmation=True)
+        self.store.add_comment(self.tid, "master", "Awaiting your decision")
         self.assertEqual(self.store.confirmation_status(self.tid, "master"), (True, False))
+        self.store.add_comment(self.tid, 'human', 'Confirmed the new proposal')
+        self.store.add_comment(self.tid, 'master', 'Received')
+        self.assertEqual(self.store.confirmation_status(self.tid, 'master'), (True,True))
+
+    def test_human_reply_before_a_proposal_does_not_confirm_it(self) -> None:
+        self.store.add_comment(self.tid, 'human', 'An earlier unrelated message')
+        self.store.add_comment(self.tid, 'master', 'First proposal')
+        self.assertEqual(self.store.confirmation_status(self.tid, 'master'), (True,False))
+        other = self.store.create_thread('master', 'Proposal', '@human Hire a QA?')['id']
+        self.store.add_comment(self.tid, 'human', 'Approved here only')
+        self.assertEqual(self.store.confirmation_status(other, 'master'), (True,False))
+        self.store.add_comment(other, 'human', 'Approved')
+        self.store.add_comment(other, 'master', 'Received')
+        self.assertEqual(self.store.confirmation_status(other, 'master'), (True,True))

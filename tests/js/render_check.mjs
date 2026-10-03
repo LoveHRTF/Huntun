@@ -30,7 +30,9 @@ dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true, url
 const w = dom.window;
 w.fetch = async (url, opts) => {
   const p = new URL(url, "http://127.0.0.1:4747").pathname;
-  const body = responses[p] ?? responses["*"];
+  let body = responses[p] ?? responses["*"];
+  if (body === undefined && /\/office(?:\/theme)?$/.test(p)) body=responses[p.replace(/\/office(?:\/theme)?$/, "/state")]?.office;
+  if (body && body.version === 1 && body.chars) body={...body, theme_initialized:true};
   if (body === undefined) { errors.push("no canned response for " + p); return { ok: false, statusText: "not found", json: async () => ({ error: "no canned response for " + p }) }; }
   return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) };
 };
@@ -49,6 +51,6 @@ w.addEventListener("unhandledrejection", (e) => errors.push("unhandledrejection:
 w.onerror = (m, s, l, c, e) => errors.push("onerror: " + (e?.stack || m));
 // Run the inline script the way the browser would, but through the window so our fetch stub is used.
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-try { w.eval(script); } catch (e) { errors.push("script threw: " + (e.stack || e)); }
+try { w.eval(readFileSync(path.join(here, "..", "..", "huntun", "office.js"), "utf8")); w.eval(readFileSync(path.join(here, "..", "..", "huntun", "performance.js"), "utf8")); w.eval(script); } catch (e) { errors.push("script threw: " + (e.stack || e)); }
 await new Promise((r) => setTimeout(r, 400));
 finish();

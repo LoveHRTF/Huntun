@@ -278,7 +278,7 @@ class VllmBackend:
         def result(outcome: str, error: str | None = None, resets_at: float | None = None) -> CycleResult:
             if memory.last_activity:
                 memory.last_activity["active"] = False
-            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at)
+            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at, cost_status="local")
 
         try:
             effective_model = model or self._default_model()

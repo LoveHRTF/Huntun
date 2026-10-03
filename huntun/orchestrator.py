@@ -3,6 +3,7 @@ staggered start, periodic leadership reviews, and hiring / retiring at runtime."
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from .gitops import (
     GitError,
     ensure_repo,
     ensure_worktree,
+    git,
     merge_task,
     recent_log,
     sync_worktree,
@@ -31,6 +33,8 @@ from .gitops import (
 from .gitops import status as git_status
 from .memory import AgentMemory
 from .models import EFFORTS, backend_for_model, model_info
+from .performance import record_cycle_commits, record_usage
+from .usage import ACCOUNTING_VERSION, add_usage, cost_summary, migrate_legacy_usage
 from .roles import ROLE_CATALOG, build_system_prompt, is_lead, team_lead_of
 from .store import Store
 from .tools import ToolContext, ToolHooks, collect_inbox, format_inbox
@@ -60,6 +64,8 @@ class Orchestrator:
         self.backends: dict[str, Backend] = {self.backend_name: self.backend}
         self.watchdogs: dict[str, asyncio.Task[None]] = {}
         self.store = Store(db_path(workspace))
+        migrate_legacy_usage(workspace, self.store)
+        self.store.seed_tasks(self.config.definition_of_done)
         self.runtimes: dict[str, AgentRuntime] = {}
         self.stopping = False
         self.probe_interval_sec = 120.0  # once the announced reset time is near, retry this often until the window reopens
@@ -95,6 +101,8 @@ class Orchestrator:
             try:
                 self.backends[name] = make_backend(name, self.config)
             except Exception as e:
+                if name == "pi-clm":
+                    raise RuntimeError(f"Selected Pi + CLM harness is unavailable: {e}") from e
                 self.log(spec.name, f"backend {name} unavailable ({e}); falling back to {self.backend_name}")
                 spec.backend = ""
                 return self.backend
@@ -263,6 +271,7 @@ class Orchestrator:
         if definition_of_done.strip():
             self.config.definition_of_done = definition_of_done.strip()
         save_config(self.workspace, self.config)
+        self.store.seed_tasks(self.config.definition_of_done)
         self.store.log_event("master", "goal", f"Goal updated: {goal[:200]}")
         return "Goal updated. Post an @all note so the team knows what changed."
 
@@ -347,6 +356,30 @@ class Orchestrator:
         self._wake(name)
         return f"@{name} now uses model {spec.model or 'default'} at {spec.effort or 'default'} effort (from its next cycle)."
 
+    async def set_harness(self, backend: str, model: str, all_agents: bool = False) -> str:
+        """Human-selected project default, also available to existing projects."""
+        from .backends import BACKENDS
+        from .models import catalog_for
+        if backend not in BACKENDS:
+            raise ValueError("unknown harness")
+        if model and model not in {m.id for m in catalog_for(backend)}:
+            raise ValueError("select a model belonging to this harness")
+        # Construct before persisting anything so an incomplete install leaves the project intact.
+        instance = make_backend(backend, self.config)
+        self.config.backend, self.config.model = backend, model
+        self.backend_name, self.backend = backend, instance
+        self.backends[backend] = instance
+        if all_agents:
+            for spec in self.active_team():
+                spec.model, spec.backend = None, ""
+            self.config.master_model = ""
+            save_team(self.workspace, self.team)
+        save_config(self.workspace, self.config)
+        self.store.log_event("human", "harness", f"Project harness -> {backend} / {model or 'default'}; all agents={all_agents}")
+        self._sync_limit_watchdogs()
+        self._wake_all()
+        return "Project harness updated. Takes effect from each agent's next cycle."
+
     async def retire(self, name: str) -> str:
         spec = next((a for a in self.team if a.name == name), None)
         if not spec:
@@ -389,11 +422,13 @@ class AgentRuntime:
             window, _ = context_settings(spec.model or cfg.model)
         return {
             "backend": b,
-            "model": spec.model or cfg.model or ("claude-opus-5-5" if b == "api" else "Codex default" if b == "codex" else "Kimi default" if b == "kimi" else "DeepSeek default" if b == "deepseek" else "Ollama default" if b == "ollama" else "vLLM default" if b == "vllm" else "llama.cpp default" if b == "llamacpp" else "Claude Code default"),
+            "model": spec.model or cfg.model or ("claude-opus-5-5" if b == "api" else "Codex default" if b == "codex" else "Pi configured default" if b == "pi-clm" else "Kimi default" if b == "kimi" else "DeepSeek default" if b == "deepseek" else "Ollama default" if b == "ollama" else "vLLM default" if b == "vllm" else "llama.cpp default" if b == "llamacpp" else "Claude Code default"),
             "effort": spec.effort or (cfg.lead_effort if self.lead else cfg.worker_effort),
             "cycles": st.cycles,
             "reviews": st.review_count,
             "usage": st.usage_totals,
+            "usage_cost": cost_summary(st, b),
+            "usage_history_incomplete": bool(st.usage_cost_counts.get("legacy") or (st.usage_totals and not st.usage_accounting_version)),
             "current_task": st.current_task,
             "last_summary": st.last_summary,
             "last_cycle_at": st.last_cycle_at,
@@ -521,6 +556,23 @@ class AgentRuntime:
         orch = self.orch
         spec = self.current()
         cfg = orch.config
+        backend_name = orch.backend_name_for(spec)
+        if self.memory.state.session_backend and self.memory.state.session_backend != backend_name:
+            self.memory.journal({"harness_change": backend_name, "previous_backend": self.memory.state.session_backend,
+                                 "previous_session_id": self.memory.state.session_id})
+            transcript = self.memory.load_transcript()
+            if transcript:
+                archive = self.memory.dir / ("transcript-" + now_iso().replace(":", "-") + ".json")
+                archive.write_text(json.dumps(transcript))
+            self.memory.state.session_id = None
+            self.memory.state.session_cycles = 0
+            self.memory.state.resume_pending = False
+            self.memory.state.context_tokens = 0
+            self.memory.state.context_limit = 0
+            self.memory.clear_transcript()
+            kind = "work"
+        self.memory.state.session_backend = backend_name
+        self.memory.save_state()
         cycle = CycleState()
         is_master = spec.role == "master"
         # Applies on every load, including projects created before worktree isolation.
@@ -538,12 +590,13 @@ class AgentRuntime:
             await sync_worktree(orch.workspace, tree, self.name)
         except GitError as e:
             orch.log(self.name, f"worktree needs conflict resolution: {e}")
+        baseline = await git(tree, "rev-parse", "HEAD")
         ctx = ToolContext(
             agent=spec, team=orch.active_team, workspace=tree, store=orch.store, memory=self.memory, config=cfg, cycle=cycle,
             hooks=ToolHooks(hire_agent=orch.hire if is_master else None, retire_agent=orch.retire if is_master else None,
                             set_agent_model=orch.set_model if is_master else None, resume_team=orch.release_team if is_master else None,
                             set_goal=orch.set_goal if is_master else None,
-                            complete_task=(lambda: merge_task(orch.workspace, tree, self.name)) if not is_master else None),
+                            complete_task=lambda: merge_task(orch.workspace, tree, self.name)),
         )
         prompt = "" if kind == "resume" else await self._build_prompt(kind)
         recovery = orch.store.get_control("recovery:" + self.name, "")
@@ -559,15 +612,19 @@ class AgentRuntime:
         self._status("resuming" if kind == "resume" else "working", label)
         orch.log(self.name, f"cycle {self.memory.state.cycles + 1} ({kind}) started")
         self.memory.activity("cycle", f"Cycle {self.memory.state.cycles + 1} ({kind}) started")
-        if kind == "resume":
-            # "resuming" lasts while the model reads the saved conversation back in (minutes on a local model); its first
-            # thought, words or tool call means it is working again (the office sends it from the coffee back to its desk)
-            def back_at_work(k: str) -> None:
-                if k in ("thinking", "text", "tool"):
-                    self.memory.on_activity = None
-                    self._status("working", label)
+        provider_status = "resuming" if kind == "resume" else "working"
 
-            self.memory.on_activity = back_at_work
+        def provider_activity(k: str) -> None:
+            nonlocal provider_status
+            status = "retrying" if k == "retry" else "working" if k in ("thinking", "text", "tool", "result", "merge") else None
+            saved_status = orch.store.agent_status(self.name) if status else None
+            if status and (status != provider_status or saved_status != status):
+                provider_status = status
+                self._status(status, label)
+
+        # A saved conversation is resuming until its first model event. Network
+        # backoff has its own status rather than looking like a stuck resume.
+        self.memory.on_activity = provider_activity
         if prompt:
             self.memory.activity("prompt", prompt)
         if kind == "review":
@@ -576,6 +633,7 @@ class AgentRuntime:
             self.memory.save_state()
 
         backend = orch.backend_for(spec)
+        usage_backend = orch.backend_name_for(spec)
         try:
             result = await backend.run_cycle(
                 ctx=ctx,
@@ -589,10 +647,11 @@ class AgentRuntime:
         finally:
             self.memory.on_activity = None
 
+        usage_sample = record_usage(orch.store, self.name, result.usage, backend=usage_backend,
+                                    model=spec.model or cfg.model, cost_status=result.cost_status or "untracked")
+        await record_cycle_commits(orch.store, tree, self.name, baseline)
         usage = " ".join(f"{k}={v:g}" for k, v in result.usage.items())
-        totals = self.memory.state.usage_totals
-        for k, v in result.usage.items():
-            totals[k] = round(totals.get(k, 0.0) + float(v), 6)
+        add_usage(self.memory.state, result.usage, usage_backend, result.cost_status)
         self.memory.save_state()
         if result.outcome == "paused":
             orch.log(self.name, f"cycle paused ({usage})")
@@ -614,7 +673,7 @@ class AgentRuntime:
 
         # CLI backends can end without calling finish_cycle. They must still
         # integrate completed tasks rather than silently leave private commits.
-        if not is_master and cycle.task_complete and not cycle.task_merged:
+        if cycle.task_complete and not cycle.task_merged:
             try:
                 merged = await merge_task(orch.workspace, tree, self.name)
             except GitError as e:
@@ -636,7 +695,9 @@ class AgentRuntime:
             st.last_review_at = st.last_cycle_at
         self.memory.save_state()
         self.memory.journal({"cycle": st.cycles, "kind": kind, "summary": result.summary, "next": result.next_task,
-                             "commits": cycle.commits, "tool_calls": cycle.tool_calls, "usage": result.usage})
+                             "commits": cycle.commits, "tool_calls": cycle.tool_calls, "usage": result.usage, "usage_sample": usage_sample,
+                             "usage_accounting_version": ACCOUNTING_VERSION, "backend": usage_backend,
+                             "model": spec.model or cfg.model, "cost_status": result.cost_status})
         orch.store.log_event(self.name, "cycle", f"#{st.cycles} {kind}: {result.summary[:300]} [{usage}]")
         orch.log(self.name, f"cycle {st.cycles} finished: {result.summary[:120]} ({usage})")
         self.memory.activity("cycle", f"Cycle {st.cycles} finished ({usage}). Summary: {result.summary}\nNext: {result.next_task}")
@@ -664,9 +725,21 @@ class AgentRuntime:
         if spec.role == "master" and any(i.author == "human" for i in items):
             ack_note = ("\n\n@human tagged you. Before anything else, reply on that thread to confirm you received the message and say what you will do about it and by when. "
                         f"Then act: {tech}; staffing and goal matters are yours. If it implies a staffing change "
-                        "or a change of goal or definition of done, propose the change on the board and wait for @human to confirm in that thread before applying it "
+                        "or a change of goal or definition of done, first distinguish an explicit human authorization from a request to propose options. "
+                        "For direct hiring instructions, execute the authorized scope with hire_agent(confirmation_thread_id, authorization_comment_id=<the human's instruction comment>), "
+                        "Use authorization_comment_id=0 for an instruction in a human-authored opening post. Include any effort/name choices the human delegated. "
+                        "Do not ask for approval again or mark the acknowledgement as a new proposal. "
+                        "For changes you propose beyond the human's authorization, propose them and wait for confirmation before applying them "
                         "(hire_agent, retire_agent, set_agent_model, and set_goal require the confirmation thread id). Finally get back to @human on the same thread "
                         "with the outcome; if you are waiting on the team, say so and set wait_for_mention so you return to close the loop when they report back.")
+        if spec.role == "master":
+            ack_note += ("\n\nBoard confirmations are anchored to the proposal, not your most recent reply. "
+                         "Acknowledgements, progress reports, quoted errors and tool retries do not invalidate an existing human confirmation. "
+                         "For unchanged approved staffing, reuse the original confirmation_thread_id and do not ask the human to approve it again. "
+                         "If earlier hiring was blocked only by 'has not replied ... since your proposal' despite a real confirmation in that thread, "
+                         "that ordering check is fixed: check list_agents to avoid duplicates and retry the pending approved hire once. "
+                         "For a genuinely new or changed decision, open a new proposal thread or mark post_comment(requires_confirmation=true), "
+                         "then wait for the human to confirm that scope.")
         gate_note = ""
         if spec.role == "master" and orch.store.get_control("resume_gate", "") == "master":
             gate_note = (f"\n\nNOTE: the team (on your vendor) was paused automatically when the provider's usage limit was hit (at {orch.store.get_control('resume_gate_since', '?')}) "
@@ -754,5 +827,13 @@ Files you touched since your last commit: {", ".join(st.touched_files) or "(none
 ## Board (recent threads)
 {threads or "(no threads yet)"}
 
+## Delivery board
+{self._task_context()}
+
 ## Instructions
 {instructions}{ack_note}{gate_note}"""
+
+    def _task_context(self) -> str:
+        tasks = self.orch.store.list_tasks()
+        relevant = tasks if is_lead(self.current()) else [t for t in tasks if t["owner"] == self.name or t["source_key"]]
+        return "\n".join(f"#{t['id']} [{t['status']}] @{t['owner'] or 'unassigned'} {t['title']} (parent #{t['parent_id'] or '-'}): {t['acceptance']}" for t in relevant) or "(no cards yet; Master/TL must create the DoD breakdown)"

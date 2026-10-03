@@ -198,7 +198,7 @@ class KimiBackend:
         chars = 0
 
         def result(outcome: str, error: str | None = None) -> CycleResult:
-            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, limit_hit.get("resets_at"))
+            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, limit_hit.get("resets_at"), cost_status="untracked")
 
         def on_event(ev: dict[str, Any]) -> None:
             nonlocal chars
@@ -288,7 +288,7 @@ class KimiBackend:
                 self._write_mcp(ctx.workspace, bridge.url)
                 base = self._base_args(model, plan)
                 if resuming:
-                    args, text = base + ["--session", state.session_id], RESUME_PROMPT
+                    args, text = base + ["--session", state.session_id], f"{RESUME_PROMPT}\n\nCurrent team instructions:\n{system}"
                 elif continuing:
                     # the system prompt was given when the session started; repeat it so roster, goal, or brief changes reach the agent
                     args, text = base + ["--session", state.session_id], f"{CONTINUE_NOTE}{system}\n\n---\n\n{prompt}"

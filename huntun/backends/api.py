@@ -12,10 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import anthropic
 
@@ -37,6 +38,48 @@ OVERFLOW_RECOVERIES = 4  # context overflows one cycle recovers from (compacting
 
 
 _stream_observer: ContextVar[Callable[[Any], None] | None] = ContextVar("huntun_stream_observer", default=None)
+
+
+class _CyclePaused(Exception):
+    pass
+
+
+async def _until_stopped(operation: Awaitable[Any], should_stop: Callable[[], bool]) -> Any:
+    """Pause model/network waits promptly; callers never wrap running tools."""
+    task = asyncio.ensure_future(operation)
+    try:
+        while not task.done():
+            await asyncio.wait({task}, timeout=0.2)
+            if not task.done() and should_stop():
+                raise _CyclePaused
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def _connection_detail(error: Exception) -> str:
+    # Request URLs can contain credentials or query keys. Report only the host,
+    # port and path, plus the underlying socket failure instead of a generic
+    # "Connection error". Neither request headers nor payloads are logged.
+    url = urlsplit(str(getattr(getattr(error, 'request', None), 'url', '')))
+    host = url.hostname or 'provider'
+    if ':' in host:
+        host = '[' + host + ']'
+    target = (url.scheme + '://' if url.scheme else '') + host + (':' + str(url.port) if url.port else '') + url.path
+    cause = error
+    seen = set()
+    while id(cause) not in seen:
+        seen.add(id(cause))
+        nested = cause.__cause__ or cause.__context__
+        if nested is None:
+            break
+        cause = nested
+    reason = type(cause).__name__
+    if isinstance(cause, OSError) and cause.strerror:
+        reason += ': ' + cause.strerror
+    return f'{type(error).__name__} at {target}: {reason}'
 
 
 async def _stream_reply(stream: Any) -> Any:
@@ -254,7 +297,7 @@ class ApiBackend:
             return False
 
     async def _compact_safely(self, params: dict[str, Any], messages: list[dict[str, Any]], prompt: str, log: Callable[[str], None],
-                              memory: Any, trimmed_first: bool = False) -> list[dict[str, Any]]:
+                              memory: Any, trimmed_first: bool = False, account: Callable[[Any], None] | None = None) -> list[dict[str, Any]]:
         """Compacts the transcript even when the server cannot take it any more: the summary is asked of the whole
         conversation, then of copies with old tool output cut shorter and shorter; when not even those fit, a mechanical
         handoff (the task, the tools called, the last words) replaces it. Returns the transcript unchanged when the
@@ -266,7 +309,7 @@ class ApiBackend:
             new: list[dict[str, Any]] | None = None
             for candidate in attempts:
                 try:
-                    new = await self._compact(params, candidate, prompt, log)
+                    new = await self._compact(params, candidate, prompt, log, account)
                     break
                 except ContextOverflow:
                     continue
@@ -285,11 +328,14 @@ class ApiBackend:
             memory.state.compacting = False
             memory.save_state()
 
-    async def _compact(self, params: dict[str, Any], messages: list[dict[str, Any]], prompt: str, log: Callable[[str], None]) -> list[dict[str, Any]]:
+    async def _compact(self, params: dict[str, Any], messages: list[dict[str, Any]], prompt: str, log: Callable[[str], None],
+                       account: Callable[[Any], None] | None = None) -> list[dict[str, Any]]:
         """Client-side compaction: ask the model for a handoff summary, then restart the transcript from it."""
         ask = {**params, "messages": messages + [{"role": "user", "content": "Your context is nearly full. Write a compact handoff summary for yourself: what the task is, what you have done (files, commits, decisions), what remains, and any open questions or board threads to follow up. Do not call tools."}],
                "tools": [], "max_tokens": 4000}
         m = await self._send(ask)
+        if account:
+            account(m)
         summary = "\n".join(b.text for b in m.content if b.type == "text").strip() or "(no summary produced)"
         log(f"compacted context ({len(messages)} messages -> summary of {len(summary)} chars)")
         first = messages[0]["content"] if messages and messages[0]["role"] == "user" and isinstance(messages[0]["content"], str) else prompt
@@ -301,10 +347,31 @@ class ApiBackend:
         defs, by_name = _tool_defs(ctx, self.provider)
         usage = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0, "cost_usd": 0.0}
         effective_model = model or self._default_model()
+        priced_calls = unpriced_calls = 0
+
+        def account(message: Any) -> None:
+            nonlocal priced_calls, unpriced_calls
+            u = message.usage
+            inp, out = u.input_tokens or 0, u.output_tokens or 0
+            cr = getattr(u, "cache_read_input_tokens", 0) or 0
+            cw = getattr(u, "cache_creation_input_tokens", 0) or 0
+            for key, value in (("input", inp), ("output", out), ("cache_read", cr), ("cache_write", cw)):
+                usage[key] += value
+            creation = getattr(u, "cache_creation", None)
+            long_write = (creation.get("ephemeral_1h_input_tokens", 0) if isinstance(creation, dict) else
+                          getattr(creation, "ephemeral_1h_input_tokens", 0)) or 0
+            actual_model = getattr(message, "model", None) or effective_model
+            charge = 0.0 if self.provider in LOCAL_PROVIDERS else cost_usd(actual_model, inp, out, cr, cw, cache_write_1h=long_write)
+            if charge is None:
+                unpriced_calls += 1
+            else:
+                priced_calls += 1
+                usage["cost_usd"] = round(usage["cost_usd"] + charge, 6)
 
         def result(outcome: str, error: str | None = None, resets_at: float | None = None) -> CycleResult:
             live.close()
-            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at)
+            status = "local" if self.provider in LOCAL_PROVIDERS else "partial" if priced_calls and unpriced_calls else "untracked" if unpriced_calls or not priced_calls else "estimated"
+            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, resets_at, cost_status=status)
 
         saved = memory.load_transcript()
         foreign = saved and any(m.get("role") not in ("user", "assistant") or "tool_calls" in m for m in saved)   # left by the vllm backend (OpenAI format)
@@ -332,10 +399,12 @@ class ApiBackend:
                 memory.activity("waiting", "Waiting for provider response")
                 observer_token = _stream_observer.set(live.anthropic_event)
                 try:
-                    message = await self._call(params, use_fallbacks)
+                    message = await _until_stopped(self._call(params, use_fallbacks), should_stop)
                 finally:
                     _stream_observer.reset(observer_token)
                 attempts = 0
+            except _CyclePaused:
+                return result("paused")
             except ContextOverflow as e:
                 overflows += 1
                 if overflows > OVERFLOW_RECOVERIES:
@@ -349,12 +418,18 @@ class ApiBackend:
                 own_share_exceeded = memory.state.context_tokens > COMPACT_AT * context_limit(effective_model)
                 if len(messages) > 1 and (not e.pool_full or own_share_exceeded or not memory.state.context_tokens):
                     log(f"context overflow ({e}); compacting")
-                    messages = await self._compact_safely(params, messages, prompt, log, memory, trimmed_first=True)
+                    try:
+                        messages = await _until_stopped(self._compact_safely(params, messages, prompt, log, memory, trimmed_first=True, account=account), should_stop)
+                    except _CyclePaused:
+                        return result("paused")
                     continue
                 if e.pool_full:                                                 # another session filled the shared pool; it compacts too
                     wait = 15 * overflows
                     log(f"the server's shared context pool was full ({e}); retrying in {wait}s")
-                    await asyncio.sleep(wait)
+                    try:
+                        await _until_stopped(asyncio.sleep(wait), should_stop)
+                    except _CyclePaused:
+                        return result("paused")
                     continue
                 return result("error", f"the task prompt alone does not fit the model's context: {e}")
             except anthropic.BadRequestError as e:
@@ -374,11 +449,17 @@ class ApiBackend:
                 return result("limit", f"rate limited: {e.message}", (asyncio.get_event_loop().time() * 0 + __import__("time").time() + retry_after) if retry_after else None)
             except (anthropic.InternalServerError, anthropic.APIConnectionError) as e:
                 attempts += 1
+                detail = _connection_detail(e)
                 if attempts > RETRYABLE_ATTEMPTS:
-                    return result("error", f"gave up after {attempts} attempts: {e}")
+                    return result("error", f"gave up after {attempts} attempts: {detail}")
                 wait = min(120, 5 * 2**attempts)
-                log(f"transient API error ({type(e).__name__}); retrying in {wait}s")
-                await asyncio.sleep(wait)
+                note = f"{detail}; retry {attempts}/{RETRYABLE_ATTEMPTS} in {wait}s"
+                log(note)
+                memory.activity("retry", note)
+                try:
+                    await _until_stopped(asyncio.sleep(wait), should_stop)
+                except _CyclePaused:
+                    return result("paused")
                 continue
             except anthropic.APIError as e:
                 return result("error", f"API error: {e}")
@@ -391,12 +472,8 @@ class ApiBackend:
                 continue
 
             u = message.usage
-            usage["input"] += u.input_tokens or 0
-            usage["output"] += u.output_tokens or 0
-            usage["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
-            usage["cache_write"] += getattr(u, "cache_creation_input_tokens", 0) or 0
+            account(message)
             cr, cw = getattr(u, "cache_read_input_tokens", 0) or 0, getattr(u, "cache_creation_input_tokens", 0) or 0
-            usage["cost_usd"] = round(usage["cost_usd"] + cost_usd(effective_model, u.input_tokens or 0, u.output_tokens or 0, cr, cw), 6)
             memory.state.context_tokens = int((u.input_tokens or 0) + cr + cw + (u.output_tokens or 0))
             memory.state.context_limit = context_limit(effective_model)
             memory.save_state()
@@ -480,7 +557,10 @@ class ApiBackend:
                 memory.clear_transcript()
                 return result("finished")
             if needs_compaction:
-                messages = await self._compact_safely(params, messages, prompt, log, memory)
+                try:
+                    messages = await _until_stopped(self._compact_safely(params, messages, prompt, log, memory, account=account), should_stop)
+                except _CyclePaused:
+                    return result("paused")
             if cycle.tool_calls >= self.config.max_tool_calls_per_cycle + 6:
                 cycle.finished = True
                 cycle.summary = "Cycle force-ended after exceeding the tool-call budget."

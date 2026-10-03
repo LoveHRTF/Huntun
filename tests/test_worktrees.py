@@ -108,6 +108,33 @@ class WorktreeTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*(merge_task(self.root, tree, f"dev-{i}") for i, tree in enumerate(trees)))
         self.assertTrue(all((self.root / f"{i}.txt").exists() for i in range(2)))
 
+    async def test_master_native_changes_also_integrate_from_its_own_tree(self) -> None:
+        from unittest.mock import patch
+
+        from huntun.config import default_config, save_config, save_team
+        from huntun.orchestrator import AgentRuntime, Orchestrator
+        from huntun.types import AgentSpec, CycleResult
+        config = default_config('Inspect and repair')
+        config.backend = 'codex'
+        agent = AgentSpec('master', 'master', 'Master', 'Lead')
+        save_config(self.root, config)
+        save_team(self.root, [agent])
+        class Fake:
+            async def run_cycle(fake, *, ctx, **kwargs):
+                self.assertNotEqual(ctx.workspace, self.root)
+                (ctx.workspace / 'native-fix.txt').write_text('verified fix')
+                await commit(ctx.workspace, 'master', 'fix: native tool repair', ['native-fix.txt'])
+                # CLI ending without finish_cycle still must integrate this branch.
+                return CycleResult('finished', 'Repaired')
+        with patch('huntun.orchestrator.make_backend', return_value=Fake()):
+            orch = Orchestrator(self.root)
+            try:
+                rt = AgentRuntime(orch, agent)
+                self.assertEqual(await rt._run_one('work'), 'finished')
+                self.assertEqual((self.root / 'native-fix.txt').read_text(), 'verified fix')
+            finally:
+                orch.store.close()
+
     async def test_legacy_agent_migrates_and_unfinished_tasks_stay_private(self) -> None:
         from unittest.mock import patch
 

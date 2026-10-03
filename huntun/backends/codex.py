@@ -49,6 +49,22 @@ async def _event_lines(stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
         yield b"".join(pending)
 
 
+async def _descendant_pids(parent: int) -> set[int]:
+    """Include detached tool hosts, which can create their own process groups."""
+    if os.name != "posix":
+        return set()
+    proc = await asyncio.create_subprocess_exec("ps", "-axo", "pid=,ppid=", stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.DEVNULL)
+    raw, _ = await proc.communicate()
+    rows = [tuple(map(int, line.split())) for line in raw.splitlines() if len(line.split()) == 2]
+    owned = {parent}
+    while True:
+        found = {pid for pid, ppid in rows if ppid in owned} - owned
+        if not found:
+            return owned - {parent}
+        owned.update(found)
+
+
 CONTINUE_NOTE = "(New cycle in the same conversation. Your earlier cycles above are context only; the board, the repository and your notes are the truth now.)\n\n"
 RESUME_PROMPT = (
     "You were paused mid-cycle by the orchestrator and are now resumed. Re-check the repository state (git status), "
@@ -162,7 +178,14 @@ class CodexBackend:
             raise RuntimeError("codex CLI not found on PATH (install with `npm i -g @openai/codex`, then `codex login`)")
 
     def _base_args(self, workspace: Path, model: str, effort: str, sandbox: str, mcp_url: str | None) -> list[str]:
-        args = [self.codex, "exec", "--json", "--skip-git-repo-check", "-C", str(workspace), "-s", sandbox, "-c", 'approval_policy="never"']
+        # Every Codex seat, planning call and resumed thread has unrestricted
+        # native tools. Role is a team responsibility, not a CLI permission mode.
+        args = [self.codex, "exec", "--json", "--skip-git-repo-check", "--strict-config", "-C", str(workspace),
+                "--dangerously-bypass-approvals-and-sandbox", "--ignore-rules",
+                "-c", 'approval_policy="never"',
+                "-c", 'shell_environment_policy.inherit="all"',
+                "-c", "shell_environment_policy.ignore_default_excludes=true",
+                "-c", "shell_environment_policy.exclude=[]", "-c", "shell_environment_policy.include_only=[]"]
         info = codex_model_info(model)
         # Pin an otherwise implicit default so the window belongs to the model actually run.
         selected = model or (info.id if info else "")
@@ -176,19 +199,15 @@ class CodexBackend:
             args += ["-c", f'mcp_servers.huntun.url="{mcp_url}"', "-c", 'mcp_servers.huntun.default_tools_approval_mode="approve"',
                      "-c", "mcp_servers.huntun.tool_timeout_sec=900", "-c", "mcp_servers.huntun.startup_timeout_sec=30"]
         args += ["-c", 'web_search="live"']
-        args += ["-c", "sandbox_workspace_write.writable_roots=[]"]
         return args
 
     def _resume_args(self, base: list[str], session_id: str) -> list[str]:
-        # Resume inherits cwd from the process and accepts sandbox via config,
-        # rather than the new-session-only -C and -s flags.
+        # Resume inherits cwd from the process. Explicitly override the saved
+        # thread's old sandbox and rules just as for newly created sessions.
         args = [base[0], "exec", "resume", session_id]
         i = 2
         while i < len(base):
             if base[i] == "-C":
-                i += 2
-            elif base[i] == "-s":
-                args += ["-c", f'sandbox_mode="{base[i + 1]}"']
                 i += 2
             else:
                 args.append(base[i])
@@ -201,9 +220,22 @@ class CodexBackend:
         proc = await asyncio.create_subprocess_exec(
             *args, prompt, cwd=str(cwd), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             env={**os.environ, "NO_COLOR": "1"},
+            start_new_session=os.name == "posix",
         )
         interrupted = False
         stderr_chunks: list[bytes] = []
+        descendants: set[int] = set()
+
+        def send(sig: int) -> None:
+            if os.name == "posix":
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, sig)
+                for pid in descendants:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, sig)
+            elif proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.send_signal(sig)
 
         async def drain_err() -> None:
             assert proc.stderr
@@ -217,12 +249,10 @@ class CodexBackend:
                 await asyncio.sleep(1)
                 if (should_stop and should_stop()) or (timeout and time.time() - started > timeout):
                     interrupted = True
-                    with contextlib.suppress(ProcessLookupError):
-                        proc.send_signal(signal.SIGINT)
+                    descendants.update(await _descendant_pids(proc.pid))
+                    send(signal.SIGINT)
                     await asyncio.sleep(3)
-                    if proc.returncode is None:
-                        with contextlib.suppress(ProcessLookupError):
-                            proc.kill()
+                    send(signal.SIGKILL)
                     return
 
         err_task, watch_task = asyncio.create_task(drain_err()), asyncio.create_task(watch())
@@ -239,10 +269,12 @@ class CodexBackend:
             await proc.wait()
             await err_task
         finally:
-            # Parsing errors and cancellation must not leave a Codex child alive.
+            # Cancellation must release native writers and their tool hosts,
+            # including hosts that detached from the writer's process group.
             if proc.returncode is None:
-                with contextlib.suppress(ProcessLookupError):
-                    proc.kill()
+                descendants.update(await _descendant_pids(proc.pid))
+            send(signal.SIGKILL)
+            if proc.returncode is None:
                 await proc.wait()
             watch_task.cancel()
             err_task.cancel()
@@ -311,7 +343,7 @@ class CodexBackend:
 
     async def run_cycle(self, *, ctx, system, prompt, model, effort, should_stop, log) -> CycleResult:  # type: ignore[override]
         memory, cycle, state = ctx.memory, ctx.cycle, ctx.memory.state
-        usage: dict[str, float] = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cost_usd": 0.0, "turns": 0.0}
+        usage: dict[str, float] = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0, "cost_usd": 0.0, "turns": 0.0}
         live = LiveTelemetry(memory, "Codex")
         state.context_limit, _ = context_settings(model)
         if state.context_tokens > state.context_limit:
@@ -324,7 +356,7 @@ class CodexBackend:
         compactions_before = state.compactions
 
         def result(outcome: str, error: str | None = None) -> CycleResult:
-            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, limit_hit.get("resets_at"))
+            return CycleResult(outcome, cycle.summary, cycle.next_task, error, usage, limit_hit.get("resets_at"), cost_status="untracked")
 
         def on_event(ev: dict[str, Any]) -> None:
             nonlocal completed_compactions
@@ -334,9 +366,16 @@ class CodexBackend:
                 memory.save_state()
             elif t == "turn.completed":
                 u = ev.get("usage") or {}
-                inp, cached, out = float(u.get("input_tokens") or 0), float(u.get("cached_input_tokens") or 0), float(u.get("output_tokens") or 0)
-                usage["input"] += inp
+                details = u.get("input_tokens_details") or {}
+                inp = float(u.get("input_tokens") or 0)
+                cached = float(u.get("cached_input_tokens") or details.get("cached_tokens") or 0)
+                written = float(u.get("cache_write_input_tokens") or details.get("cache_write_tokens") or 0)
+                out = float(u.get("output_tokens") or 0)
+                # Codex input includes cache hits. Internal input is uncached
+                # so every token contributes to consumption exactly once.
+                usage["input"] += max(0, inp - cached - written)
                 usage["cache_read"] += cached
+                usage["cache_write"] += written
                 usage["output"] += out
                 usage["turns"] += 1
                 # Aggregate turn usage is billing data, not the current context.
@@ -427,7 +466,7 @@ class CodexBackend:
                 base = self._base_args(ctx.workspace, model, effort, sandbox, bridge.url)
                 if resuming:
                     args = self._resume_args(base, state.session_id)
-                    text = RESUME_PROMPT
+                    text = f"{RESUME_PROMPT}\n\nCurrent team instructions:\n{system}"
                 elif continuing:
                     # the system prompt was given when the thread started; repeat it so roster, goal, or brief changes reach the agent
                     args = self._resume_args(base, state.session_id)
