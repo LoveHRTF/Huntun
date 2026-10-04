@@ -32,7 +32,7 @@ from .gitops import (
 )
 from .gitops import status as git_status
 from .memory import AgentMemory
-from .models import EFFORTS, backend_for_model, model_info
+from .models import EFFORTS, backend_for_model, context_limit, model_info
 from .performance import record_cycle_commits, record_usage
 from .usage import ACCOUNTING_VERSION, add_usage, cost_summary, migrate_legacy_usage
 from .roles import ROLE_CATALOG, build_system_prompt, is_lead, team_lead_of
@@ -348,6 +348,10 @@ class Orchestrator:
         if effort:
             spec.effort = effort
         save_team(self.workspace, self.team)
+        rt = self.runtimes.get(name)
+        if rt and model:                                                            # the limit shown for it follows at once, not after its next call
+            rt.memory.state.context_limit = context_limit(spec.model) if spec.model else 0
+            rt.memory.save_state()
         if spec.role == "master" and model:                                         # keep the project's record of the master's model in step
             self.config.master_model = spec.model or ""
             save_config(self.workspace, self.config)

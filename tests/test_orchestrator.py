@@ -270,6 +270,24 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNone(rt.memory.on_activity, "the watch ends with the cycle")
         orch.store.close()
 
+    def test_a_model_change_shows_the_new_context_limit_at_once(self) -> None:
+        import os
+
+        from huntun.models import context_limit
+        from huntun.orchestrator import AgentRuntime
+
+        os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        orch = Orchestrator(self.ws)
+        spec = next(a for a in orch.team if a.name == "backend-1")
+        rt = orch.runtimes["backend-1"] = AgentRuntime(orch, spec)
+        rt.memory.state.context_limit = 98304                                  # what the previous model's last call recorded
+        asyncio.run(orch.set_model("backend-1", "claude-haiku-4-5", None, by="human"))
+        self.assertEqual(rt.memory.state.context_limit, context_limit("claude-haiku-4-5"))
+        self.assertEqual(rt.info()["context_limit"], context_limit("claude-haiku-4-5"))
+        asyncio.run(orch.set_model("backend-1", "default", None, by="human"))
+        self.assertEqual(rt.memory.state.context_limit, 0, "the backend's default model: its first call fills it in")
+        orch.store.close()
+
     def test_team_runs_end_to_end(self) -> None:
         import os
 
